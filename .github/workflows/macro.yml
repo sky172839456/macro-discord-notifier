@@ -1,0 +1,43 @@
+name: Discord Macro Alerts
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macro-discord-alerts
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore notification state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: macro-state-${{ github.run_id }}
+          restore-keys: macro-state-
+
+      - name: Send due notifications
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python notifier.py
+
+      - name: Save notification state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: macro-state-${{ github.run_id }}
