@@ -128,34 +128,45 @@ def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
 
 def pre_embed(event: dict[str, Any]) -> dict[str, Any]:
     local = event["time"].astimezone(TAIPEI)
-    return {"title": f"⏰ {event['rule']['name']} 將於約 {PRE_ALERT_MINUTES} 分鐘後公布",
-            "description": "請留意公布前後的價格波動與流動性變化。",
+    return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
+            "title": f"⏰ 公布前提醒｜{event['rule']['name']}",
+            "description": f"### 距離公布約 {PRE_ALERT_MINUTES} 分鐘\n請留意公布前後的價格波動、流動性與滑價風險。",
             "color": 0xF1C40F,
-            "fields": [{"name": "台灣時間", "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
-                       {"name": "資料來源", "value": event["rule"]["source"], "inline": False}],
-            "footer": {"text": "官方免費資料｜不構成投資建議"}}
+            "fields": [{"name": "🗓️ 公布日期", "value": local.strftime("%Y/%m/%d"), "inline": True},
+                       {"name": "🕐 台灣時間", "value": local.strftime("%H:%M"), "inline": True},
+                       {"name": "🔗 官方來源", "value": event["rule"]["source"], "inline": False}],
+            "footer": {"text": "資料來源：官方網站｜僅供資訊參考，不構成投資建議"},
+            "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 def release_embed(item: dict[str, Any]) -> dict[str, Any]:
     local = item["published"].astimezone(TAIPEI)
     source = item["url"] or item["rule"]["source"]
-    return {"title": f"🔴 {item['rule']['name']}已有官方更新",
-            "description": f"**官方摘要中的主要數值**\n{extract_numbers(item['summary'])}\n\n請以原始公告內容為準。",
+    numbers = extract_numbers(item["summary"])
+    return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
+            "title": f"🔴 最新公布｜{item['rule']['name']}",
+            "description": f"### 📊 官方摘要重點\n**{numbers}**\n\n> 數值由官方摘要擷取，請以原始公告內容為準。",
             "color": 0xE74C3C,
-            "fields": [{"name": "發布時間", "value": local.strftime("%Y/%m/%d %H:%M（台灣時間）"), "inline": True},
-                       {"name": "資料來源", "value": source, "inline": False}],
-            "footer": {"text": "官方免費資料｜不含市場共識預期值｜不構成投資建議"}}
+            "fields": [{"name": "📌 事件類型", "value": item["rule"]["name"], "inline": True},
+                       {"name": "🕐 台灣時間", "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
+                       {"name": "🔗 官方原始資料", "value": source, "inline": False}],
+            "footer": {"text": "官方免費資料｜不含市場預期值｜僅供資訊參考，不構成投資建議"},
+            "timestamp": item["published"].isoformat()}
 
 
 def daily_embed(events: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
     local = now.astimezone(TAIPEI)
     today = [event for event in events if event["time"].astimezone(TAIPEI).date() == local.date()]
-    lines = [f"**{event['time'].astimezone(TAIPEI):%H:%M}**　{event['rule']['name']} ⭐⭐⭐⭐⭐\n{event['rule']['source']}"
+    lines = [f"`{event['time'].astimezone(TAIPEI):%H:%M}`　**{event['rule']['name']}**\n└ {event['rule']['source']}"
              for event in sorted(today, key=lambda event: event["time"])]
-    return {"title": f"📅 {local:%Y/%m/%d} 今日重要美國經濟事件",
-            "description": "\n\n".join(lines) if lines else "BLS 今日沒有符合條件的最高重要度事件。",
+    return {"author": {"name": "US MACRO WATCH｜每日行事曆"},
+            "title": f"📅 今日重要事件｜{local:%Y/%m/%d}",
+            "description": "\n\n".join(lines) if lines else "✅ 今日暫無符合條件的最高重要度事件。",
             "color": 0x3498DB,
-            "footer": {"text": "Asia/Taipei｜BLS 官方行事曆"}}
+            "fields": [{"name": "🌏 時區", "value": "Asia/Taipei（台灣時間）", "inline": True},
+                       {"name": "⭐ 重要度", "value": "最高關注", "inline": True}],
+            "footer": {"text": "BLS 官方行事曆｜僅供資訊參考，不構成投資建議"},
+            "timestamp": now.isoformat()}
 
 
 def load_state() -> dict[str, Any]:
