@@ -183,6 +183,15 @@ def daily_embed(events: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
             "timestamp": now.isoformat()}
 
 
+def health_embed(title: str, description: str, color: int = 0xF1C40F) -> dict[str, Any]:
+    return {"author": {"name": "US MACRO WATCH｜系統監控"},
+            "title": title,
+            "description": description[:3800],
+            "color": color,
+            "footer": {"text": "自動健康監控｜相同來源異常每日最多通知一次"},
+            "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
 def load_state() -> dict[str, Any]:
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -200,12 +209,14 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
     if not webhook and not dry_run:
         raise RuntimeError("缺少 DISCORD_WEBHOOK_URL")
     webhook = webhook or "https://discord.invalid/webhook"
+    source_errors: list[str] = []
     try:
         calendar = parse_bls_calendar(http_text(BLS_CALENDAR_URL))
     except Exception as exc:
         # BLS occasionally rejects GitHub-hosted runners with HTTP 403.  A
         # temporary calendar outage must not stop release-feed notifications.
         print(f"警告：BLS 官方行事曆暫時無法讀取：{exc}", file=sys.stderr)
+        source_errors.append(f"BLS 行事曆：{type(exc).__name__} / {exc}")
         calendar = []
     releases: list[dict[str, Any]] = []
     for provider, url in OFFICIAL_FEEDS:
@@ -213,10 +224,21 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
             releases.extend(parse_feed(http_text(url), url, provider))
         except Exception as exc:
             print(f"警告：{provider} 官方來源暫時無法讀取：{exc}", file=sys.stderr)
+            source_errors.append(f"{provider}：{type(exc).__name__} / {exc}")
     state = load_state()
     sent = state.setdefault("sent", {})
     digests = state.setdefault("digests", [])
+    health_alerts = state.setdefault("health_alerts", {})
     local = now.astimezone(TAIPEI)
+    health_key = f"sources:{local:%Y-%m-%d}"
+    log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
+    if source_errors and log_webhook and health_key not in health_alerts:
+        details = "\n".join(f"• {error}" for error in source_errors)
+        try:
+            send_discord(log_webhook, health_embed("🟡 官方來源讀取異常", details), dry_run)
+            health_alerts[health_key] = local.date().isoformat()
+        except Exception as exc:
+            print(f"警告：健康監控通知無法送出：{exc}", file=sys.stderr)
     digest_key = local.strftime("%Y-%m-%d")
     if (force_digest or local.hour >= 7) and digest_key not in digests:
         send_discord(webhook, daily_embed(calendar, now), dry_run)
@@ -236,6 +258,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
     cutoff = (now - timedelta(days=45)).date().isoformat()
     state["sent"] = {key: date for key, date in sent.items() if date >= cutoff}
     state["digests"] = [date for date in digests if date >= cutoff]
+    state["health_alerts"] = {key: date for key, date in health_alerts.items() if date >= cutoff}
     if not dry_run:
         save_state(state)
     return len(calendar), len(releases)
@@ -263,6 +286,13 @@ def main() -> int:
             embed["title"] = "🧪 測試通知｜美國消費者物價指數（CPI）"
             embed["description"] = "### 📊 模擬官方摘要重點\n**年增率（YoY）**　3.0%\n**月增率（MoM）**　0.2%\n\n> 這是版面測試訊息，並非真實最新數據。"
             send_discord(webhook, embed, False)
+            log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
+            if log_webhook:
+                send_discord(log_webhook, health_embed(
+                    "✅ 健康監控測試成功",
+                    "測試通知已成功執行，GitHub Actions、Discord Webhook 與通知程式皆可正常運作。",
+                    0x2ECC71,
+                ), False)
             print("完成：已送出 Discord 測試通知")
             return 0
         calendar_count, release_count = run(datetime.now(timezone.utc), args.dry_run, args.digest)
