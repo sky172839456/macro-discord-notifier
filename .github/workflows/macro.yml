@@ -34,6 +34,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python notifier.py --test-notification
@@ -47,3 +48,30 @@ jobs:
         with:
           path: .state
           key: macro-state-${{ github.run_id }}
+
+      - name: Report workflow failure
+        if: failure()
+        env:
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+
+          webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
+          if webhook:
+              payload = {
+                  "username": "美國總經通知｜系統監控",
+                  "embeds": [{
+                      "title": "🔴 GitHub Actions 執行失敗",
+                      "description": f"請查看執行紀錄：\n{os.environ['RUN_URL']}",
+                      "color": 0xE74C3C,
+                  }],
+              }
+              request = Request(webhook, data=json.dumps(payload).encode("utf-8"),
+                                headers={"Content-Type": "application/json"}, method="POST")
+              with urlopen(request, timeout=20):
+                  pass
+          PY
