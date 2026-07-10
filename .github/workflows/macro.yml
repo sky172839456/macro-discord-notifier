@@ -64,7 +64,7 @@ jobs:
           webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
           if webhook:
               payload = {
-                  "username": "美國總經通知｜系統監控",
+                  "username": "美國總經雷達｜系統監控",
                   "embeds": [{
                       "title": "🔴 GitHub Actions 執行失敗",
                       "description": f"請查看執行紀錄：\n{os.environ['RUN_URL']}",

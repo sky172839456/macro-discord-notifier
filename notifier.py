@@ -249,7 +249,7 @@ def format_metrics(summary: str, event_key: str) -> str:
 
 
 def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
-    payload = {"username": "美國總經通知", "embeds": [embed], "allowed_mentions": {"parse": []}}
+    payload = {"username": "美國總經雷達", "embeds": [embed], "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return

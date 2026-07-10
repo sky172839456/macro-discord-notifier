@@ -1,4 +1,4 @@
-# Discord 美國總經通知（官方免費版）
+# Discord 美國總經雷達（官方免費版）
 
 免費追蹤 CPI、PPI、非農、失業率、GDP、FOMC 與 Powell 談話。只使用 BLS、BEA、Federal Reserve 官方來源，不需要 TradingEconomics 或 AI API Key。
 
