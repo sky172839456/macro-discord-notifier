@@ -37,6 +37,7 @@ jobs:
           DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python notifier.py --source-check
             python notifier.py --test-notification
           else
             python notifier.py
