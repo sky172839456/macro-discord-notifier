@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
-from config import BLS_CALENDAR_URL, EVENT_RULES, OFFICIAL_FEEDS, PRE_ALERT_MINUTES, PRE_ALERT_WINDOW_MINUTES, TAIPEI_ZONE
+from config import BLS_CALENDAR_URL, EVENT_RULES, MARKET_INTERPRETATIONS, OFFICIAL_FEEDS, PRE_ALERT_MINUTES, PRE_ALERT_WINDOW_MINUTES, TAIPEI_ZONE
 
 STATE_FILE = Path(os.getenv("STATE_FILE", ".state/notified.json"))
 NY = ZoneInfo("America/New_York")
@@ -149,6 +149,7 @@ def release_embed(item: dict[str, Any]) -> dict[str, Any]:
             "color": 0xE74C3C,
             "fields": [{"name": "📌 事件類型", "value": item["rule"]["name"], "inline": True},
                        {"name": "🕐 台灣時間", "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
+                       {"name": "🧭 市場解讀參考", "value": MARKET_INTERPRETATIONS.get(item["rule"]["key"], "請綜合市場預期與官方完整內容判讀。"), "inline": False},
                        {"name": "🔗 官方原始資料", "value": source, "inline": False}],
             "footer": {"text": "官方免費資料｜不含市場預期值｜僅供資訊參考，不構成投資建議"},
             "timestamp": item["published"].isoformat()}
@@ -163,8 +164,7 @@ def daily_embed(events: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
             "title": f"📅 今日重要事件｜{local:%Y/%m/%d}",
             "description": "\n\n".join(lines) if lines else "✅ 今日暫無符合條件的最高重要度事件。",
             "color": 0x3498DB,
-            "fields": [{"name": "🌏 時區", "value": "Asia/Taipei（台灣時間）", "inline": True},
-                       {"name": "⭐ 重要度", "value": "最高關注", "inline": True}],
+            "fields": [{"name": "🌏 時區", "value": "Asia/Taipei（台灣時間）", "inline": True}],
             "footer": {"text": "BLS 官方行事曆｜僅供資訊參考，不構成投資建議"},
             "timestamp": now.isoformat()}
 
