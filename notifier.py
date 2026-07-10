@@ -114,6 +114,20 @@ def extract_numbers(summary: str) -> str:
     return "、".join(matches[:4]) if matches else "請開啟官方公告查看完整數據"
 
 
+def format_metrics(summary: str, event_key: str) -> str:
+    """Add human-readable labels to values extracted from official summaries."""
+    clean = re.sub(r"<[^>]+>", " ", html.unescape(summary))
+    values = re.findall(r"[-+]?\d[\d,.]*\s*(?:percent|%)", clean, flags=re.I)
+    values = [re.sub(r"\s*percent$", "%", value, flags=re.I) for value in values]
+    if event_key in {"cpi", "ppi"} and len(values) >= 2:
+        # BLS CPI/PPI summary convention lists the monthly change first and
+        # the 12-month change second.
+        return f"**月增率（MoM）**　{values[0]}\n**年增率（YoY）**　{values[1]}"
+    if event_key == "gdp" and values:
+        return f"**GDP 年化季增率**　{values[0]}"
+    return extract_numbers(summary)
+
+
 def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
     payload = {"username": "美國總經通知", "embeds": [embed], "allowed_mentions": {"parse": []}}
     if dry_run:
@@ -142,7 +156,7 @@ def pre_embed(event: dict[str, Any]) -> dict[str, Any]:
 def release_embed(item: dict[str, Any]) -> dict[str, Any]:
     local = item["published"].astimezone(TAIPEI)
     source = item["url"] or item["rule"]["source"]
-    numbers = extract_numbers(item["summary"])
+    numbers = format_metrics(item["summary"], item["rule"]["key"])
     return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
             "title": f"🔴 最新公布｜{item['rule']['name']}",
             "description": f"### 📊 官方摘要重點\n**{numbers}**\n\n> 數值由官方摘要擷取，請以原始公告內容為準。",
@@ -247,7 +261,7 @@ def main() -> int:
             }
             embed = release_embed(sample)
             embed["title"] = "🧪 測試通知｜美國消費者物價指數（CPI）"
-            embed["description"] = "### 📊 模擬官方摘要重點\n**3.0%、0.2%**\n\n> 這是版面測試訊息，並非真實最新數據。"
+            embed["description"] = "### 📊 模擬官方摘要重點\n**年增率（YoY）**　3.0%\n**月增率（MoM）**　0.2%\n\n> 這是版面測試訊息，並非真實最新數據。"
             send_discord(webhook, embed, False)
             print("完成：已送出 Discord 測試通知")
             return 0
