@@ -231,8 +231,26 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--digest", action="store_true")
+    parser.add_argument("--test-notification", action="store_true")
     args = parser.parse_args()
     try:
+        if args.test_notification:
+            webhook = os.environ.get("DISCORD_WEBHOOK_URL")
+            if not webhook:
+                raise RuntimeError("缺少 DISCORD_WEBHOOK_URL")
+            now = datetime.now(timezone.utc)
+            sample = {
+                "published": now,
+                "summary": "The Consumer Price Index increased 0.2 percent and 3.0 percent over the last 12 months.",
+                "url": "https://www.bls.gov/cpi/",
+                "rule": next(rule for rule in EVENT_RULES if rule["key"] == "cpi"),
+            }
+            embed = release_embed(sample)
+            embed["title"] = "🧪 測試通知｜美國消費者物價指數（CPI）"
+            embed["description"] = "### 📊 模擬官方摘要重點\n**3.0%、0.2%**\n\n> 這是版面測試訊息，並非真實最新數據。"
+            send_discord(webhook, embed, False)
+            print("完成：已送出 Discord 測試通知")
+            return 0
         calendar_count, release_count = run(datetime.now(timezone.utc), args.dry_run, args.digest)
         print(f"完成：行事曆 {calendar_count} 筆，官方更新 {release_count} 筆")
         return 0
