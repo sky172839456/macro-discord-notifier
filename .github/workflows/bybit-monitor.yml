@@ -1,0 +1,28 @@
+name: Bybit Listing Monitor
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: .state/bybit-announcements.json
+          key: bybit-state-${{ github.run_id }}
+          restore-keys: bybit-state-
+      - env:
+          DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
+        run: python bybit_notifier.py ${{ github.event_name == 'workflow_dispatch' && '--test' || '' }}
+      - if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/bybit-announcements.json
+          key: bybit-state-${{ github.run_id }}
