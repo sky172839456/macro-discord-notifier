@@ -1,0 +1,35 @@
+name: Stablecoin and Exchange Risk Monitor
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: .state/risk-monitor.json
+          key: risk-state-${{ github.run_id }}
+          restore-keys: risk-state-
+      - name: Monitor or show test templates
+        env:
+          DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python risk_notifier.py --test-templates
+          else
+            python risk_notifier.py
+          fi
+      - if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/risk-monitor.json
+          key: risk-state-${{ github.run_id }}
