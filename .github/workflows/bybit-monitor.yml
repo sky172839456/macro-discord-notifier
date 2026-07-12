@@ -1,4 +1,4 @@
-name: Bybit Listing Monitor
+name: Exchange Listing Monitor
 on:
   schedule:
     - cron: "*/10 * * * *"
@@ -15,14 +15,14 @@ jobs:
           python-version: "3.12"
       - uses: actions/cache/restore@v4
         with:
-          path: .state/bybit-announcements.json
-          key: bybit-state-${{ github.run_id }}
-          restore-keys: bybit-state-
+          path: .state/exchange-listings.json
+          key: exchange-listing-state-${{ github.run_id }}
+          restore-keys: exchange-listing-state-
       - env:
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
         run: python bybit_notifier.py ${{ github.event_name == 'workflow_dispatch' && '--test' || '' }}
       - if: always()
         uses: actions/cache/save@v4
         with:
-          path: .state/bybit-announcements.json
-          key: bybit-state-${{ github.run_id }}
+          path: .state/exchange-listings.json
+          key: exchange-listing-state-${{ github.run_id }}
