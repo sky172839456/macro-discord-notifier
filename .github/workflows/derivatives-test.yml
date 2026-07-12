@@ -1,6 +1,8 @@
 name: Derivatives Monitor Test
 
 on:
+  schedule:
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -17,7 +19,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Send live derivatives snapshot to test channel
+      - name: Restore derivatives state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/derivatives.json
+          key: derivatives-state-${{ github.run_id }}
+          restore-keys: derivatives-state-
+
+      - name: Monitor derivatives or show test templates
         env:
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
-        run: python derivatives_notifier.py
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python derivatives_notifier.py --test-templates
+          else
+            python derivatives_notifier.py
+          fi
+
+      - name: Save derivatives state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/derivatives.json
+          key: derivatives-state-${{ github.run_id }}
