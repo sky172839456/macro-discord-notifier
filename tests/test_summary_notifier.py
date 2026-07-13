@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from summary_notifier import build_embed, market_lines
+from summary_notifier import build_embed, event_lines, market_lines
 
 
 class SummaryNotifierTests(unittest.TestCase):
@@ -17,6 +17,11 @@ class SummaryNotifierTests(unittest.TestCase):
         values = "\n".join(field["value"] for field in embed["fields"])
         self.assertIn("來源失敗", values)
         self.assertIn("行事曆失敗", values)
+
+    def test_calendar_failure_uses_friendly_copy(self):
+        text = event_lines([], "本次未取得符合條件的官方行事曆事件，系統將於下次排程自動更新。", "")
+        self.assertIn("下次排程自動更新", text)
+        self.assertNotIn("HTTPError", text)
 
 
 if __name__ == "__main__":
