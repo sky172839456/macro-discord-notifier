@@ -272,9 +272,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.test_notification:
-            webhook = os.environ.get("DISCORD_TEST_WEBHOOK_URL") or os.environ.get("DISCORD_WEBHOOK_URL")
+            webhook = os.environ.get("DISCORD_TEST_WEBHOOK_URL")
             if not webhook:
-                raise RuntimeError("缺少 DISCORD_TEST_WEBHOOK_URL 或 DISCORD_WEBHOOK_URL")
+                raise RuntimeError("缺少 DISCORD_TEST_WEBHOOK_URL；測試通知禁止改送正式頻道")
             now = datetime.now(timezone.utc)
             sample = {
                 "published": now,
