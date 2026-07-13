@@ -16,11 +16,6 @@ on:
         options:
           - daily
           - weekly
-      send_live:
-        description: Send real data to the configured summary channel
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -43,17 +38,15 @@ jobs:
         env:
           DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
           DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL }}
+          DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ inputs.send_live }}" = "true" ]; then
+            DISCORD_DAILY_SUMMARY_WEBHOOK_URL="$DISCORD_TEST_WEBHOOK_URL" \
+            DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL="$DISCORD_TEST_WEBHOOK_URL" \
               python summary_notifier.py --period "${{ inputs.period }}"
-            else
-              python summary_notifier.py --period "${{ inputs.period }}" --dry-run
-            fi
           elif [ "${{ github.event.schedule }}" = "15 23 * * 0" ]; then
             python summary_notifier.py --period weekly
           else
             python summary_notifier.py --period daily
           fi
-
