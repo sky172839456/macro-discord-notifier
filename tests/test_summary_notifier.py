@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from summary_notifier import build_embed, event_lines, market_lines, parse_bls_month_page, parse_fair_economy_calendar
+from summary_notifier import build_embed, event_display_name, event_lines, market_lines, parse_bls_month_page, parse_fair_economy_calendar
 
 
 class SummaryNotifierTests(unittest.TestCase):
@@ -43,6 +43,15 @@ class SummaryNotifierTests(unittest.TestCase):
             {"title": "FOMC Member Waller Speaks", "country": "USD", "date": "2026-07-14T10:00:00-04:00"}
         ])
         self.assertEqual(events[0]["rule"]["key"], "fed_official")
+
+    def test_fed_speaker_keeps_name_and_original_title(self):
+        events = parse_fair_economy_calendar([
+            {"country": "USD", "title": "FOMC Member Barr Speaks", "date": "2026-07-13T09:25:00-04:00"},
+        ])
+        self.assertEqual(
+            event_display_name(events[0]),
+            "聯準會官員 Barr 發言（FOMC Member Barr Speaks）",
+        )
 
 
 if __name__ == "__main__":
