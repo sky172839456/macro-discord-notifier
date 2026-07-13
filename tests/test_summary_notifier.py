@@ -38,7 +38,12 @@ class SummaryNotifierTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["rule"]["key"], "cpi")
 
+    def test_fomc_speaker_is_not_policy_decision(self):
+        events = parse_fair_economy_calendar([
+            {"title": "FOMC Member Waller Speaks", "country": "USD", "date": "2026-07-14T10:00:00-04:00"}
+        ])
+        self.assertEqual(events[0]["rule"]["key"], "fed_official")
+
 
 if __name__ == "__main__":
     unittest.main()
-
