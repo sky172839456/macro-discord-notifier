@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from summary_notifier import build_embed, event_lines, market_lines
+from summary_notifier import build_embed, event_lines, market_lines, parse_bls_month_page
 
 
 class SummaryNotifierTests(unittest.TestCase):
@@ -19,9 +19,16 @@ class SummaryNotifierTests(unittest.TestCase):
         self.assertIn("行事曆失敗", values)
 
     def test_calendar_failure_uses_friendly_copy(self):
-        text = event_lines([], "本次未取得符合條件的官方行事曆事件，系統將於下次排程自動更新。", "")
-        self.assertIn("下次排程自動更新", text)
+        text = event_lines([], "官方行事曆目前未完成同步，系統將於下次排程自動重試。", "")
+        self.assertIn("下次排程自動重試", text)
         self.assertNotIn("HTTPError", text)
+
+    def test_monthly_official_page_fallback(self):
+        html = """<table><tr><td>Consumer Price Index for June 2026</td>
+        <td>Tuesday, July 14, 2026</td><td>08:30 AM</td></tr></table>"""
+        events = parse_bls_month_page(html)
+        self.assertEqual(events[0]["rule"]["key"], "cpi")
+        self.assertEqual(events[0]["time"].hour, 12)
 
 
 if __name__ == "__main__":
