@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
@@ -18,6 +19,10 @@ from notifier import http_text, parse_bls_calendar
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
 COINGECKO_SIMPLE = "https://api.coingecko.com/api/v3/simple/price"
 COINGECKO_HISTORY = "https://api.coingecko.com/api/v3/coins/{coin}/market_chart"
+BLS_CALENDAR_MIRRORS = (
+    BLS_CALENDAR_URL,
+    f"{BLS_CALENDAR_URL}?download=1",
+)
 
 
 def http_json(url: str) -> Any:
@@ -52,10 +57,22 @@ def weekly_market() -> dict[str, dict[str, float]]:
 
 
 def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str | None]:
-    try:
-        events = parse_bls_calendar(http_text(BLS_CALENDAR_URL))
-    except Exception as exc:
-        return [], f"BLS 行事曆暫時無法取得（{type(exc).__name__}）"
+    events: list[dict[str, Any]] = []
+    # BLS occasionally rejects requests from shared cloud IPs. Try the official
+    # calendar endpoint more than once, then its official download variant.
+    for url in BLS_CALENDAR_MIRRORS:
+        for attempt in range(2):
+            try:
+                events = parse_bls_calendar(http_text(url))
+                if events:
+                    break
+            except Exception:
+                if attempt == 0:
+                    time.sleep(1)
+        if events:
+            break
+    if not events:
+        return [], "本次未取得符合條件的官方行事曆事件，系統將於下次排程自動更新。"
     end = now + timedelta(days=days)
     return sorted((event for event in events if now <= event["time"] < end), key=lambda item: item["time"]), None
 
@@ -73,7 +90,7 @@ def market_lines(market: dict[str, dict[str, float]] | None, error: str | None) 
 
 def event_lines(events: list[dict[str, Any]], error: str | None, empty: str) -> str:
     if error:
-        return f"⚠️ {error}"
+        return f"🗓️ {error}"
     if not events:
         return empty
     return "\n".join(
@@ -94,7 +111,7 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
         "fields": [
             {"name": "📊 BTC／ETH 市場概況", "value": market_lines(market, market_error), "inline": False},
             {"name": "🗓️ 今日重要總經事件" if daily else "🗓️ 未來七日總經事件",
-             "value": event_lines(events, event_error, "✅ 目前沒有符合條件的 BLS 重要事件。"), "inline": False},
+             "value": event_lines(events, event_error, "✅ 目前沒有符合條件的官方重要事件。"), "inline": False},
             {"name": "🔎 閱讀方式", "value": "漲跌幅僅描述價格變化，不等同交易訊號；重大事件前後請留意流動性與滑價。", "inline": False},
             {"name": "🔗 原始資料", "value": "https://www.coingecko.com/\nhttps://www.bls.gov/schedule/news_release/", "inline": False},
         ],
