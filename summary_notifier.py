@@ -26,6 +26,10 @@ BLS_CALENDAR_MIRRORS = (
     BLS_CALENDAR_URL,
     f"{BLS_CALENDAR_URL}?download=1",
 )
+FAIR_ECONOMY_CALENDARS = (
+    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+    "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+)
 
 
 class BLSMonthlyParser(HTMLParser):
@@ -91,6 +95,51 @@ def official_calendar_fallback(now: datetime, days: int) -> list[dict[str, Any]]
     return events
 
 
+def parse_fair_economy_calendar(data: Any) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for item in data if isinstance(data, list) else []:
+        if str(item.get("country", "")).upper() != "USD":
+            continue
+        title = str(item.get("title", ""))
+        aliases = {
+            "cpi": "consumer price index",
+            "ppi": "producer price index",
+            "non-farm": "employment situation",
+            "unemployment rate": "employment situation",
+            "advance gdp": "gross domestic product",
+            "final gdp": "gross domestic product",
+            "prelim gdp": "gross domestic product",
+            "fomc": "fomc monetary policy statement",
+        }
+        expanded = title + " " + " ".join(value for key, value in aliases.items() if key in title.lower())
+        rule = classify(expanded)
+        if not rule:
+            continue
+        try:
+            event_time = datetime.fromisoformat(str(item["date"]).replace("Z", "+00:00"))
+            if event_time.tzinfo is None:
+                event_time = event_time.replace(tzinfo=NY)
+        except (KeyError, ValueError):
+            continue
+        events.append({
+            "id": hashlib.sha256(f"{title}|{event_time.isoformat()}".encode()).hexdigest(),
+            "title": title,
+            "time": event_time.astimezone(timezone.utc),
+            "rule": rule,
+        })
+    return events
+
+
+def public_calendar_fallback() -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for url in FAIR_ECONOMY_CALENDARS:
+        try:
+            events.extend(parse_fair_economy_calendar(http_json(url)))
+        except Exception:
+            continue
+    return events
+
+
 def http_json(url: str) -> Any:
     request = Request(url, headers={"User-Agent": "macro-discord-notifier/3.0"})
     with urlopen(request, timeout=30) as response:
@@ -139,6 +188,8 @@ def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str
             break
     if not events:
         events = official_calendar_fallback(now, days)
+    if not events:
+        events = public_calendar_fallback()
     if not events:
         return [], "官方行事曆目前未完成同步，系統將於下次排程自動重試。"
     end = now + timedelta(days=days)
