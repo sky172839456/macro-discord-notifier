@@ -15,7 +15,8 @@ EVENT_RULES = (
     {"key": "jobs", "keywords": ("employment situation",), "name": "美國非農就業與失業率", "source": "https://www.bls.gov/news.release/empsit.htm"},
     {"key": "gdp", "keywords": ("gross domestic product", "gdp (", "gdp:"), "name": "美國國內生產毛額（GDP）", "source": "https://www.bea.gov/data/gdp/gross-domestic-product"},
     {"key": "fomc", "keywords": ("federal open market committee", "fomc", "monetary policy statement"), "name": "美國聯準會 FOMC 公告", "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"},
-    {"key": "powell", "keywords": ("jerome h. powell", "chair powell", "powell"), "name": "聯準會主席 Powell 談話", "source": "https://www.federalreserve.gov/newsevents/calendar.htm"},
+    {"key": "powell", "keywords": ("jerome h. powell", "chair powell", "governor powell", "powell"), "name": "Jerome Powell 談話", "source": "https://www.federalreserve.gov/newsevents/calendar.htm"},
+    {"key": "fed_official", "keywords": ("chairman ", "chair ", "vice chair", "governor "), "name": "聯準會重要官員談話", "source": "https://www.federalreserve.gov/newsevents/speeches-testimony.htm"},
 )
 
 TAIPEI_ZONE = "Asia/Taipei"
@@ -28,5 +29,6 @@ MARKET_INTERPRETATIONS = {
     "jobs": "若就業明顯降溫，可能提高降息期待，但過度疲弱也可能引發衰退疑慮；若就業過熱，利率可能維持高檔更久。",
     "gdp": "若經濟成長優於預期，通常反映經濟韌性，但也可能降低短期降息機率；若明顯低於預期，須留意衰退風險。",
     "fomc": "措辭偏寬鬆或暗示降息，通常有利風險資產；措辭偏鷹或暗示利率維持高檔，可能使美股與加密資產承壓。",
-    "powell": "市場將聚焦 Powell 對通膨、就業與利率路徑的表態；偏寬鬆訊號通常有利風險資產，偏鷹訊號則可能帶來壓力。",
+    "powell": "市場將聚焦 Powell 對通膨、就業與利率路徑的表態；偏寬鬆訊號通常有利風險資產，偏鷹訊號則可能帶來壓力。請以活動當下的官方職稱與完整上下文為準。",
+    "fed_official": "市場將聚焦官員對通膨、就業、利率路徑與金融穩定的表態；請依官方當下職稱、完整講稿與市場原先預期綜合判讀。",
 }
