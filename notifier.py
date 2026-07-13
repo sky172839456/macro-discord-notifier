@@ -9,7 +9,6 @@ import json
 import os
 import re
 import sys
-import time
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -24,131 +23,12 @@ from config import BLS_CALENDAR_URL, EVENT_RULES, MARKET_INTERPRETATIONS, OFFICI
 STATE_FILE = Path(os.getenv("STATE_FILE", ".state/notified.json"))
 NY = ZoneInfo("America/New_York")
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
-BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
-BLS_API_GROUPS = {
-    "cpi": ("CUSR0000SA0", "CUUR0000SA0"),
-    "ppi": ("WPSFD4", "WPUFD4"),
-    "jobs": ("CES0000000001", "LNS14000000"),
-}
 
 
-HTTP_HEADERS = {
-    # BLS rejects some datacenter requests that identify themselves as bots.
-    # These headers match a normal read-only browser request to its public pages.
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/126.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/rss+xml, application/xml, text/calendar, text/html;q=0.9, */*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Cache-Control": "no-cache",
-    "Referer": "https://www.bls.gov/",
-}
-
-
-def http_text(url: str, attempts: int = 3) -> str:
-    """Read a public official source with bounded retry for transient failures."""
-
-    last_error: Exception | None = None
-    for attempt in range(attempts):
-        try:
-            request = Request(url, headers=HTTP_HEADERS)
-            with urlopen(request, timeout=30) as response:
-                return response.read().decode(
-                    response.headers.get_content_charset() or "utf-8",
-                    errors="replace",
-                )
-        except Exception as exc:
-            last_error = exc
-            if attempt + 1 < attempts:
-                time.sleep(2 ** attempt)
-
-    assert last_error is not None
-    raise last_error
-
-
-def http_json_post(url: str, payload: dict[str, Any]) -> dict[str, Any]:
-    request = Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": HTTP_HEADERS["User-Agent"]},
-        method="POST",
-    )
+def http_text(url: str) -> str:
+    request = Request(url, headers={"User-Agent": "macro-discord-notifier/2.0 (official sources)"})
     with urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[str, Any]]:
-    """Use the official BLS API when its calendar/RSS blocks GitHub runners.
-
-    The first successful call establishes a baseline. Later changed reference
-    periods create one deduplicated release item per tracked event.
-    """
-
-    series_ids = [series_id for ids in BLS_API_GROUPS.values() for series_id in ids]
-    response = http_json_post(
-        BLS_API_URL,
-        {"seriesid": series_ids, "startyear": str(now.year - 1), "endyear": str(now.year)},
-    )
-    if response.get("status") != "REQUEST_SUCCEEDED":
-        raise RuntimeError("BLS API request failed: " + "; ".join(response.get("message", [])))
-
-    series = {item["seriesID"]: item.get("data", []) for item in response["Results"]["series"]}
-    observations = state.setdefault("bls_api", {})
-    releases: list[dict[str, Any]] = []
-
-    for event_key, ids in BLS_API_GROUPS.items():
-        datasets = [series.get(series_id, []) for series_id in ids]
-        latest = []
-        for values in datasets:
-            if not values:
-                latest = []
-                break
-            latest.append(values[0])
-        if not latest:
-            continue
-
-        reference = f"{latest[0]['year']}-{latest[0]['period']}"
-        signature = hashlib.sha256(
-            "|".join(f"{item['year']}:{item['period']}:{item['value']}" for item in latest).encode()
-        ).hexdigest()[:20]
-        previous = observations.get(event_key)
-        observations[event_key] = {"reference": reference, "signature": signature}
-        if previous is None or previous.get("signature") == signature:
-            continue
-
-        rule = next(rule for rule in EVENT_RULES if rule["key"] == event_key)
-        values = [item["value"] for item in latest]
-        if event_key in {"cpi", "ppi"}:
-            monthly = datasets[0]
-            annual = datasets[1]
-            monthly_change = (float(monthly[0]["value"]) / float(monthly[1]["value"]) - 1) * 100
-            prior_year = next(
-                (item for item in annual if item["period"] == annual[0]["period"] and int(item["year"]) == int(annual[0]["year"]) - 1),
-                None,
-            )
-            annual_change = (
-                (float(annual[0]["value"]) / float(prior_year["value"]) - 1) * 100
-                if prior_year else None
-            )
-            summary = f"The index changed {monthly_change:.1f} percent"
-            if annual_change is not None:
-                summary += f" and {annual_change:.1f} percent over the last 12 months"
-            summary += "."
-        else:
-            payroll_change = float(datasets[0][0]["value"]) - float(datasets[0][1]["value"])
-            summary = f"Payroll employment changed {payroll_change:+.0f} thousand; unemployment rate {values[1]} percent."
-        releases.append({
-            "id": f"bls-api-{event_key}-{reference}-{signature}",
-            "title": rule["name"],
-            "summary": summary,
-            "url": rule["source"],
-            "published": now,
-            "rule": rule,
-        })
-
-    return releases
+        return response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
 
 
 def classify(text: str) -> dict[str, Any] | None:
@@ -211,7 +91,7 @@ def parse_feed(source: str, base_url: str, provider: str) -> list[dict[str, Any]
         title = element_text(entry.find("title")) or element_text(entry.find("{http://www.w3.org/2005/Atom}title"))
         description = element_text(entry.find("description")) or element_text(entry.find("{http://www.w3.org/2005/Atom}summary"))
         rule = classify(f"{title} {description}")
-        if not rule or (rule["key"] == "powell" and provider != "FED_SPEECH"):
+        if not rule or (rule["key"] in {"powell", "fed_official"} and provider != "FED_SPEECH"):
             continue
         link_node = entry.find("link")
         if link_node is None:
@@ -249,7 +129,7 @@ def format_metrics(summary: str, event_key: str) -> str:
 
 
 def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
-    payload = {"username": "美國總經雷達", "embeds": [embed], "allowed_mentions": {"parse": []}}
+    payload = {"username": "美國總經通知", "embeds": [embed], "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -329,7 +209,6 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
     if not webhook and not dry_run:
         raise RuntimeError("缺少 DISCORD_WEBHOOK_URL")
     webhook = webhook or "https://discord.invalid/webhook"
-    state = load_state()
     source_errors: list[str] = []
     try:
         calendar = parse_bls_calendar(http_text(BLS_CALENDAR_URL))
@@ -344,16 +223,9 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
         try:
             releases.extend(parse_feed(http_text(url), url, provider))
         except Exception as exc:
-            if provider == "BLS":
-                try:
-                    api_releases = fetch_bls_api_releases(now, state)
-                    releases.extend(api_releases)
-                    print(f"BLS RSS 無法讀取，官方 API 備援成功（{len(api_releases)} 筆更新）")
-                    continue
-                except Exception as api_exc:
-                    source_errors.append(f"BLS API 備援：{type(api_exc).__name__} / {api_exc}")
             print(f"警告：{provider} 官方來源暫時無法讀取：{exc}", file=sys.stderr)
             source_errors.append(f"{provider}：{type(exc).__name__} / {exc}")
+    state = load_state()
     sent = state.setdefault("sent", {})
     digests = state.setdefault("digests", [])
     health_alerts = state.setdefault("health_alerts", {})
@@ -397,26 +269,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--digest", action="store_true")
     parser.add_argument("--test-notification", action="store_true")
-    parser.add_argument("--source-check", action="store_true")
     args = parser.parse_args()
     try:
-        if args.source_check:
-            state = load_state()
-            counts = {}
-            try:
-                counts["BLS_CALENDAR"] = len(parse_bls_calendar(http_text(BLS_CALENDAR_URL)))
-            except Exception:
-                counts["BLS_CALENDAR"] = -1
-            for provider, url in OFFICIAL_FEEDS:
-                try:
-                    counts[provider] = len(parse_feed(http_text(url), url, provider))
-                except Exception:
-                    if provider != "BLS":
-                        raise
-                    fetch_bls_api_releases(datetime.now(timezone.utc), state)
-                    counts["BLS_API_FALLBACK"] = len(BLS_API_GROUPS)
-            print("官方來源檢查成功：" + ", ".join(f"{name}={count}" for name, count in counts.items()))
-            return 0
         if args.test_notification:
             webhook = os.environ.get("DISCORD_TEST_WEBHOOK_URL") or os.environ.get("DISCORD_WEBHOOK_URL")
             if not webhook:
