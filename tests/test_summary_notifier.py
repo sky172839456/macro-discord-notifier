@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from summary_notifier import build_embed, event_lines, market_lines, parse_bls_month_page
+from summary_notifier import build_embed, event_lines, market_lines, parse_bls_month_page, parse_fair_economy_calendar
 
 
 class SummaryNotifierTests(unittest.TestCase):
@@ -29,6 +29,14 @@ class SummaryNotifierTests(unittest.TestCase):
         events = parse_bls_month_page(html)
         self.assertEqual(events[0]["rule"]["key"], "cpi")
         self.assertEqual(events[0]["time"].hour, 12)
+
+    def test_public_calendar_fallback_filters_us_events(self):
+        events = parse_fair_economy_calendar([
+            {"title": "CPI m/m", "country": "USD", "date": "2026-07-14T08:30:00-04:00"},
+            {"title": "CPI m/m", "country": "CAD", "date": "2026-07-14T08:30:00-04:00"},
+        ])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["rule"]["key"], "cpi")
 
 
 if __name__ == "__main__":
