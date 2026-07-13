@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from config import BLS_CALENDAR_URL, TAIPEI_ZONE
-from notifier import http_text, parse_bls_calendar
+from notifier import NY, classify, http_text, parse_bls_calendar
 
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
 COINGECKO_SIMPLE = "https://api.coingecko.com/api/v3/simple/price"
@@ -23,6 +26,69 @@ BLS_CALENDAR_MIRRORS = (
     BLS_CALENDAR_URL,
     f"{BLS_CALENDAR_URL}?download=1",
 )
+
+
+class BLSMonthlyParser(HTMLParser):
+    """Collect text from BLS monthly schedule table rows."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_row = False
+        self.parts: list[str] = []
+        self.rows: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "tr":
+            self.in_row, self.parts = True, []
+
+    def handle_data(self, data: str) -> None:
+        if self.in_row and data.strip():
+            self.parts.append(data.strip())
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "tr" and self.in_row:
+            self.rows.append(" ".join(self.parts))
+            self.in_row = False
+
+
+def parse_bls_month_page(source: str) -> list[dict[str, Any]]:
+    parser = BLSMonthlyParser()
+    parser.feed(source)
+    events: list[dict[str, Any]] = []
+    pattern = re.compile(
+        r"(?P<date>(?:Monday|Tuesday|Wednesday|Thursday|Friday),\s+"
+        r"(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+"
+        r"\d{1,2},\s+\d{4})\s+(?P<time>\d{1,2}:\d{2}\s+[AP]M)", re.I
+    )
+    for row in parser.rows:
+        rule = classify(row)
+        match = pattern.search(row)
+        if not rule or not match:
+            continue
+        local = datetime.strptime(
+            f"{match.group('date')} {match.group('time')}", "%A, %B %d, %Y %I:%M %p"
+        ).replace(tzinfo=NY)
+        events.append({
+            "id": hashlib.sha256(row.encode("utf-8")).hexdigest(),
+            "title": row[:match.start()].strip(),
+            "time": local.astimezone(timezone.utc),
+            "rule": rule,
+        })
+    return events
+
+
+def official_calendar_fallback(now: datetime, days: int) -> list[dict[str, Any]]:
+    end = now + timedelta(days=days)
+    months = {(now.astimezone(NY).year, now.astimezone(NY).month),
+              (end.astimezone(NY).year, end.astimezone(NY).month)}
+    events: list[dict[str, Any]] = []
+    for year, month in sorted(months):
+        url = f"https://www.bls.gov/schedule/{year}/{month:02d}_sched_list.htm"
+        try:
+            events.extend(parse_bls_month_page(http_text(url)))
+        except Exception:
+            continue
+    return events
 
 
 def http_json(url: str) -> Any:
@@ -72,7 +138,9 @@ def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str
         if events:
             break
     if not events:
-        return [], "本次未取得符合條件的官方行事曆事件，系統將於下次排程自動更新。"
+        events = official_calendar_fallback(now, days)
+    if not events:
+        return [], "官方行事曆目前未完成同步，系統將於下次排程自動重試。"
     end = now + timedelta(days=days)
     return sorted((event for event in events if now <= event["time"] < end), key=lambda item: item["time"]), None
 
