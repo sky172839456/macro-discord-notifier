@@ -1,0 +1,59 @@
+name: Daily and Weekly Market Summaries
+
+on:
+  schedule:
+    # GitHub Actions uses UTC. 23:05 UTC = 07:05 Asia/Taipei.
+    - cron: "5 23 * * *"
+    # Sunday 23:15 UTC = Monday 07:15 Asia/Taipei.
+    - cron: "15 23 * * 0"
+  workflow_dispatch:
+    inputs:
+      period:
+        description: Summary to test
+        required: true
+        default: daily
+        type: choice
+        options:
+          - daily
+          - weekly
+      send_live:
+        description: Send real data to the configured summary channel
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-summaries
+  cancel-in-progress: false
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate or send summary
+        env:
+          DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
+          DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.send_live }}" = "true" ]; then
+              python summary_notifier.py --period "${{ inputs.period }}"
+            else
+              python summary_notifier.py --period "${{ inputs.period }}" --dry-run
+            fi
+          elif [ "${{ github.event.schedule }}" = "15 23 * * 0" ]; then
+            python summary_notifier.py --period weekly
+          else
+            python summary_notifier.py --period daily
+          fi
+
