@@ -200,9 +200,12 @@ def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str
     end = now + timedelta(days=days)
     filtered = sorted((event for event in events if now <= event["time"] < end), key=lambda item: item["time"])
     unique: list[dict[str, Any]] = []
-    seen: set[tuple[str, datetime]] = set()
+    seen: set[tuple[str, datetime, str]] = set()
     for event in filtered:
-        key = (event["rule"]["key"], event["time"].replace(second=0, microsecond=0))
+        # Different Fed officials can speak at the same time. Preserve their
+        # names/titles while still collapsing duplicated calendar entries.
+        identity = event["title"].strip().lower() if event["rule"]["key"] == "fed_official" else ""
+        key = (event["rule"]["key"], event["time"].replace(second=0, microsecond=0), identity)
         if key not in seen:
             seen.add(key)
             unique.append(event)
@@ -220,13 +223,23 @@ def market_lines(market: dict[str, dict[str, float]] | None, error: str | None) 
     return "\n".join(lines)
 
 
+def event_display_name(event: dict[str, Any]) -> str:
+    if event["rule"]["key"] != "fed_official":
+        return event["rule"]["name"]
+    title = re.sub(r"\s+", " ", str(event.get("title", "")).strip())
+    match = re.match(r"FOMC Member (.+?) Speaks(?:\b.*)?$", title, re.I)
+    if match:
+        return f"聯準會官員 {match.group(1)} 發言（{title}）"
+    return f"聯準會官員談話（{title}）" if title else event["rule"]["name"]
+
+
 def event_lines(events: list[dict[str, Any]], error: str | None, empty: str) -> str:
     if error:
         return f"🗓️ {error}"
     if not events:
         return empty
     return "\n".join(
-        f"• `{event['time'].astimezone(TAIPEI):%m/%d %H:%M}`　{event['rule']['name']}"
+        f"• `{event['time'].astimezone(TAIPEI):%m/%d %H:%M}`　{event_display_name(event)}"
         for event in events[:8]
     )
 
