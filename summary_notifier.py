@@ -109,9 +109,14 @@ def parse_fair_economy_calendar(data: Any) -> list[dict[str, Any]]:
             "advance gdp": "gross domestic product",
             "final gdp": "gross domestic product",
             "prelim gdp": "gross domestic product",
-            "fomc": "fomc monetary policy statement",
         }
-        expanded = title + " " + " ".join(value for key, value in aliases.items() if key in title.lower())
+        lower_title = title.lower()
+        if "fomc" in lower_title and any(word in lower_title for word in ("speaks", "speech", "member")):
+            expanded = "governor speaks"
+        elif "fomc" in lower_title:
+            expanded = title + " fomc monetary policy statement"
+        else:
+            expanded = title + " " + " ".join(value for key, value in aliases.items() if key in lower_title)
         rule = classify(expanded)
         if not rule:
             continue
@@ -193,7 +198,15 @@ def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str
     if not events:
         return [], "官方行事曆目前未完成同步，系統將於下次排程自動重試。"
     end = now + timedelta(days=days)
-    return sorted((event for event in events if now <= event["time"] < end), key=lambda item: item["time"]), None
+    filtered = sorted((event for event in events if now <= event["time"] < end), key=lambda item: item["time"])
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[str, datetime]] = set()
+    for event in filtered:
+        key = (event["rule"]["key"], event["time"].replace(second=0, microsecond=0))
+        if key not in seen:
+            seen.add(key)
+            unique.append(event)
+    return unique, None
 
 
 def market_lines(market: dict[str, dict[str, float]] | None, error: str | None) -> str:
@@ -232,7 +245,7 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
             {"name": "🗓️ 今日重要總經事件" if daily else "🗓️ 未來七日總經事件",
              "value": event_lines(events, event_error, "✅ 目前沒有符合條件的官方重要事件。"), "inline": False},
             {"name": "🔎 閱讀方式", "value": "漲跌幅僅描述價格變化，不等同交易訊號；重大事件前後請留意流動性與滑價。", "inline": False},
-            {"name": "🔗 原始資料", "value": "https://www.coingecko.com/\nhttps://www.bls.gov/schedule/news_release/", "inline": False},
+            {"name": "🔗 原始資料", "value": "https://www.coingecko.com/\nhttps://www.forexfactory.com/calendar\nhttps://www.bls.gov/schedule/news_release/", "inline": False},
         ],
         "footer": {"text": "台灣時間｜免費公開資料｜僅供資訊參考，不構成投資建議"},
         "timestamp": now.isoformat(),
@@ -278,4 +291,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
