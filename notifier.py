@@ -289,6 +289,18 @@ def health_embed(title: str, description: str, color: int = 0xF1C40F) -> dict[st
             "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
+def source_health_embed(errors: list[str], recoveries: list[str]) -> dict[str, Any]:
+    """Explain both failed primary sources and successful fallbacks."""
+    lines = [*(f"⚠️ 主來源失敗：{error}" for error in errors)]
+    lines.extend(f"✅ 備援成功：{recovery}" for recovery in recoveries)
+    if any("BLS 官方 API" in recovery for recovery in recoveries):
+        lines.append("ℹ️ BLS API 可補 CPI／PPI／就業數據，但不能完全取代發布行事曆。")
+    if recoveries:
+        return health_embed("🟡 部分來源異常｜備援正常", "\n".join(lines), 0xF1C40F)
+    lines.append("❌ 目前沒有確認成功的對應備援；系統將於下次排程重試。")
+    return health_embed("🔴 官方來源讀取失敗｜備援未確認", "\n".join(lines), 0xE74C3C)
+
+
 def load_state() -> dict[str, Any]:
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -308,6 +320,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
     webhook = webhook or "https://discord.invalid/webhook"
     state = load_state()
     source_errors: list[str] = []
+    source_recoveries: list[str] = []
     calendar_error: str | None = None
     try:
         calendar = parse_bls_calendar(http_text(BLS_CALENDAR_URL))
@@ -327,6 +340,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
                 try:
                     api_releases = fetch_bls_api_releases(now, state)
                     releases.extend(api_releases)
+                    source_recoveries.append("BLS 官方 API 正常（CPI／PPI／就業數據）")
                     print(f"BLS RSS 無法讀取，官方 API 備援成功（{len(api_releases)} 筆更新）")
                     continue
                 except Exception as api_exc:
@@ -337,12 +351,13 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
     digests = state.setdefault("digests", [])
     health_alerts = state.setdefault("health_alerts", {})
     local = now.astimezone(TAIPEI)
-    health_key = f"sources:{local:%Y-%m-%d}"
+    # Version the key when the health-message semantics change so the improved
+    # status is emitted once even if an older-format alert was already sent.
+    health_key = f"sources:v2:{local:%Y-%m-%d}"
     log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
     if source_errors and log_webhook and health_key not in health_alerts:
-        details = "\n".join(f"• {error}" for error in source_errors)
         try:
-            send_discord(log_webhook, health_embed("🟡 官方來源讀取異常", details), dry_run)
+            send_discord(log_webhook, source_health_embed(source_errors, source_recoveries), dry_run)
             health_alerts[health_key] = local.date().isoformat()
         except Exception as exc:
             print(f"警告：健康監控通知無法送出：{exc}", file=sys.stderr)

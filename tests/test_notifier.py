@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from notifier import HTTP_HEADERS, classify, daily_embed, extract_numbers, fetch_bls_api_releases, parse_bls_calendar, parse_feed
+from notifier import HTTP_HEADERS, classify, daily_embed, extract_numbers, fetch_bls_api_releases, parse_bls_calendar, parse_feed, source_health_embed
 
 
 class OfficialSourceTests(unittest.TestCase):
@@ -22,6 +22,20 @@ class OfficialSourceTests(unittest.TestCase):
         message = daily_embed([], datetime(2026, 7, 16, tzinfo=timezone.utc), "HTTP 403")
         self.assertIn("無法確認", message["description"])
         self.assertNotIn("今日暫無", message["description"])
+
+    def test_health_log_shows_successful_fallback_and_limit(self):
+        message = source_health_embed(
+            ["BLS 行事曆：HTTPError / HTTP Error 403"],
+            ["BLS 官方 API 正常（CPI／PPI／就業數據）"],
+        )
+        self.assertIn("備援正常", message["title"])
+        self.assertIn("✅ 備援成功", message["description"])
+        self.assertIn("不能完全取代發布行事曆", message["description"])
+
+    def test_health_log_marks_missing_fallback(self):
+        message = source_health_embed(["BLS 行事曆：HTTP 403"], [])
+        self.assertIn("備援未確認", message["title"])
+        self.assertIn("❌", message["description"])
 
     def test_classify(self):
         self.assertEqual(classify("Employment Situation")["key"], "jobs")
