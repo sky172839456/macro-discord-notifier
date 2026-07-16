@@ -116,15 +116,19 @@ def send(webhook: str, message: dict[str, Any], dry_run: bool = False) -> None:
         pass
 
 
-def run(test: bool = False, dry_run: bool = False) -> None:
-    webhook_env = TEST_WEBHOOK_ENV if test else PRODUCTION_WEBHOOK_ENV
+def run(test: bool = False, production_test: bool = False, dry_run: bool = False) -> None:
+    webhook_env = TEST_WEBHOOK_ENV if test and not production_test else PRODUCTION_WEBHOOK_ENV
     webhook = os.environ.get(webhook_env)
     if not webhook and not dry_run:
         raise RuntimeError(f"缺少 {webhook_env}")
 
-    if test:
+    if test or production_test:
         sample = {"exchange": "Bybit", "title": "New Listing: ABCUSDT Perpetual Contract", "url": SOURCES["Bybit"]}
-        send(webhook or "https://discord.invalid/webhook", embed(sample, test=True), dry_run)
+        message = embed(sample, test=True)
+        if production_test:
+            message["title"] = message["title"].replace("🧪 測試｜", "🧪 正式頻道連線測試｜")
+            message["description"] += "\n\n> 這是連線測試，不是最新上幣公告。"
+        send(webhook or "https://discord.invalid/webhook", message, dry_run)
         return
 
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
@@ -158,11 +162,13 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--test", action="store_true", help="Send one clearly labelled template to the test webhook")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--test", action="store_true", help="Send one clearly labelled template to the test webhook")
+    target.add_argument("--production-test", action="store_true", help="Send a clearly labelled connectivity test to production")
     parser.add_argument("--dry-run", action="store_true", help="Print payloads without contacting Discord or changing state")
     args = parser.parse_args()
     try:
-        run(test=args.test, dry_run=args.dry_run)
+        run(test=args.test, production_test=args.production_test, dry_run=args.dry_run)
         return 0
     except Exception as exc:
         print(f"錯誤：{exc}", file=sys.stderr)
