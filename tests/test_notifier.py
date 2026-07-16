@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from notifier import HTTP_HEADERS, classify, extract_numbers, fetch_bls_api_releases, parse_bls_calendar, parse_feed
+from notifier import HTTP_HEADERS, classify, daily_embed, extract_numbers, fetch_bls_api_releases, parse_bls_calendar, parse_feed
 
 
 class OfficialSourceTests(unittest.TestCase):
@@ -16,6 +16,12 @@ class OfficialSourceTests(unittest.TestCase):
         events = parse_bls_calendar(source)
         self.assertEqual(events[0]["rule"]["key"], "cpi")
         self.assertEqual(events[0]["time"].isoformat(), "2026-07-14T12:30:00+00:00")
+
+    def test_calendar_failure_is_not_reported_as_no_events(self):
+        from datetime import datetime, timezone
+        message = daily_embed([], datetime(2026, 7, 16, tzinfo=timezone.utc), "HTTP 403")
+        self.assertIn("無法確認", message["description"])
+        self.assertNotIn("今日暫無", message["description"])
 
     def test_classify(self):
         self.assertEqual(classify("Employment Situation")["key"], "jobs")

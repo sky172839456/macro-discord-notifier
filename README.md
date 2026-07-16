@@ -31,6 +31,14 @@ Webhook 是敏感資料，請勿貼在 README、Issue 或 commit。
 
 ```powershell
 $env:DISCORD_WEBHOOK_URL = "你的 Discord Webhook"
+
+交易所上幣通知使用獨立的正式 Webhook：
+
+- `DISCORD_EXCHANGE_LISTING_WEBHOOK_URL`：正式 `#上幣通知` 頻道
+- `DISCORD_TEST_WEBHOOK_URL`：僅供手動測試；測試訊息會標示「🧪 測試」
+
+GitHub Actions 的排程會使用正式 Webhook，手動執行 `Exchange Listing Monitor`
+則只會使用測試 Webhook，避免測試資料進入正式頻道。
 python notifier.py --dry-run --digest
 python -m unittest discover -s tests -v
 ```

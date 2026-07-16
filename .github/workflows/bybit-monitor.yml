@@ -18,9 +18,19 @@ jobs:
           path: .state/exchange-listings.json
           key: exchange-listing-state-${{ github.run_id }}
           restore-keys: exchange-listing-state-
-      - env:
+      - name: Monitor production channel or send a labelled test
+        env:
+          DISCORD_EXCHANGE_LISTING_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_LISTING_WEBHOOK_URL }}
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
-        run: python bybit_notifier.py ${{ github.event_name == 'workflow_dispatch' && '--test' || '' }}
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python bybit_notifier.py --test
+          elif [ -z "$DISCORD_EXCHANGE_LISTING_WEBHOOK_URL" ]; then
+            echo "::warning::DISCORD_EXCHANGE_LISTING_WEBHOOK_URL is not configured; production notification skipped."
+          else
+            python bybit_notifier.py
+          fi
       - if: always()
         uses: actions/cache/save@v4
         with:
