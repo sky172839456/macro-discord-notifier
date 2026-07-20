@@ -1,5 +1,6 @@
 import sys
 import unittest
+import inspect
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,6 +15,10 @@ from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
 
 
 class OfficialSourceTests(unittest.TestCase):
+    def test_run_supports_forced_production_overview(self):
+        import notifier
+        self.assertIn("force_overview", inspect.signature(notifier.run).parameters)
+
     def test_official_requests_use_browser_headers(self):
         self.assertIn("Mozilla/5.0", HTTP_HEADERS["User-Agent"])
         self.assertEqual(HTTP_HEADERS["Referer"], "https://www.bls.gov/")
