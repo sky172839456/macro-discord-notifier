@@ -12,6 +12,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 STATE = Path(".state/exchange-listings.json")
@@ -20,6 +21,21 @@ TEST_WEBHOOK_ENV = "DISCORD_TEST_WEBHOOK_URL"
 SOURCES = {
     "Bybit": "https://announcements.bybit.com/en/?category=new_crypto",
     "OKX": "https://www.okx.com/help/section/announcements-new-listings",
+    "Binance": "https://www.binance.com/en/support/announcement/list/48",
+    "Bitget": "https://www.bitget.com/support/sections/5955813039257",
+    "KuCoin": "https://www.kucoin.com/announcement/new-listings",
+    "Kraken": "https://blog.kraken.com/category/product/asset-listings",
+    "BingX": "https://bingx.com/en/support/",
+}
+
+PAGE_RULES = {
+    "Bybit": (r"/en/article/", "https://announcements.bybit.com"),
+    "OKX": (r"/help/", "https://www.okx.com"),
+    "Binance": (r"/en/support/announcement/detail/", "https://www.binance.com"),
+    "Bitget": (r"/support/articles/", "https://www.bitget.com"),
+    "KuCoin": (r"/announcement/", "https://www.kucoin.com"),
+    "Kraken": (r"/product/asset-listings/", "https://blog.kraken.com"),
+    "BingX": (r"/en/support/articles/", "https://bingx.com"),
 }
 
 
@@ -46,17 +62,15 @@ def clean_title(value: str) -> str:
 
 def page_items(name: str, url: str) -> list[dict[str, str]]:
     body = text(url)
-    patterns = {
-        "Bybit": r'href=["\'](/en/article/[^"\']+)["\'][^>]*>(.*?)</a>',
-        "OKX": r'href=["\'](/help/[^"\']+)["\'][^>]*>(.*?)</a>',
-    }
+    path_pattern, base = PAGE_RULES[name]
+    pattern = rf'href=["\']([^"\']*{path_pattern}[^"\']*)["\'][^>]*>(.*?)</a>'
     items = []
-    for path, raw_title in re.findall(patterns[name], body, re.S | re.I):
+    for path, raw_title in re.findall(pattern, body, re.S | re.I):
         title = clean_title(raw_title)
-        lower = title.lower()
-        if title and any(word in lower for word in ("list", "perpetual", "delist", "migration", "upgrade")):
-            base = "https://announcements.bybit.com" if name == "Bybit" else "https://www.okx.com"
-            link = base + path
+        if title.lower() in {"new listings", "delistings", "delisting", "spot", "futures"}:
+            continue
+        if title and announcement_kind(title):
+            link = urljoin(base, path)
             items.append({
                 "id": hashlib.sha256((name + link).encode()).hexdigest()[:24],
                 "exchange": name,
@@ -64,6 +78,60 @@ def page_items(name: str, url: str) -> list[dict[str, str]]:
                 "url": link,
             })
     return list({item["id"]: item for item in items}.values())[:30]
+
+
+def api_spot_items(name: str) -> list[dict[str, str]]:
+    """Use official public market metadata when an announcement page is JS-only."""
+    if name == "Binance":
+        payload = json.loads(text("https://api.binance.com/api/v3/exchangeInfo"))
+        markets = [
+            (item["baseAsset"], item["quoteAsset"], item["symbol"])
+            for item in payload.get("symbols", [])
+            if item.get("status") == "TRADING" and item.get("isSpotTradingAllowed")
+        ]
+        source = SOURCES[name]
+    elif name == "BingX":
+        payload = json.loads(text("https://open-api.bingx.com/openApi/spot/v1/common/symbols"))
+        markets = []
+        for item in payload.get("data", {}).get("symbols", []):
+            if not (item.get("apiStateBuy") and item.get("apiStateSell")):
+                continue
+            display = str(item.get("displayName") or item.get("symbol", "")).replace("_", "-")
+            parts = re.split(r"[-/]", display, maxsplit=1)
+            if len(parts) == 2:
+                markets.append((parts[0], parts[1], str(item.get("symbol", display))))
+        source = SOURCES[name]
+    else:
+        raise ValueError(f"沒有 {name} API 設定")
+
+    grouped: dict[str, set[str]] = {}
+    for base, quote, _ in markets:
+        grouped.setdefault(base, set()).add(quote)
+    return [{
+        "id": hashlib.sha256((name + base).encode()).hexdigest()[:24],
+        "exchange": name,
+        "title": f"{name} spot market available: {base}/{'、'.join(sorted(quotes)[:5])}",
+        "url": source,
+    } for base, quotes in grouped.items()]
+
+
+def announcement_kind(title: str) -> str | None:
+    """Classify only listing-related notices and keep the labels consistent."""
+    lower = title.lower()
+    if any(word in lower for word in ("delist", "remove trading", "cease trading", "suspend trading permanently")):
+        return "delist"
+    if any(word in lower for word in ("migration", "token swap", "rebrand", "rename", "brand upgrade")):
+        return "migration"
+    if any(word in lower for word in ("pre-market", "pre market", "premarket", "pre-ipo", "pre ipo")):
+        return "premarket"
+    if any(word in lower for word in ("perpetual", "futures", "future contract")):
+        return "perpetual"
+    if any(word in lower for word in (
+        "spot trading", "spot market", "new listing", "initial listing", "will list", "to list",
+        "listed on", "available for trading", "market available", "adds trading pair", "add trading pair",
+    )):
+        return "spot"
+    return None
 
 
 def coinbase_items() -> list[dict[str, str]]:
@@ -82,15 +150,21 @@ def coinbase_items() -> list[dict[str, str]]:
 
 
 def embed(item: dict[str, str], test: bool = False) -> dict[str, Any]:
-    lower = item["title"].lower()
-    kind = "下架／調整" if "delist" in lower else "永續合約" if "perpetual" in lower else "新市場／上架"
+    kind_key = announcement_kind(item["title"]) or "spot"
+    kind, icon, color = {
+        "spot": ("現貨上幣", "🟢", 0x2ECC71),
+        "perpetual": ("永續合約", "🔵", 0x3498DB),
+        "premarket": ("預上市／盤前交易", "🟡", 0xF1C40F),
+        "delist": ("下架", "🔴", 0xE74C3C),
+        "migration": ("代幣遷移／更名", "🔄", 0x9B59B6),
+    }[kind_key]
     return {
-        "title": f"{'🧪 測試｜' if test else ''}🟢 {item['exchange']} {kind}",
+        "title": f"{'🧪 測試｜' if test else ''}{icon} {item['exchange']} {kind}",
         "description": (
             f"### {item['title']}\n\n**繁體中文摘要**\n"
             f"{item['exchange']} 發布{kind}資訊，請開啟官方原文確認交易時間、交易對與適用地區。"
         ),
-        "color": 0x2ECC71,
+        "color": color,
         "fields": [
             {"name": "交易所", "value": item["exchange"], "inline": True},
             {"name": "官方原始資料", "value": item["url"], "inline": False},
@@ -123,7 +197,7 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
         raise RuntimeError(f"缺少 {webhook_env}")
 
     if test or production_test:
-        sample = {"exchange": "Bybit", "title": "New Listing: ABCUSDT Perpetual Contract", "url": SOURCES["Bybit"]}
+        sample = {"exchange": "Binance", "title": "Binance Will List ABC (ABC) for Spot Trading", "url": SOURCES["Binance"]}
         message = embed(sample, test=True)
         if production_test:
             message["title"] = message["title"].replace("🧪 測試｜", "🧪 正式頻道連線測試｜")
@@ -134,13 +208,17 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
     fresh: dict[str, list[str]] = {}
     functions = {
-        "Bybit": lambda: page_items("Bybit", SOURCES["Bybit"]),
-        "OKX": lambda: page_items("OKX", SOURCES["OKX"]),
+        **{name: (lambda exchange=name: page_items(exchange, SOURCES[exchange]))
+           for name in SOURCES if name not in {"Binance", "BingX"}},
+        "Binance": lambda: api_spot_items("Binance"),
+        "BingX": lambda: api_spot_items("BingX"),
         "Coinbase": coinbase_items,
     }
     for name, function in functions.items():
         try:
             items = function()
+            if not items:
+                raise RuntimeError("官方來源回傳 0 筆，保留既有基準並等待下次重試")
         except Exception as exc:
             print(f"警告：{name} 讀取失敗：{exc}", file=sys.stderr)
             continue
