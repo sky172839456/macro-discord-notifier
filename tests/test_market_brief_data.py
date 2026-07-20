@@ -38,12 +38,15 @@ class MarketBriefDataTests(unittest.TestCase):
         dashboard = {
             "errors": {},
             "etf": {"date": datetime(2026, 7, 17, tzinfo=timezone.utc), "net_flow_musd": 132.3},
+            "eth_etf": {"date": datetime(2026, 7, 17, tzinfo=timezone.utc), "net_flow_musd": -36.7},
             "liquidations": {"scope": "OKX BTC／ETH USDT 永續", "total_usd": 3_000_000,
                              "long": 2_000_000, "short": 1_000_000},
         }
         text = flow_lines(dashboard)
         self.assertIn("07/17", text)
         self.assertIn("淨流入", text)
+        self.assertIn("ETH ETF", text)
+        self.assertIn("淨流出", text)
         self.assertIn("OKX BTC／ETH USDT 永續", text)
 
     def test_risk_summary_is_deterministic_and_flags_extremes(self):
@@ -72,6 +75,7 @@ class MarketBriefDataTests(unittest.TestCase):
             "sentiment": {"value": 50, "classification": "Neutral"},
             "traditional": None,
             "etf": {"date": datetime(2026, 7, 17, tzinfo=timezone.utc), "net_flow_musd": 10},
+            "eth_etf": {"date": datetime(2026, 7, 17, tzinfo=timezone.utc), "net_flow_musd": -5},
             "liquidations": {"scope": "OKX BTC／ETH USDT 永續", "total_usd": 3, "long": 2, "short": 1},
             "exchange_risk": {"active_count": 0, "names": []},
         }

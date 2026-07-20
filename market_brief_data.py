@@ -14,7 +14,8 @@ from xml.etree import ElementTree
 USER_AGENT = "Mozilla/5.0 market-brief/4.0"
 COINGECKO = "https://api.coingecko.com/api/v3"
 OKX = "https://www.okx.com"
-FARSIDE = "https://farside.co.uk/bitcoin-etf-flow-all-data/"
+FARSIDE_BTC = "https://farside.co.uk/bitcoin-etf-flow-all-data/"
+FARSIDE_ETH = "https://farside.co.uk/eth/"
 COINBASE_STATUS = "https://status.coinbase.com/api/v2/incidents.json"
 TREASURY_YIELDS = (
     "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml"
@@ -174,8 +175,8 @@ def parse_farside_latest(source: str) -> dict[str, Any]:
     return {"date": date, "net_flow_musd": flow}
 
 
-def etf_flow_snapshot() -> dict[str, Any]:
-    return parse_farside_latest(get_text(FARSIDE, referer="https://farside.co.uk/"))
+def etf_flow_snapshot(url: str = FARSIDE_BTC) -> dict[str, Any]:
+    return parse_farside_latest(get_text(url, referer="https://farside.co.uk/"))
 
 
 def liquidation_snapshot(now: datetime) -> dict[str, Any]:
@@ -230,6 +231,7 @@ def collect_dashboard(now: datetime) -> dict[str, Any]:
     collect("sentiment", fear_greed_snapshot)
     collect("traditional", traditional_snapshot)
     collect("etf", etf_flow_snapshot)
+    collect("eth_etf", lambda: etf_flow_snapshot(FARSIDE_ETH))
     collect("liquidations", lambda: liquidation_snapshot(now))
     collect("exchange_risk", exchange_risk_snapshot)
     return dashboard

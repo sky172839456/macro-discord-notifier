@@ -345,6 +345,7 @@ def risk_status_lines(dashboard: dict[str, Any]) -> str:
 
 def flow_lines(dashboard: dict[str, Any]) -> str:
     etf = dashboard.get("etf")
+    eth_etf = dashboard.get("eth_etf")
     liquidations = dashboard.get("liquidations")
     lines = []
     if etf:
@@ -353,7 +354,14 @@ def flow_lines(dashboard: dict[str, Any]) -> str:
             f"**美國現貨 BTC ETF**　{etf['date']:%m/%d} {direction} `${abs(etf['net_flow_musd']):,.1f}M`"
         )
     else:
-        lines.append("ETF：" + unavailable(dashboard, "etf"))
+        lines.append("BTC ETF：" + unavailable(dashboard, "etf"))
+    if eth_etf:
+        direction = "淨流入" if eth_etf["net_flow_musd"] >= 0 else "淨流出"
+        lines.append(
+            f"**美國現貨 ETH ETF**　{eth_etf['date']:%m/%d} {direction} `${abs(eth_etf['net_flow_musd']):,.1f}M`"
+        )
+    else:
+        lines.append("ETH ETF：" + unavailable(dashboard, "eth_etf"))
     if liquidations:
         lines.append(
             f"**24h 清算（{liquidations['scope']}）**　{money(liquidations['total_usd'])}\n"
