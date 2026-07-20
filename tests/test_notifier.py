@@ -4,9 +4,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
-                      fetch_bls_api_releases, format_metrics,
+                      fetch_bls_api_releases, fetch_extended_calendar, format_metrics,
                       full_source_health_embed, merge_calendar_events,
-                      parse_bls_calendar, parse_feed, pre_embed, revision_lines,
+                      macro_overview_embed, parse_bls_calendar, parse_feed,
+                      pre_embed, revision_lines,
                       source_health_embed)
 
 
@@ -26,6 +27,65 @@ class OfficialSourceTests(unittest.TestCase):
         message = daily_embed([], datetime(2026, 7, 16, tzinfo=timezone.utc), "HTTP 403")
         self.assertIn("無法確認", message["description"])
         self.assertNotIn("今日暫無", message["description"])
+
+    def test_daily_digest_shows_only_next_three_days(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        rule = classify("Consumer Price Index")
+        events = [
+            {"id": "soon", "time": now + timedelta(days=2), "rule": rule},
+            {"id": "late", "time": now + timedelta(days=4), "rule": rule},
+        ]
+        message = daily_embed(events, now)
+        self.assertIn("07/22", message["description"])
+        self.assertNotIn("07/24", message["description"])
+        self.assertIn("未來三日", message["title"])
+
+    def test_overview_uses_next_future_event_not_expired_event(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        rule = classify("Consumer Price Index")
+        events = [
+            {"id": "old", "time": now - timedelta(days=1), "rule": rule},
+            {"id": "next", "time": now + timedelta(days=2), "rule": rule},
+        ]
+        message = macro_overview_embed(events, now)
+        self.assertIn("07/22 08:00", message["description"])
+        self.assertNotIn("07/19", message["description"])
+
+    def test_overview_distinguishes_unconfirmed_from_source_failure(self):
+        from datetime import datetime, timezone
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        unconfirmed = macro_overview_embed([], now)
+        failed = macro_overview_embed([], now, "calendar unavailable")
+        self.assertIn("待官方確認", unconfirmed["description"])
+        self.assertIn("來源暫時無法確認", failed["description"])
+
+    def test_extended_official_schedules(self):
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+        import notifier
+
+        pages = {
+            notifier.EXTENDED_CALENDARS["BEA"]: (
+                "July 30 8:30 AM N ews GDP (Advance Estimate), 2nd Quarter 2026 "
+                "July 30 8:30 AM N ews Personal Income and Outlays, June 2026"
+            ),
+            notifier.EXTENDED_CALENDARS["CENSUS"]: (
+                "Advance Monthly Sales for Retail and Food Services August 14, 2026 8:30 AM "
+                "Advance Report on Durable Goods--Manufacturers' Shipments, Inventories, and Orders "
+                "August 26, 2026 8:30 AM"
+            ),
+            notifier.EXTENDED_CALENDARS["FED"]: (
+                "2026 FOMC Meetings July 28-29 Minutes: (Released August 19, 2026) "
+                "September 15-16* 2025 FOMC Meetings"
+            ),
+        }
+        with patch.object(notifier, "http_text", side_effect=lambda url: pages[url]):
+            events, statuses = fetch_extended_calendar(datetime(2026, 7, 20, tzinfo=timezone.utc))
+        self.assertEqual({event["rule"]["key"] for event in events}, {"gdp", "pce", "retail", "durable", "fomc"})
+        self.assertEqual(sum(event["rule"]["key"] == "fomc" for event in events), 2)
+        self.assertTrue(all(healthy for _, healthy, _ in statuses))
 
     def test_health_log_shows_successful_fallback_and_limit(self):
         message = source_health_embed(
