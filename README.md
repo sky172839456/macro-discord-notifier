@@ -69,3 +69,14 @@ python -m unittest discover -s tests -v
 - 手動測試沿用 `DISCORD_TEST_WEBHOOK_URL`，並清楚標示「🧪 測試」
 
 GitHub Actions 工作流程名稱為 `Crypto News Radar`，每 15 分鐘執行。繁中內容目前採不需付費 API 的保守分類式摘要，不會把推測冒充成新聞事實。
+
+## 交易所公告雷達
+
+`exchange_announcement_notifier.py` 獨立監控 Binance、OKX、Bybit、Bitget、Coinbase、Kraken、KuCoin 與 BingX 的官方公告及狀態頁。內容包含安全事件、服務中斷、維護與充提、鏈上升級、交易規則、區域監管服務變更、儲備資訊與重大產品更新；上幣、下架、遷移及行銷活動會被排除，避免與 `#上幣通知` 重複。
+
+- 重大安全、服務中斷與區域限制：立即通知
+- 一般維護與規則調整：每三小時摘要
+- 繁體中文標題、最多三項繁中重點、英文原標題與官方連結
+- 首次啟用只建立基準，不會把舊公告洗進頻道
+- 正式頻道 secret：`DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL`
+- 工作流程：`Exchange Announcement Radar`，每 15 分鐘執行
