@@ -13,6 +13,7 @@ on:
         options:
           - test
           - source-check
+          - production-connectivity
 
 permissions:
   contents: read
@@ -46,7 +47,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python crypto_news_notifier.py --source-check
-            if [ "${{ inputs.target }}" = "test" ]; then
+            if [ "${{ inputs.target }}" = "production-connectivity" ]; then
+              python crypto_news_notifier.py --production-test
+            elif [ "${{ inputs.target }}" = "test" ]; then
               python crypto_news_notifier.py --test
             fi
           elif [ -z "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" ]; then
