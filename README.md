@@ -56,3 +56,16 @@ python -m unittest discover -s tests -v
 ```
 
 程式僅使用 Python 標準函式庫。GitHub Actions 每 10 分鐘執行一次；免費排程可能延遲數分鐘，不適合秒級交易。
+
+## 加密新聞雷達
+
+`crypto_news_notifier.py` 建立獨立的高訊號加密新聞頻道，保留英文原標題與原文摘要，並提供繁體中文分類式重點及可能影響。新聞分為資安、監管、ETF／機構、穩定幣、交易所、區塊鏈協議與市場結構；價格預測、業配、教學及重複報導會被排除。
+
+- 重大與重要新聞：立即發送，每次最多四篇
+- 一般新聞：每三小時合併摘要
+- 首次啟用只建立新聞基準，不會把舊文章一次洗進頻道
+- 官方來源標示「官方確認」；新聞媒體標示「媒體報導」
+- 正式頻道 secret：`DISCORD_CRYPTO_NEWS_WEBHOOK_URL`
+- 手動測試沿用 `DISCORD_TEST_WEBHOOK_URL`，並清楚標示「🧪 測試」
+
+GitHub Actions 工作流程名稱為 `Crypto News Radar`，每 15 分鐘執行。繁中內容目前採不需付費 API 的保守分類式摘要，不會把推測冒充成新聞事實。

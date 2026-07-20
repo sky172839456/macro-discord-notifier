@@ -1,0 +1,63 @@
+name: Crypto News Radar
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Notification target
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - source-check
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crypto-news-radar
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore news state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/crypto-news.json
+          key: crypto-news-state-${{ github.run_id }}
+          restore-keys: crypto-news-state-
+
+      - name: Monitor news or send labelled test
+        env:
+          DISCORD_CRYPTO_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
+          DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python crypto_news_notifier.py --source-check
+            if [ "${{ inputs.target }}" = "test" ]; then
+              python crypto_news_notifier.py --test
+            fi
+          elif [ -z "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" ]; then
+            echo "::warning::DISCORD_CRYPTO_NEWS_WEBHOOK_URL is not configured; production news skipped."
+          else
+            python crypto_news_notifier.py
+          fi
+
+      - name: Save news state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/crypto-news.json
+          key: crypto-news-state-${{ github.run_id }}
