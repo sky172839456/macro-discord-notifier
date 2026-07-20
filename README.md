@@ -40,6 +40,10 @@ $env:DISCORD_WEBHOOK_URL = "你的 Discord Webhook"
 - `DISCORD_EXCHANGE_LISTING_WEBHOOK_URL`：正式 `#上幣通知` 頻道
 - `DISCORD_TEST_WEBHOOK_URL`：僅供手動測試；測試訊息會標示「🧪 測試」
 
+目前監控 Binance、OKX、Bybit、Bitget、Coinbase、Kraken、KuCoin 與 BingX。
+公告會明確分成「🟢 現貨上幣、🔵 永續合約、🟡 預上市／盤前交易、🔴 下架、🔄 代幣遷移／更名」。
+Binance 與 BingX 的公告首頁為動態載入，因此另用官方公開現貨市場 API 建立新交易對基準；首次啟用只建立基準，不會把既有市場洗進通知頻道。
+
 GitHub Actions 的排程會使用正式 Webhook，手動執行 `Exchange Listing Monitor`
 則只會使用測試 Webhook，避免測試資料進入正式頻道。
 python notifier.py --dry-run --digest
