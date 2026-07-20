@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from summary_notifier import build_embed, event_display_name, event_lines, market_lines, parse_bls_month_page, parse_fair_economy_calendar
+from summary_notifier import build_embed, event_display_name, event_lines, market_lines, parse_bls_month_page, parse_fair_economy_calendar, upcoming_events
 
 
 class SummaryNotifierTests(unittest.TestCase):
@@ -22,6 +22,17 @@ class SummaryNotifierTests(unittest.TestCase):
         text = event_lines([], "官方行事曆目前未完成同步，系統將於下次排程自動重試。", "")
         self.assertIn("下次排程自動重試", text)
         self.assertNotIn("HTTPError", text)
+
+    def test_reachable_empty_public_calendar_is_not_an_error(self):
+        import summary_notifier
+        from unittest.mock import patch
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        with patch.object(summary_notifier, "http_text", side_effect=OSError("blocked")), \
+             patch.object(summary_notifier, "official_calendar_fallback", return_value=[]), \
+             patch.object(summary_notifier, "public_calendar_fallback_with_status", return_value=([], True)):
+            events, error = upcoming_events(now, 1)
+        self.assertEqual(events, [])
+        self.assertIsNone(error)
 
     def test_monthly_official_page_fallback(self):
         html = """<table><tr><td>Consumer Price Index for June 2026</td>

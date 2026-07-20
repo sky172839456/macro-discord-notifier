@@ -42,6 +42,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MARKET_SUMMARY_TEST=1 \
             DISCORD_DAILY_SUMMARY_WEBHOOK_URL="$DISCORD_TEST_WEBHOOK_URL" \
             DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL="$DISCORD_TEST_WEBHOOK_URL" \
               python summary_notifier.py --period "${{ inputs.period }}"
