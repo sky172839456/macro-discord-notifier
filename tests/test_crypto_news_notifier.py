@@ -7,7 +7,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from crypto_news_notifier import (SOURCES, canonical_url, category_for, connectivity_embed,
                                   deduplicate, is_relevant, news_embed, normalize_zh_title,
-                                  parse_feed, send_discord, similar_title)
+                                  parse_feed, send_discord, similar_title, utf8_prefix)
 
 
 class CryptoNewsTests(unittest.TestCase):
@@ -60,7 +60,7 @@ class CryptoNewsTests(unittest.TestCase):
                 "category": category_for("wallet exploit hacked")}
         embed = news_embed(item)
         self.assertIn("繁體中文重點", embed["description"])
-        self.assertIn("可能影響", embed["description"])
+        self.assertIn("市場觀察", embed["description"])
         self.assertEqual(embed["fields"][0]["value"], "✅ 官方確認")
 
     def test_embed_shows_chinese_and_original_headlines(self):
@@ -71,6 +71,20 @@ class CryptoNewsTests(unittest.TestCase):
         embed = news_embed(item)
         self.assertIn("### SEC 核准現貨 Bitcoin ETF", embed["description"])
         self.assertIn("英文原標題：SEC approves spot Bitcoin ETF", embed["description"])
+
+    def test_embed_supports_multiple_chinese_key_points(self):
+        now = datetime.now(timezone.utc)
+        item = {"id": "x", "title": "Exchange security update", "title_zh": "交易所安全事件更新",
+                "summary": "Official update.", "summary_zh_points": ["確認發生安全事件。", "部分提款暫停。", "仍在調查影響範圍。"],
+                "url": "https://example.com/x", "published": now, "source": "Official", "official": True,
+                "category": category_for("exchange wallet exploit hacked")}
+        description = news_embed(item)["description"]
+        self.assertEqual(description.count("\n• "), 3)
+        self.assertIn("**市場觀察**", description)
+
+    def test_translation_input_respects_utf8_byte_limit(self):
+        result = utf8_prefix("測試" * 300, 450)
+        self.assertLessEqual(len(result.encode("utf-8")), 450)
 
     def test_translation_normalizes_common_crypto_names(self):
         self.assertEqual(normalize_zh_title("美國證券交易委員會批准比特幣交易所交易基金"),

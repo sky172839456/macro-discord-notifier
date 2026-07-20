@@ -154,14 +154,39 @@ def normalize_zh_title(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def translate_title(title: str) -> str:
-    """Translate one public English headline to Traditional Chinese without an API key."""
-    query = urlencode({"q": title[:450], "langpair": "en|zh-TW", "mt": "1"})
+def utf8_prefix(value: str, limit: int = 450) -> str:
+    """Trim text to an API byte limit without breaking a UTF-8 character."""
+    encoded = value.encode("utf-8")[:limit]
+    while encoded:
+        try:
+            return encoded.decode("utf-8")
+        except UnicodeDecodeError:
+            encoded = encoded[:-1]
+    return ""
+
+
+def translate_text(value: str) -> str:
+    query = urlencode({"q": utf8_prefix(clean_text(value)), "langpair": "en|zh-TW", "mt": "1"})
     payload = json.loads(http_text(f"{TRANSLATION_URL}?{query}", attempts=2))
     translated = clean_text(str(payload.get("responseData", {}).get("translatedText", "")))
-    if not translated or translated.lower() == title.lower():
+    if not translated or translated.lower() == value.lower():
         raise ValueError("translation result unavailable")
     return normalize_zh_title(translated)
+
+
+def translate_title(title: str) -> str:
+    """Translate one public English headline to Traditional Chinese without an API key."""
+    return translate_text(title)
+
+
+def summary_points(value: str) -> list[str]:
+    translated = translate_text(value)
+    parts = [part.strip(" •-。") for part in re.split(r"[。！？!?；;]+", translated) if part.strip(" •-。")]
+    if len(parts) == 1 and len(parts[0]) > 90:
+        clauses = [part.strip(" ，,") for part in re.split(r"[，,]", parts[0]) if len(part.strip()) >= 12]
+        if len(clauses) >= 2:
+            parts = clauses
+    return [part + ("。" if not part.endswith(("。", "！", "？")) else "") for part in parts[:3]]
 
 
 def add_translated_title(item: dict[str, Any], state: dict[str, Any], now: datetime) -> dict[str, Any]:
@@ -171,13 +196,30 @@ def add_translated_title(item: dict[str, Any], state: dict[str, Any], now: datet
     enriched = dict(item)
     if cached and cached.get("source") == item["title"]:
         enriched["title_zh"] = cached["translated"]
-        return enriched
-    try:
-        translated = translate_title(item["title"])
-        enriched["title_zh"] = translated
-        cache[key] = {"source": item["title"], "translated": translated, "date": now.date().isoformat()}
-    except Exception:
-        enriched["title_zh"] = item["title"]
+    else:
+        try:
+            translated = translate_title(item["title"])
+            enriched["title_zh"] = translated
+            cache[key] = {"source": item["title"], "translated": translated, "date": now.date().isoformat()}
+        except Exception:
+            enriched["title_zh"] = item["title"]
+
+    summary_key = "summary-" + hashlib.sha256(item["summary"].encode()).hexdigest()[:20]
+    summary_cached = cache.get(summary_key)
+    if summary_cached and summary_cached.get("source") == item["summary"]:
+        points = list(summary_cached["points"])
+    else:
+        try:
+            points = summary_points(item["summary"])
+            cache[summary_key] = {
+                "source": item["summary"], "points": points, "date": now.date().isoformat()
+            }
+        except Exception:
+            points = []
+    fallback = ZH_SUMMARY[item["category"]["key"]]
+    if len(points) < 2 and fallback not in points:
+        points.append(fallback)
+    enriched["summary_zh_points"] = points[:3]
     return enriched
 
 
@@ -261,10 +303,12 @@ def news_embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     headline = f"### {translated}"
     if translated != item["title"]:
         headline += f"\n*英文原標題：{item['title']}*"
+    points = item.get("summary_zh_points") or [ZH_SUMMARY[category["key"]]]
+    point_text = "\n".join(f"• {point}" for point in points)
     return {
         "author": {"name": "CRYPTO NEWS RADAR｜加密新聞"},
         "title": f"{prefix}{category['icon']} {priority}｜{category['label']}",
-        "description": f"{headline}\n\n**繁體中文重點**\n• {ZH_SUMMARY[category['key']]}\n\n**可能影響**\n{IMPACT[category['key']]}",
+        "description": f"{headline}\n\n**繁體中文重點**\n{point_text}\n\n**市場觀察**\n{IMPACT[category['key']]}",
         "color": 0xE74C3C if category["priority"] == "critical" else 0xF39C12,
         "fields": [
             {"name": "可信狀態", "value": status, "inline": True},
@@ -433,6 +477,11 @@ def sample_item(now: datetime) -> dict[str, Any]:
     return {
         "id": "test-security", "title": "Major exchange confirms security incident affecting withdrawals",
         "title_zh": "大型交易所確認安全事件影響部分提款",
+        "summary_zh_points": [
+            "該交易所確認正在調查一宗安全事件。",
+            "調查期間已暫停部分提款服務。",
+            "目前尚未公布完整影響範圍與損失金額。",
+        ],
         "summary": "The exchange said it is investigating a security incident and temporarily paused selected withdrawals while it reviews affected systems.",
         "url": "https://example.com/crypto-news-test", "published": now,
         "source": "官方來源示範", "official": True, "category": CATEGORIES[0],
