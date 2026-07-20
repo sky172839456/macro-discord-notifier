@@ -81,6 +81,7 @@ class MarketBriefDataTests(unittest.TestCase):
         }
         embed = build_embed("daily", datetime(2026, 7, 20, tzinfo=timezone.utc), None, None, [], None, dashboard)
         names = "\n".join(field["name"] for field in embed["fields"])
+        self.assertIn("未來三日重要總經事件", names)
         for expected in ("價格與成交", "衍生品", "市場廣度", "傳統市場", "穩定幣", "ETF", "風險摘要"):
             self.assertIn(expected, names)
         self.assertLessEqual(len(embed["fields"]), 25)

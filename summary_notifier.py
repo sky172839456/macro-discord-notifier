@@ -391,9 +391,9 @@ def risk_summary(dashboard: dict[str, Any], events: list[dict[str, Any]], event_
     if exchange.get("active_count"):
         notes.append("交易所官方狀態頁有未解決事件，操作前請確認服務狀態。")
     if events and not event_error:
-        notes.append(f"今日有 {len(events)} 項追蹤中的重要總經事件，公布前後留意滑價。")
+        notes.append(f"未來三日有 {len(events)} 項追蹤中的重要總經事件，公布前後留意滑價。")
     elif event_error:
-        notes.append("總經行事曆尚未完成同步，今日事件風險目前無法確認。")
+        notes.append("總經行事曆尚未完成同步，未來三日事件風險目前無法確認。")
     if not notes:
         notes.append("目前監測項目未出現明顯極端訊號；仍請依自身風險承受度管理部位。")
     errors = dashboard.get("errors", {})
@@ -430,7 +430,7 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
     daily = period == "daily"
     fields = [
         {"name": "📊 BTC／ETH 市場概況", "value": market_lines(market, market_error), "inline": False},
-        {"name": "🗓️ 今日重要總經事件" if daily else "🗓️ 未來七日總經事件",
+        {"name": "🗓️ 未來三日重要總經事件" if daily else "🗓️ 未來七日總經事件",
          "value": event_lines(events, event_error, "✅ 目前沒有符合條件的官方重要事件。"), "inline": False},
     ]
     if dashboard:
@@ -439,7 +439,7 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
             {"name": "⚙️ 衍生品部位", "value": derivatives_lines(dashboard), "inline": False},
             {"name": "🌐 市場廣度與情緒", "value": breadth_lines(dashboard), "inline": False},
             {"name": "🏛️ 傳統市場", "value": traditional_lines(dashboard), "inline": False},
-            {"name": "🗓️ 今日重要總經事件" if daily else "🗓️ 未來七日總經事件",
+            {"name": "🗓️ 未來三日重要總經事件" if daily else "🗓️ 未來七日總經事件",
              "value": event_lines(events, event_error, "✅ 目前沒有符合條件的官方重要事件。"), "inline": False},
             {"name": "🛡️ 穩定幣與交易所狀態", "value": risk_status_lines(dashboard), "inline": False},
             {"name": "💸 ETF 資金流與清算", "value": flow_lines(dashboard), "inline": False},
@@ -496,7 +496,7 @@ def run(period: str, now: datetime, dry_run: bool = False) -> None:
             market_error = None
         except Exception as exc:
             market, market_error = None, f"CoinGecko 暫時無法取得（{type(exc).__name__}）"
-    events, event_error = upcoming_events(now, 1 if period == "daily" else 7)
+    events, event_error = upcoming_events(now, 3 if period == "daily" else 7)
     embed = build_embed(period, now, market, market_error, events, event_error, dashboard)
     if os.environ.get("MARKET_SUMMARY_TEST") == "1":
         embed["title"] = f"🧪 測試｜{embed['title']}"
