@@ -50,6 +50,37 @@ class ExchangeAnnouncementTests(unittest.TestCase):
             items = module.binance_items()
         self.assertEqual({item["url"].rsplit("/", 1)[-1] for item in items}, {"maint"})
 
+    def test_bingx_api_parser_uses_official_operational_categories(self):
+        payload = {"code": 0, "data": {"list": [
+            {"title": "BingX Spot System Upgrade", "content": "Scheduled maintenance",
+             "time": "2026-07-21 01:00:00", "link": "https://bingx.com/en/support/articles/123"},
+            {"title": "BingX Will List ABC for Spot Trading", "content": "New listing",
+             "time": "2026-07-21 02:00:00", "link": "https://bingx.com/en/support/articles/456"},
+        ]}}
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        with patch.object(module, "urlopen", return_value=response) as mocked:
+            items = module.bingx_items()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["category"]["key"], "maintenance")
+        self.assertEqual(mocked.call_count, 3)
+        request = mocked.call_args.args[0]
+        self.assertEqual(request.headers["X-source-key"], "BX-AI-SKILL")
+
+    def test_bingx_api_accepts_live_list_shape(self):
+        payload = {"code": 0, "data": [{
+            "contentType": "SystemMaintenance", "title": "BingX System Upgrade",
+            "content": "<p>Scheduled maintenance</p>",
+            "releaseTime": "2026-05-07T12:12:10.000+08:00",
+            "url": "https://bingx.com/en-us/support/articles/16040479784975",
+        }]}
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        with patch.object(module, "urlopen", return_value=response):
+            items = module.bingx_items()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["published"].isoformat(), "2026-05-07T04:12:10+00:00")
+
     def test_zero_count_is_visibly_degraded(self):
         card = module.connectivity_embed(2, [("BingX", 0, None)], datetime.now(timezone.utc))
         self.assertIn("⚠️", card["description"])
