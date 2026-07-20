@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from crypto_news_notifier import (SOURCES, canonical_url, category_for, connectivity_embed,
-                                  deduplicate, is_relevant, news_embed, parse_feed, send_discord,
-                                  similar_title)
+                                  deduplicate, is_relevant, news_embed, normalize_zh_title,
+                                  parse_feed, send_discord, similar_title)
 
 
 class CryptoNewsTests(unittest.TestCase):
@@ -62,6 +62,19 @@ class CryptoNewsTests(unittest.TestCase):
         self.assertIn("繁體中文重點", embed["description"])
         self.assertIn("可能影響", embed["description"])
         self.assertEqual(embed["fields"][0]["value"], "✅ 官方確認")
+
+    def test_embed_shows_chinese_and_original_headlines(self):
+        now = datetime.now(timezone.utc)
+        item = {"id": "x", "title": "SEC approves spot Bitcoin ETF", "title_zh": "SEC 核准現貨 Bitcoin ETF",
+                "summary": "Official update.", "url": "https://example.com/x", "published": now,
+                "source": "Official", "official": True, "category": category_for("SEC regulation crypto")}
+        embed = news_embed(item)
+        self.assertIn("### SEC 核准現貨 Bitcoin ETF", embed["description"])
+        self.assertIn("英文原標題：SEC approves spot Bitcoin ETF", embed["description"])
+
+    def test_translation_normalizes_common_crypto_names(self):
+        self.assertEqual(normalize_zh_title("美國證券交易委員會批准比特幣交易所交易基金"),
+                         "SEC 批准 Bitcoin ETF")
 
     def test_connectivity_card_cannot_be_mistaken_for_news(self):
         embed = connectivity_embed(42, [("CoinDesk", 10, None)], datetime.now(timezone.utc))

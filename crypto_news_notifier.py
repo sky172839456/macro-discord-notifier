@@ -24,6 +24,7 @@ STATE_FILE = Path(os.getenv("CRYPTO_NEWS_STATE_FILE", ".state/crypto-news.json")
 MAX_IMMEDIATE_PER_RUN = 4
 MAX_DIGEST_ITEMS = 8
 RECENT_HOURS = 8
+TRANSLATION_URL = "https://api.mymemory.translated.net/get"
 
 SOURCES = (
     {"name": "CoinDesk", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/", "official": False},
@@ -138,6 +139,48 @@ def canonical_url(value: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip("/"), "", urlencode(query), ""))
 
 
+def normalize_zh_title(value: str) -> str:
+    """Keep common crypto names recognizable in automatically translated titles."""
+    replacements = {
+        "比特幣": "Bitcoin", "位元幣": "Bitcoin", "以太坊": "Ethereum", "乙太坊": "Ethereum",
+        "索拉納": "Solana", "美國證券交易委員會": "SEC", "證券交易委員會": "SEC",
+        "交易所交易基金": "ETF", "SPOT": "現貨", "Spot": "現貨", "加密貨幣": "加密資產",
+    }
+    for source, target in replacements.items():
+        value = value.replace(source, target)
+    value = value.replace("BitcoinETF", "Bitcoin ETF").replace("EthereumETF", "Ethereum ETF")
+    value = re.sub(r"([\u3400-\u9fff])([A-Za-z0-9])", r"\1 \2", value)
+    value = re.sub(r"([A-Za-z0-9])([\u3400-\u9fff])", r"\1 \2", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def translate_title(title: str) -> str:
+    """Translate one public English headline to Traditional Chinese without an API key."""
+    query = urlencode({"q": title[:450], "langpair": "en|zh-TW", "mt": "1"})
+    payload = json.loads(http_text(f"{TRANSLATION_URL}?{query}", attempts=2))
+    translated = clean_text(str(payload.get("responseData", {}).get("translatedText", "")))
+    if not translated or translated.lower() == title.lower():
+        raise ValueError("translation result unavailable")
+    return normalize_zh_title(translated)
+
+
+def add_translated_title(item: dict[str, Any], state: dict[str, Any], now: datetime) -> dict[str, Any]:
+    cache = state.setdefault("translation_cache", {})
+    key = hashlib.sha256(item["title"].encode()).hexdigest()[:20]
+    cached = cache.get(key)
+    enriched = dict(item)
+    if cached and cached.get("source") == item["title"]:
+        enriched["title_zh"] = cached["translated"]
+        return enriched
+    try:
+        translated = translate_title(item["title"])
+        enriched["title_zh"] = translated
+        cache[key] = {"source": item["title"], "translated": translated, "date": now.date().isoformat()}
+    except Exception:
+        enriched["title_zh"] = item["title"]
+    return enriched
+
+
 def category_for(text: str) -> dict[str, Any] | None:
     lowered = f" {text.lower()} "
     for category in CATEGORIES:
@@ -214,10 +257,14 @@ def news_embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     excerpt = item["summary"][:360].rstrip()
     if len(item["summary"]) > 360:
         excerpt += "…"
+    translated = item.get("title_zh", item["title"])
+    headline = f"### {translated}"
+    if translated != item["title"]:
+        headline += f"\n*英文原標題：{item['title']}*"
     return {
         "author": {"name": "CRYPTO NEWS RADAR｜加密新聞"},
         "title": f"{prefix}{category['icon']} {priority}｜{category['label']}",
-        "description": f"### {item['title']}\n\n**繁體中文重點**\n• {ZH_SUMMARY[category['key']]}\n\n**可能影響**\n{IMPACT[category['key']]}",
+        "description": f"{headline}\n\n**繁體中文重點**\n• {ZH_SUMMARY[category['key']]}\n\n**可能影響**\n{IMPACT[category['key']]}",
         "color": 0xE74C3C if category["priority"] == "critical" else 0xF39C12,
         "fields": [
             {"name": "可信狀態", "value": status, "inline": True},
@@ -235,7 +282,9 @@ def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
     lines = []
     for item in items[:MAX_DIGEST_ITEMS]:
         category = item["category"]
-        lines.append(f"{category['icon']} **{item['title']}**\n└ {item['source']}｜[原文]({item['url']})")
+        translated = item.get("title_zh", item["title"])
+        original = f"\n└ 原標題：{item['title']}" if translated != item["title"] else ""
+        lines.append(f"{category['icon']} **{translated}**{original}\n└ {item['source']}｜[原文]({item['url']})")
     return {
         "author": {"name": "CRYPTO NEWS RADAR｜加密新聞"},
         "title": "📰 加密新聞三小時摘要",
@@ -263,7 +312,7 @@ def load_state() -> dict[str, Any]:
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"initialized": False, "seen": {}, "pending": [], "last_digest_slot": ""}
+        return {"initialized": False, "seen": {}, "pending": [], "last_digest_slot": "", "translation_cache": {}}
 
 
 def save_state(state: dict[str, Any]) -> None:
@@ -337,6 +386,7 @@ def run(now: datetime) -> tuple[int, int]:
     normal = [item for item in candidates if item["category"]["priority"] == "normal"]
     sent = 0
     for item in immediate[:MAX_IMMEDIATE_PER_RUN]:
+        item = add_translated_title(item, state, now)
         send_discord(webhook, news_embed(item))
         seen[item["id"]] = now.date().isoformat()
         sent += 1
@@ -345,7 +395,7 @@ def run(now: datetime) -> tuple[int, int]:
     pending_ids = {item["id"] for item in pending}
     for item in normal + immediate[MAX_IMMEDIATE_PER_RUN:]:
         if item["id"] not in pending_ids:
-            stored = dict(item)
+            stored = add_translated_title(item, state, now)
             stored["published"] = item["published"].isoformat()
             stored["category"] = item["category"]["key"]
             pending.append(stored)
@@ -370,6 +420,11 @@ def run(now: datetime) -> tuple[int, int]:
 
     cutoff = (now - timedelta(days=14)).date().isoformat()
     state["seen"] = {key: date for key, date in seen.items() if date >= cutoff}
+    translation_cutoff = (now - timedelta(days=30)).date().isoformat()
+    state["translation_cache"] = {
+        key: value for key, value in state.get("translation_cache", {}).items()
+        if value.get("date", "") >= translation_cutoff
+    }
     save_state(state)
     return len(items), sent
 
@@ -377,6 +432,7 @@ def run(now: datetime) -> tuple[int, int]:
 def sample_item(now: datetime) -> dict[str, Any]:
     return {
         "id": "test-security", "title": "Major exchange confirms security incident affecting withdrawals",
+        "title_zh": "大型交易所確認安全事件影響部分提款",
         "summary": "The exchange said it is investigating a security incident and temporarily paused selected withdrawals while it reviews affected systems.",
         "url": "https://example.com/crypto-news-test", "published": now,
         "source": "官方來源示範", "official": True, "category": CATEGORIES[0],
