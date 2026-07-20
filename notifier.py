@@ -925,8 +925,10 @@ def main() -> int:
             if not webhook:
                 raise RuntimeError("缺少 DISCORD_TEST_WEBHOOK_URL；測試通知禁止改送正式頻道")
             now = datetime.now(timezone.utc)
-            sample_events = []
-            for offset, key in ((2, "cpi"), (4, "ppi"), (9, "pce"), (12, "jobs"), (16, "claims")):
+            # BLS rows use the verified official schedule even in test messages.
+            # Only non-BLS rows remain simulated for layout coverage.
+            sample_events, verified_at = load_bls_schedule_snapshot()
+            for offset, key in ((9, "pce"), (16, "claims")):
                 sample_events.append({
                     "id": f"test-{key}",
                     "time": now + timedelta(days=offset),
@@ -934,7 +936,7 @@ def main() -> int:
                 })
             overview = macro_overview_embed(sample_events, now)
             overview["title"] = "🧪 測試｜📋 美國總經監控總覽"
-            overview["footer"]["text"] = "版面測試｜日期為模擬資料，不是正式公布時間"
+            overview["footer"]["text"] = f"BLS 日期為官方排程（核對日 {verified_at}）｜其他日期為版面測試"
             send_discord(webhook, overview, False)
             changed_rows = []
             for key, icon, label in (("cpi", "🔴", "CPI"), ("ppi", "🟠", "PPI")):
@@ -942,7 +944,7 @@ def main() -> int:
                 changed_rows.append(((key,), icon, label, event["time"].isoformat()))
             update_preview = overview_update_embed(changed_rows, now)
             update_preview["title"] = "🧪 測試｜🔄 美國總經監控總覽更新"
-            update_preview["footer"]["text"] = "版面測試｜模擬待確認變成已確認，不是正式公布時間"
+            update_preview["footer"]["text"] = f"BLS 官方排程更新預覽｜核對日 {verified_at}"
             send_discord(webhook, update_preview, False)
             log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
             if log_webhook:

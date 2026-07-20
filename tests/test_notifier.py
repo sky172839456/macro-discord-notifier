@@ -33,6 +33,15 @@ class OfficialSourceTests(unittest.TestCase):
         self.assertEqual(future["cpi"]["time"].isoformat(), "2026-08-12T12:30:00+00:00")
         self.assertEqual(future["ppi"]["time"].isoformat(), "2026-08-13T12:30:00+00:00")
 
+    def test_bls_snapshot_overview_confirms_all_four_tracked_rows(self):
+        from datetime import datetime, timezone
+        events, _ = load_bls_schedule_snapshot()
+        message = macro_overview_embed(events, datetime(2026, 7, 20, tzinfo=timezone.utc))
+        self.assertIn("非農就業／失業率**｜下次公布：08/07 20:30", message["description"])
+        self.assertIn("JOLTS 職位空缺**｜下次公布：08/04 22:00", message["description"])
+        self.assertNotIn("非農就業／失業率**｜下次公布：待官方確認", message["description"])
+        self.assertNotIn("JOLTS 職位空缺**｜下次公布：待官方確認", message["description"])
+
     def test_dynamic_bls_schedule_overrides_snapshot_for_same_series(self):
         from datetime import datetime, timezone
         now = datetime(2026, 7, 20, tzinfo=timezone.utc)
