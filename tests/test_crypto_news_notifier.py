@@ -2,10 +2,12 @@ import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from crypto_news_notifier import (SOURCES, canonical_url, category_for, connectivity_embed,
-                                  deduplicate, is_relevant, news_embed, parse_feed, similar_title)
+                                  deduplicate, is_relevant, news_embed, parse_feed, send_discord,
+                                  similar_title)
 
 
 class CryptoNewsTests(unittest.TestCase):
@@ -66,6 +68,19 @@ class CryptoNewsTests(unittest.TestCase):
         self.assertIn("正式連線成功", embed["title"])
         self.assertIn("不會把舊文章洗進正式頻道", embed["description"])
         self.assertIn("這不是新聞公告", embed["footer"]["text"])
+
+    def test_discord_post_uses_accepted_request_format(self):
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_):
+                return False
+
+        with patch("crypto_news_notifier.urlopen", return_value=Response()) as mocked:
+            send_discord("https://discord.com/api/webhooks/test/token", {"title": "test"})
+        request = mocked.call_args.args[0]
+        self.assertTrue(request.full_url.endswith("?wait=true"))
+        self.assertEqual(request.get_header("User-agent"), "macro-discord-notifier/2.0")
 
 
 if __name__ == "__main__":
