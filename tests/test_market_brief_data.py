@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import market_brief_data
-from market_brief_data import collect_dashboard, parse_farside_latest
+from market_brief_data import collect_dashboard, parse_farside_latest, parse_farside_week
 from summary_notifier import build_embed, flow_lines, risk_summary
 
 
@@ -19,6 +19,17 @@ class MarketBriefDataTests(unittest.TestCase):
         result = parse_farside_latest(source)
         self.assertEqual(result["date"].date().isoformat(), "2026-07-17")
         self.assertEqual(result["net_flow_musd"], -132.3)
+
+    def test_parses_five_day_farside_week(self):
+        rows = "".join(
+            f"<tr><td>{day:02d} Jul 2026</td><td>{value}</td></tr>"
+            for day, value in ((10, "10"), (13, "20"), (14, "(5)"), (15, "30"), (16, "0"), (17, "(15)"))
+        )
+        result = parse_farside_week(f"<table>{rows}</table>")
+        self.assertEqual(result["net_flow_musd"], 30)
+        self.assertEqual(result["inflow_days"], 2)
+        self.assertEqual(result["outflow_days"], 2)
+        self.assertEqual(result["start_date"].day, 13)
 
     def test_partial_source_failure_does_not_abort_dashboard(self):
         with patch.object(market_brief_data, "crypto_snapshot", return_value=({"BTC": {}}, {"USDT": 1})), \
@@ -90,6 +101,38 @@ class MarketBriefDataTests(unittest.TestCase):
         total_chars = len(embed["title"]) + len(embed["description"])
         total_chars += sum(len(field["name"]) + len(field["value"]) for field in embed["fields"])
         self.assertLessEqual(total_chars, 6000)
+
+    def test_weekly_embed_uses_weekly_sections(self):
+        dashboard = {
+            "errors": {},
+            "weekly_crypto": {
+                "BTC": {"price": 100, "change_7d": 5, "high_7d": 110, "low_7d": 90, "volume_7d": 1e9},
+                "ETH": {"price": 10, "change_7d": 7, "high_7d": 11, "low_7d": 8, "volume_7d": 5e8},
+            },
+            "global": {"market_cap": 2e12, "btc_dominance": 55},
+            "weekly_sentiment": {"value": 40, "previous_value": 30},
+            "weekly_derivatives": {
+                "BTC": {"oi_usd": 1e9, "funding_avg_7d": .01},
+                "ETH": {"oi_usd": 5e8, "funding_avg_7d": -.01},
+            },
+            "traditional": {
+                "DXY": {"price": 100, "change_7d": 1},
+                "US10Y": {"price": 4.5, "change_7d_bp": -5},
+                "GOLD": {"price": 4000, "change_7d": 2},
+                "NASDAQ": {"price": 25000, "change_7d": -1},
+            },
+            "weekly_btc_etf": {"net_flow_musd": 100, "start_date": datetime(2026, 7, 13, tzinfo=timezone.utc),
+                               "end_date": datetime(2026, 7, 17, tzinfo=timezone.utc), "inflow_days": 4, "outflow_days": 1},
+            "weekly_eth_etf": {"net_flow_musd": -20, "start_date": datetime(2026, 7, 13, tzinfo=timezone.utc),
+                               "end_date": datetime(2026, 7, 17, tzinfo=timezone.utc), "inflow_days": 2, "outflow_days": 3},
+            "stablecoins": {"USDT": 1, "USDC": 1},
+            "exchange_risk": {"active_count": 0, "names": []},
+        }
+        embed = build_embed("weekly", datetime(2026, 7, 20, tzinfo=timezone.utc), None, None, [], None, dashboard)
+        names = "\n".join(field["name"] for field in embed["fields"])
+        self.assertIn("本週表現", names)
+        self.assertIn("下週風險展望", names)
+        self.assertNotIn("今日風險摘要", names)
 
 
 if __name__ == "__main__":

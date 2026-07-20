@@ -5,10 +5,12 @@ from __future__ import annotations
 import html
 import json
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 from xml.etree import ElementTree
 
 USER_AGENT = "Mozilla/5.0 market-brief/4.0"
@@ -27,8 +29,15 @@ def get_text(url: str, *, referer: str | None = None) -> str:
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json,text/html,application/xml;q=0.9,*/*;q=0.8"}
     if referer:
         headers["Referer"] = referer
-    with urlopen(Request(url, headers=headers), timeout=30) as response:
-        return response.read().decode(response.headers.get_content_charset() or "utf-8", "replace")
+    for attempt in range(3):
+        try:
+            with urlopen(Request(url, headers=headers), timeout=30) as response:
+                return response.read().decode(response.headers.get_content_charset() or "utf-8", "replace")
+        except HTTPError as exc:
+            if attempt == 2 or exc.code not in {429, 500, 502, 503, 504}:
+                raise
+            time.sleep(2 ** attempt)
+    raise RuntimeError("公開資料來源無回應")
 
 
 def get_json(url: str) -> Any:
@@ -101,8 +110,52 @@ def fear_greed_snapshot() -> dict[str, Any]:
     }
 
 
+def weekly_crypto_snapshot() -> dict[str, dict[str, float]]:
+    result: dict[str, dict[str, float]] = {}
+    for symbol, coin_id in (("BTC", "bitcoin"), ("ETH", "ethereum")):
+        query = urlencode({"vs_currency": "usd", "days": "7", "interval": "daily"})
+        data = get_json(f"{COINGECKO}/coins/{coin_id}/market_chart?{query}")
+        prices = [float(point[1]) for point in data.get("prices", [])]
+        volumes = [float(point[1]) for point in data.get("total_volumes", [])]
+        if len(prices) < 2:
+            raise ValueError(f"{symbol} 七日價格資料不足")
+        result[symbol] = {
+            "price": prices[-1],
+            "change_7d": (prices[-1] / prices[0] - 1) * 100,
+            "high_7d": max(prices),
+            "low_7d": min(prices),
+            "volume_7d": sum(volumes[:7]),
+        }
+    return result
+
+
+def weekly_sentiment_snapshot() -> dict[str, Any]:
+    rows = get_json("https://api.alternative.me/fng/?limit=8")["data"]
+    if len(rows) < 2:
+        raise ValueError("恐慌貪婪歷史資料不足")
+    current = rows[0]
+    previous = rows[-1]
+    return {
+        "value": int(current["value"]),
+        "classification": str(current["value_classification"]),
+        "previous_value": int(previous["value"]),
+    }
+
+
+def weekly_funding_snapshot() -> dict[str, dict[str, float]]:
+    result: dict[str, dict[str, float]] = {}
+    current = derivatives_snapshot()
+    for coin in ("BTC", "ETH"):
+        history = get_json(f"{OKX}/api/v5/public/funding-rate-history?instId={coin}-USDT-SWAP&limit=30")
+        rates = [float(row["fundingRate"]) * 100 for row in history.get("data", [])]
+        if history.get("code") != "0" or not rates:
+            raise RuntimeError(f"OKX {coin} 資金費率歷史沒有資料")
+        result[coin] = {**current[coin], "funding_avg_7d": sum(rates) / len(rates)}
+    return result
+
+
 def yahoo_quote(symbol: str) -> dict[str, float]:
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}?range=5d&interval=1d"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol, safe='')}?range=10d&interval=1d"
     result = get_json(url)["chart"]["result"][0]
     meta = result["meta"]
     price = float(meta["regularMarketPrice"])
@@ -110,7 +163,10 @@ def yahoo_quote(symbol: str) -> dict[str, float]:
               if value is not None]
     previous = closes[-2] if len(closes) >= 2 else float(meta.get("previousClose") or meta.get("chartPreviousClose") or 0)
     change = (price / previous - 1) * 100 if previous else 0
-    return {"price": price, "change": change, "timestamp": float(meta.get("regularMarketTime") or 0)}
+    weekly_base = closes[-6] if len(closes) >= 6 else closes[0] if closes else previous
+    weekly_change = (price / weekly_base - 1) * 100 if weekly_base else 0
+    return {"price": price, "change": change, "change_7d": weekly_change,
+            "timestamp": float(meta.get("regularMarketTime") or 0)}
 
 
 def traditional_snapshot() -> dict[str, dict[str, float]]:
@@ -144,7 +200,9 @@ def treasury_10y_snapshot() -> dict[str, float]:
     observations.sort(key=lambda item: item[0])
     date, value = observations[-1]
     previous = observations[-2][1] if len(observations) > 1 else value
-    return {"price": value, "change_bp": (value - previous) * 100, "timestamp": date.timestamp()}
+    weekly_previous = observations[-6][1] if len(observations) >= 6 else observations[0][1]
+    return {"price": value, "change_bp": (value - previous) * 100,
+            "change_7d_bp": (value - weekly_previous) * 100, "timestamp": date.timestamp()}
 
 
 def _number(value: str) -> float:
@@ -175,8 +233,35 @@ def parse_farside_latest(source: str) -> dict[str, Any]:
     return {"date": date, "net_flow_musd": flow}
 
 
+def parse_farside_week(source: str, trading_days: int = 5) -> dict[str, Any]:
+    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", source, re.I | re.S)
+    candidates = []
+    for row in rows:
+        cells = [
+            re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(cell))).strip()
+            for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.I | re.S)
+        ]
+        if len(cells) >= 2 and re.fullmatch(r"\d{1,2}\s+[A-Za-z]{3}\s+\d{4}", cells[0]):
+            candidates.append((datetime.strptime(cells[0], "%d %b %Y").replace(tzinfo=timezone.utc),
+                               _number(cells[-1])))
+    selected = sorted(candidates, key=lambda item: item[0])[-trading_days:]
+    if not selected:
+        raise ValueError("Farside ETF 表格沒有可辨識的日期資料")
+    flows = [flow for _, flow in selected]
+    return {
+        "start_date": selected[0][0], "end_date": selected[-1][0],
+        "net_flow_musd": sum(flows), "inflow_days": sum(flow > 0 for flow in flows),
+        "outflow_days": sum(flow < 0 for flow in flows), "trading_days": len(flows),
+        "max_inflow_musd": max(flows), "max_outflow_musd": min(flows),
+    }
+
+
 def etf_flow_snapshot(url: str = FARSIDE_BTC) -> dict[str, Any]:
     return parse_farside_latest(get_text(url, referer="https://farside.co.uk/"))
+
+
+def weekly_etf_snapshot(url: str) -> dict[str, Any]:
+    return parse_farside_week(get_text(url, referer="https://farside.co.uk/"))
 
 
 def liquidation_snapshot(now: datetime) -> dict[str, Any]:
@@ -234,4 +319,22 @@ def collect_dashboard(now: datetime) -> dict[str, Any]:
     collect("eth_etf", lambda: etf_flow_snapshot(FARSIDE_ETH))
     collect("liquidations", lambda: liquidation_snapshot(now))
     collect("exchange_risk", exchange_risk_snapshot)
+    return dashboard
+
+
+def collect_weekly_dashboard(now: datetime) -> dict[str, Any]:
+    dashboard = collect_dashboard(now)
+
+    def collect(name: str, function: Any) -> None:
+        try:
+            dashboard[name] = function()
+        except Exception as exc:
+            dashboard[name] = None
+            dashboard["errors"][name] = type(exc).__name__
+
+    collect("weekly_crypto", weekly_crypto_snapshot)
+    collect("weekly_sentiment", weekly_sentiment_snapshot)
+    collect("weekly_derivatives", weekly_funding_snapshot)
+    collect("weekly_btc_etf", lambda: weekly_etf_snapshot(FARSIDE_BTC))
+    collect("weekly_eth_etf", lambda: weekly_etf_snapshot(FARSIDE_ETH))
     return dashboard
