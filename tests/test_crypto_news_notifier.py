@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from crypto_news_notifier import (SOURCES, canonical_url, category_for, deduplicate,
-                                  is_relevant, news_embed, parse_feed, similar_title)
+from crypto_news_notifier import (SOURCES, canonical_url, category_for, connectivity_embed,
+                                  deduplicate, is_relevant, news_embed, parse_feed, similar_title)
 
 
 class CryptoNewsTests(unittest.TestCase):
@@ -60,6 +60,12 @@ class CryptoNewsTests(unittest.TestCase):
         self.assertIn("繁體中文重點", embed["description"])
         self.assertIn("可能影響", embed["description"])
         self.assertEqual(embed["fields"][0]["value"], "✅ 官方確認")
+
+    def test_connectivity_card_cannot_be_mistaken_for_news(self):
+        embed = connectivity_embed(42, [("CoinDesk", 10, None)], datetime.now(timezone.utc))
+        self.assertIn("正式連線成功", embed["title"])
+        self.assertIn("不會把舊文章洗進正式頻道", embed["description"])
+        self.assertIn("這不是新聞公告", embed["footer"]["text"])
 
 
 if __name__ == "__main__":

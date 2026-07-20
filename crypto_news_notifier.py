@@ -277,6 +277,37 @@ def fetch_all() -> tuple[list[dict[str, Any]], list[tuple[str, int, str | None]]
     return deduplicate(items), statuses
 
 
+def initialize_baseline(now: datetime) -> tuple[int, list[tuple[str, int, str | None]]]:
+    """Record current articles without publishing them, preventing a first-run flood."""
+    items, statuses = fetch_all()
+    if not any(count >= 0 for _, count, _ in statuses):
+        raise RuntimeError("所有加密新聞來源皆無法讀取")
+    state = load_state()
+    seen = state.setdefault("seen", {})
+    for item in items:
+        seen[item["id"]] = now.date().isoformat()
+    state["initialized"] = True
+    save_state(state)
+    return len(items), statuses
+
+
+def connectivity_embed(count: int, statuses: list[tuple[str, int, str | None]], now: datetime) -> dict[str, Any]:
+    lines = [f"{'✅' if error is None else '⚠️'} **{name}**｜{count if error is None else error}"
+             for name, count, error in statuses]
+    return {
+        "author": {"name": "CRYPTO NEWS RADAR｜加密新聞"},
+        "title": "✅ 加密新聞雷達正式連線成功",
+        "description": (
+            f"已建立 **{count} 篇**現有新聞基準，不會把舊文章洗進正式頻道。\n\n"
+            + "\n".join(lines)
+            + "\n\n接下來只會通知新出現且符合高訊號條件的新聞。"
+        ),
+        "color": 0x2ECC71,
+        "footer": {"text": "正式頻道連線測試｜這不是新聞公告"},
+        "timestamp": now.isoformat(),
+    }
+
+
 def run(now: datetime) -> tuple[int, int]:
     webhook = os.environ.get("DISCORD_CRYPTO_NEWS_WEBHOOK_URL")
     if not webhook:
@@ -352,6 +383,7 @@ def main() -> int:
         sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--test", action="store_true")
+    parser.add_argument("--production-test", action="store_true")
     parser.add_argument("--source-check", action="store_true")
     args = parser.parse_args()
     try:
@@ -369,6 +401,14 @@ def main() -> int:
                 raise RuntimeError("缺少 DISCORD_TEST_WEBHOOK_URL；測試禁止發到正式頻道")
             send_discord(webhook, news_embed(sample_item(now), test=True))
             print("完成：已送出加密新聞測試通知")
+            return 0
+        if args.production_test:
+            webhook = os.environ.get("DISCORD_CRYPTO_NEWS_WEBHOOK_URL")
+            if not webhook:
+                raise RuntimeError("缺少 DISCORD_CRYPTO_NEWS_WEBHOOK_URL")
+            count, statuses = initialize_baseline(now)
+            send_discord(webhook, connectivity_embed(count, statuses, now))
+            print(f"完成：已建立 {count} 篇基準並送出正式連線測試")
             return 0
         count, sent = run(now)
         print(f"完成：符合條件 {count} 筆，本次送出 {sent} 則")
