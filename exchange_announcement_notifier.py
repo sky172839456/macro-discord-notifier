@@ -96,6 +96,8 @@ def operational_kind(value: str) -> dict[str, Any] | None:
 def page_items(exchange: str, url: str) -> list[dict[str, Any]]:
     if exchange == "Binance":
         return binance_items()
+    if exchange == "BingX":
+        return bingx_items()
     body = text(url)
     path_pattern, base = PAGE_RULES[exchange]
     pattern = rf'href=["\']([^"\']*{path_pattern}[^"\']*)["\'][^>]*>(.*?)</a>'
@@ -137,6 +139,42 @@ def binance_items() -> list[dict[str, Any]]:
                 "category": category, "published": datetime.now(timezone.utc),
             })
     return list({item["id"]: item for item in items}.values())
+
+
+def bingx_items() -> list[dict[str, Any]]:
+    """Read BingX's official public announcement API instead of its JS-only page."""
+    endpoint = "https://open-api.bingx.com/openApi/content/v1/announcement"
+    items = []
+    for content_type in ("SystemMaintenance", "AssetMaintenance", "ProductUpdates"):
+        url = f"{endpoint}?contentType={content_type}&language=en-us&page=1"
+        request = Request(url, headers={
+            "User-Agent": "exchange-announcement-monitor/1.0",
+            "X-SOURCE-KEY": "BX-AI-SKILL",
+        })
+        with urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+        if payload.get("code") != 0:
+            raise RuntimeError(f"BingX API: {payload.get('msg') or payload.get('code')}")
+        data = payload.get("data", [])
+        articles = data.get("list", []) if isinstance(data, dict) else data
+        for article in articles:
+            title = clean_title(str(article.get("title", "")))
+            summary = clean_title(str(article.get("content", ""))) or title
+            category = operational_kind(f"{title} {summary}")
+            link = str(article.get("link") or article.get("url") or "")
+            if not title or not link or not category:
+                continue
+            try:
+                raw_time = str(article.get("time") or article.get("releaseTime") or "")
+                published = datetime.fromisoformat(raw_time.replace("Z", "+00:00")).astimezone(timezone.utc)
+            except ValueError:
+                published = datetime.now(timezone.utc)
+            items.append({
+                "id": hashlib.sha256(("BingX" + link).encode()).hexdigest()[:24],
+                "exchange": "BingX", "title": title, "summary": summary, "url": link,
+                "category": category, "published": published,
+            })
+    return list({item["id"]: item for item in items}.values())[:60]
 
 
 def atom_text(entry: ElementTree.Element, name: str) -> str:
