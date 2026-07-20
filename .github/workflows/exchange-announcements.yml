@@ -1,0 +1,61 @@
+name: Exchange Announcement Radar
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Notification target
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - source-check
+          - production-connectivity
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exchange-announcement-radar
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: .state/exchange-announcements.json
+          key: exchange-announcement-state-${{ github.run_id }}
+          restore-keys: exchange-announcement-state-
+      - name: Monitor official exchange announcements
+        env:
+          DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL }}
+          DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python exchange_announcement_notifier.py --source-check
+            if [ "${{ inputs.target }}" = "production-connectivity" ]; then
+              python exchange_announcement_notifier.py --production-test
+            elif [ "${{ inputs.target }}" = "test" ]; then
+              python exchange_announcement_notifier.py --test
+            fi
+          elif [ -z "$DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL" ]; then
+            echo "::warning::DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL is not configured; production announcements skipped."
+          else
+            python exchange_announcement_notifier.py
+          fi
+      - if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/exchange-announcements.json
+          key: exchange-announcement-state-${{ github.run_id }}
