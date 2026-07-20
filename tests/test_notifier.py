@@ -6,10 +6,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
                       fetch_bls_api_releases, fetch_extended_calendar, format_metrics,
                       full_source_health_embed, merge_calendar_events,
+                      load_bls_schedule_snapshot,
                       macro_overview_embed, overview_snapshot,
                       overview_update_embed, parse_bls_calendar, parse_feed,
                       pre_embed, revision_lines,
-                      source_health_embed)
+                      source_health_embed, supplement_dynamic_bls_calendar)
 
 
 class OfficialSourceTests(unittest.TestCase):
@@ -22,6 +23,25 @@ class OfficialSourceTests(unittest.TestCase):
         events = parse_bls_calendar(source)
         self.assertEqual(events[0]["rule"]["key"], "cpi")
         self.assertEqual(events[0]["time"].isoformat(), "2026-07-14T12:30:00+00:00")
+
+    def test_bls_snapshot_has_confirmed_next_cpi_and_ppi_times(self):
+        events, verified_at = load_bls_schedule_snapshot()
+        future = {event["rule"]["key"]: event for event in events if event["time"].isoformat() in {
+            "2026-08-12T12:30:00+00:00", "2026-08-13T12:30:00+00:00"
+        }}
+        self.assertEqual(verified_at, "2026-07-20")
+        self.assertEqual(future["cpi"]["time"].isoformat(), "2026-08-12T12:30:00+00:00")
+        self.assertEqual(future["ppi"]["time"].isoformat(), "2026-08-13T12:30:00+00:00")
+
+    def test_dynamic_bls_schedule_overrides_snapshot_for_same_series(self):
+        from datetime import datetime, timezone
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        snapshot, _ = load_bls_schedule_snapshot()
+        rule = classify("Consumer Price Index")
+        corrected = {"id": "corrected", "time": datetime(2026, 8, 12, 13, 30, tzinfo=timezone.utc), "rule": rule}
+        merged = supplement_dynamic_bls_calendar([corrected], snapshot, now)
+        future_cpi = [event for event in merged if event["rule"]["key"] == "cpi" and event["time"] >= now]
+        self.assertEqual(future_cpi, [corrected])
 
     def test_calendar_failure_is_not_reported_as_no_events(self):
         from datetime import datetime, timezone

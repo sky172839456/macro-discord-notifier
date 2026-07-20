@@ -25,6 +25,13 @@ STATE_FILE = Path(os.getenv("STATE_FILE", ".state/notified.json"))
 NY = ZoneInfo("America/New_York")
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
 BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
+BLS_HTML_SCHEDULES = {
+    "cpi": "https://www.bls.gov/schedule/news_release/cpi.htm",
+    "ppi": "https://www.bls.gov/schedule/news_release/ppi.htm",
+    "jobs": "https://www.bls.gov/schedule/news_release/empsit.htm",
+    "jolts": "https://www.bls.gov/schedule/news_release/jolts.htm",
+}
+BLS_SCHEDULE_SNAPSHOT = Path(__file__).resolve().parent / "data" / "bls_schedule_2026.json"
 BLS_API_GROUPS = {
     "cpi": ("CUSR0000SA0", "CUUR0000SA0"),
     "ppi": ("WPSFD4", "WPUFD4"),
@@ -336,6 +343,61 @@ def parse_bls_calendar(source: str) -> list[dict[str, Any]]:
             key, value = line.split(":", 1)
             current[key.split(";", 1)[0]] = value.replace("\\,", ",")
     return events
+
+
+def fetch_bls_html_calendar(now: datetime) -> list[dict[str, Any]]:
+    """Read BLS release-specific HTML schedules when the ICS endpoint is blocked."""
+    events: list[dict[str, Any]] = []
+    year = now.astimezone(NY).year
+    pattern = re.compile(r"\b([A-Z][a-z]+ \d{1,2})\s+(\d{1,2}:\d{2})\s+(AM|PM)\b")
+    for event_key, url in BLS_HTML_SCHEDULES.items():
+        rule = next(rule for rule in EVENT_RULES if rule["key"] == event_key)
+        source = html_to_text(http_text(url))
+        matches = list(pattern.finditer(source))
+        if not matches:
+            raise ValueError(f"missing schedule rows for {event_key}")
+        for match in matches:
+            event_time = _ny_schedule_time(*match.groups(), year)
+            events.append({
+                "id": f"bls-html-{event_key}-{event_time.isoformat()}",
+                "title": rule["name"],
+                "time": event_time,
+                "rule": rule,
+                "calendar_source": "BLS 官方 HTML 排程",
+            })
+    return events
+
+
+def load_bls_schedule_snapshot() -> tuple[list[dict[str, Any]], str]:
+    """Load a locally bundled snapshot transcribed from official BLS schedules."""
+    payload = json.loads(BLS_SCHEDULE_SNAPSHOT.read_text(encoding="utf-8"))
+    events: list[dict[str, Any]] = []
+    for item in payload["events"]:
+        rule = next(rule for rule in EVENT_RULES if rule["key"] == item["key"])
+        event_time = datetime.strptime(
+            f"{item['date']} {item['time']}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=NY).astimezone(timezone.utc)
+        events.append({
+            "id": f"bls-snapshot-{item['key']}-{item['date']}-{item['time']}",
+            "title": rule["name"],
+            "time": event_time,
+            "rule": rule,
+            "calendar_source": "BLS 官方年度排程快照",
+        })
+    return events, str(payload["verified_at"])
+
+
+def supplement_dynamic_bls_calendar(
+    dynamic: list[dict[str, Any]], snapshot: list[dict[str, Any]], now: datetime
+) -> list[dict[str, Any]]:
+    """Use snapshots only for BLS series that have no current dynamic schedule."""
+    bls_keys = set(BLS_HTML_SCHEDULES)
+    confirmed = {
+        event["rule"]["key"] for event in dynamic
+        if event["rule"]["key"] in bls_keys and event["time"] >= now
+    }
+    fallback = [event for event in snapshot if event["rule"]["key"] not in confirmed]
+    return merge_calendar_events(dynamic, fallback)
 
 
 def element_text(node: ElementTree.Element | None) -> str:
@@ -688,18 +750,35 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
     recoveries: list[str] = []
     statuses: list[tuple[str, str, bool]] = []
 
+    snapshot_calendar: list[dict[str, Any]] = []
     try:
         official_calendar = parse_bls_calendar(http_text(BLS_CALENDAR_URL))
         statuses.append(("BLS 官方行事曆", f"正常，{len(official_calendar)} 個追蹤事件", True))
     except Exception as exc:
-        official_calendar = []
         errors.append(f"BLS 行事曆：{type(exc).__name__} / {exc}")
         statuses.append(("BLS 官方行事曆", f"{type(exc).__name__} / {exc}", False))
+        try:
+            official_calendar = fetch_bls_html_calendar(now)
+            recoveries.append("BLS 官方 HTML 排程備援成功")
+            statuses.append(("BLS 官方 HTML 排程", f"正常，{len(official_calendar)} 個追蹤事件", True))
+        except Exception as html_exc:
+            official_calendar = []
+            errors.append(f"BLS HTML 排程：{type(html_exc).__name__} / {html_exc}")
+            statuses.append(("BLS 官方 HTML 排程", f"{type(html_exc).__name__} / {html_exc}", False))
+            try:
+                snapshot_calendar, verified_at = load_bls_schedule_snapshot()
+                recoveries.append(f"BLS 官方年度排程快照備援成功（核對日 {verified_at}）")
+                statuses.append(("BLS 官方年度排程快照", f"正常，{len(snapshot_calendar)} 個事件；核對日 {verified_at}", True))
+            except Exception as snapshot_exc:
+                errors.append(f"BLS 排程快照：{type(snapshot_exc).__name__} / {snapshot_exc}")
+                statuses.append(("BLS 官方年度排程快照", f"{type(snapshot_exc).__name__} / {snapshot_exc}", False))
     auxiliary_calendar, auxiliary_ok = fetch_public_calendar()
     statuses.append(("輔助經濟行事曆", f"正常，{len(auxiliary_calendar)} 個追蹤事件" if auxiliary_ok else "所有端點皆無法讀取", auxiliary_ok))
     extended_calendar, extended_statuses = fetch_extended_calendar(now)
     statuses.extend((name, detail, healthy) for name, healthy, detail in extended_statuses)
-    calendar = merge_calendar_events(official_calendar, auxiliary_calendar, extended_calendar)
+    dynamic_calendar = merge_calendar_events(official_calendar, auxiliary_calendar)
+    bls_calendar = supplement_dynamic_bls_calendar(dynamic_calendar, snapshot_calendar, now)
+    calendar = merge_calendar_events(bls_calendar, extended_calendar)
     calendar_error = None if calendar else "官方與輔助行事曆皆無法讀取"
 
     releases: list[dict[str, Any]] = []
@@ -819,6 +898,12 @@ def main() -> int:
                 counts["BLS_CALENDAR"] = len(parse_bls_calendar(http_text(BLS_CALENDAR_URL)))
             except Exception:
                 counts["BLS_CALENDAR"] = -1
+                try:
+                    counts["BLS_HTML_CALENDAR"] = len(fetch_bls_html_calendar(datetime.now(timezone.utc)))
+                except Exception:
+                    counts["BLS_HTML_CALENDAR"] = -1
+                    snapshot, _ = load_bls_schedule_snapshot()
+                    counts["BLS_SCHEDULE_SNAPSHOT"] = len(snapshot)
             for provider, url in OFFICIAL_FEEDS:
                 try:
                     counts[provider] = len(parse_feed(http_text(url), url, provider))
