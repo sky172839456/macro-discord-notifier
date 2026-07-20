@@ -148,6 +148,7 @@ def normalize_zh_title(value: str) -> str:
     }
     for source, target in replacements.items():
         value = value.replace(source, target)
+    value = value.replace("BitcoinETF", "Bitcoin ETF").replace("EthereumETF", "Ethereum ETF")
     value = re.sub(r"([\u3400-\u9fff])([A-Za-z0-9])", r"\1 \2", value)
     value = re.sub(r"([A-Za-z0-9])([\u3400-\u9fff])", r"\1 \2", value)
     return re.sub(r"\s+", " ", value).strip()
