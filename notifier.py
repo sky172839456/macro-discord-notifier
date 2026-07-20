@@ -515,6 +515,33 @@ def macro_overview_embed(events: list[dict[str, Any]], now: datetime,
     }
 
 
+def overview_snapshot(events: list[dict[str, Any]], now: datetime) -> dict[str, str | None]:
+    """Store the next known event for every overview row; expired events are ignored."""
+    future = [event for event in events if event["time"] >= now]
+    snapshot: dict[str, str | None] = {}
+    for keys, _, _ in OVERVIEW_ROWS:
+        matches = [event for event in future if event["rule"]["key"] in keys]
+        snapshot["+".join(keys)] = min(matches, key=lambda event: event["time"])["time"].isoformat() if matches else None
+    return snapshot
+
+
+def overview_update_embed(changes: list[tuple[tuple[str, ...], str, str, str | None]], now: datetime) -> dict[str, Any]:
+    lines = []
+    for _, icon, label, value in changes:
+        local = datetime.fromisoformat(value).astimezone(TAIPEI) if value else None
+        display = local.strftime("%m/%d %H:%M") if local else "待官方確認"
+        lines.append(f"{icon} **{label}**｜已更新：{display}")
+    return {
+        "author": {"name": "US MACRO WATCH｜監控總覽"},
+        "title": "🔄 美國總經監控總覽更新",
+        "description": "\n".join(lines),
+        "color": 0x3498DB,
+        "fields": [{"name": "🌏 時區", "value": "Asia/Taipei（台灣時間）", "inline": True}],
+        "footer": {"text": "只在待確認變成已確認、官方改期或下一場事件出現時通知"},
+        "timestamp": now.isoformat(),
+    }
+
+
 def daily_embed(events: list[dict[str, Any]], now: datetime, calendar_error: str | None = None) -> dict[str, Any]:
     local = now.astimezone(TAIPEI)
     end = now + timedelta(days=3)
@@ -708,6 +735,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
     health_alerts = state.setdefault("health_alerts", {})
     daily_health = state.setdefault("daily_health", [])
     weekly_overviews = state.setdefault("weekly_overviews", [])
+    previous_overview = state.get("overview_snapshot")
     local = now.astimezone(TAIPEI)
     log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
     health_key = f"sources:v3:{local:%Y-%m-%d}"
@@ -719,12 +747,30 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
         send_discord(log_webhook, full_source_health_embed(statuses), dry_run)
         daily_health.append(digest_key)
     week_key = f"{local:%G-W%V}"
+    weekly_sent = False
     if (force_digest or (local.weekday() == 0 and local.hour >= 7)) and week_key not in weekly_overviews:
         send_discord(webhook, macro_overview_embed(calendar, now, calendar_error), dry_run)
         weekly_overviews.append(week_key)
+        weekly_sent = True
     if (force_digest or local.hour >= 7) and digest_key not in digests:
         send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
         digests.append(digest_key)
+
+    current_overview = overview_snapshot(calendar, now)
+    if previous_overview:
+        # A temporary source outage must not erase a previously confirmed time
+        # and then create a false "new schedule" notification on recovery.
+        current_overview = {
+            key: value if value is not None else previous_overview.get(key)
+            for key, value in current_overview.items()
+        }
+    if previous_overview and not weekly_sent:
+        rows_by_key = {"+".join(keys): (keys, icon, label) for keys, icon, label in OVERVIEW_ROWS}
+        changes = [(*rows_by_key[key], value) for key, value in current_overview.items()
+                   if value is not None and value != previous_overview.get(key)]
+        if changes:
+            send_discord(webhook, overview_update_embed(changes, now), dry_run)
+    state["overview_snapshot"] = current_overview
 
     for event in calendar:
         minutes = (event["time"] - now).total_seconds() / 60
@@ -805,6 +851,14 @@ def main() -> int:
             overview["title"] = "🧪 測試｜📋 美國總經監控總覽"
             overview["footer"]["text"] = "版面測試｜日期為模擬資料，不是正式公布時間"
             send_discord(webhook, overview, False)
+            changed_rows = []
+            for key, icon, label in (("cpi", "🔴", "CPI"), ("ppi", "🟠", "PPI")):
+                event = next(item for item in sample_events if item["rule"]["key"] == key)
+                changed_rows.append(((key,), icon, label, event["time"].isoformat()))
+            update_preview = overview_update_embed(changed_rows, now)
+            update_preview["title"] = "🧪 測試｜🔄 美國總經監控總覽更新"
+            update_preview["footer"]["text"] = "版面測試｜模擬待確認變成已確認，不是正式公布時間"
+            send_discord(webhook, update_preview, False)
             log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
             if log_webhook:
                 send_discord(log_webhook, health_embed(

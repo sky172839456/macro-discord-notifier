@@ -6,7 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
                       fetch_bls_api_releases, fetch_extended_calendar, format_metrics,
                       full_source_health_embed, merge_calendar_events,
-                      macro_overview_embed, parse_bls_calendar, parse_feed,
+                      macro_overview_embed, overview_snapshot,
+                      overview_update_embed, parse_bls_calendar, parse_feed,
                       pre_embed, revision_lines,
                       source_health_embed)
 
@@ -52,6 +53,23 @@ class OfficialSourceTests(unittest.TestCase):
         message = macro_overview_embed(events, now)
         self.assertIn("07/22 08:00", message["description"])
         self.assertNotIn("07/19", message["description"])
+
+    def test_overview_snapshot_detects_pending_to_confirmed(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        rule = classify("Consumer Price Index")
+        pending = overview_snapshot([], now)
+        confirmed = overview_snapshot([{"id": "cpi", "time": now + timedelta(days=2), "rule": rule}], now)
+        self.assertIsNone(pending["cpi"])
+        self.assertNotEqual(pending["cpi"], confirmed["cpi"])
+
+    def test_overview_update_card_contains_only_changed_time(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        value = (now + timedelta(days=2)).isoformat()
+        message = overview_update_embed([(("cpi",), "🔴", "CPI", value)], now)
+        self.assertIn("總經監控總覽更新", message["title"])
+        self.assertIn("07/22 08:00", message["description"])
 
     def test_overview_distinguishes_unconfirmed_from_source_failure(self):
         from datetime import datetime, timezone
