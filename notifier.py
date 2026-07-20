@@ -739,7 +739,8 @@ def legacy_run(now: datetime, dry_run: bool = False, force_digest: bool = False)
     return len(calendar), len(releases)
 
 
-def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tuple[int, int]:
+def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
+        force_overview: bool = False) -> tuple[int, int]:
     """Complete macro radar pipeline with redundant calendars and full health reporting."""
     webhook = os.environ.get("DISCORD_WEBHOOK_URL")
     if not webhook and not dry_run:
@@ -827,7 +828,10 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
         daily_health.append(digest_key)
     week_key = f"{local:%G-W%V}"
     weekly_sent = False
-    if (force_digest or (local.weekday() == 0 and local.hour >= 7)) and week_key not in weekly_overviews:
+    if force_overview or (
+        (force_digest or (local.weekday() == 0 and local.hour >= 7))
+        and week_key not in weekly_overviews
+    ):
         send_discord(webhook, macro_overview_embed(calendar, now, calendar_error), dry_run)
         weekly_overviews.append(week_key)
         weekly_sent = True
@@ -888,6 +892,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--digest", action="store_true")
+    parser.add_argument("--overview", action="store_true")
     parser.add_argument("--test-notification", action="store_true")
     parser.add_argument("--source-check", action="store_true")
     args = parser.parse_args()
@@ -955,7 +960,9 @@ def main() -> int:
                 ), False)
             print("完成：已送出 Discord 測試通知")
             return 0
-        calendar_count, release_count = run(datetime.now(timezone.utc), args.dry_run, args.digest)
+        calendar_count, release_count = run(
+            datetime.now(timezone.utc), args.dry_run, args.digest, args.overview
+        )
         print(f"完成：行事曆 {calendar_count} 筆，官方更新 {release_count} 筆")
         return 0
     except Exception as exc:

@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "執行模式"
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - production_overview
 
 permissions:
   contents: read
@@ -36,7 +45,10 @@ jobs:
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
           DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.mode }}" = "production_overview" ]; then
+            python notifier.py --source-check
+            python notifier.py --overview
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python notifier.py --source-check
             python notifier.py --test-notification
           else
