@@ -98,6 +98,12 @@ def page_items(exchange: str, url: str) -> list[dict[str, Any]]:
         return binance_items()
     if exchange == "BingX":
         return bingx_items()
+    if exchange == "OKX":
+        return okx_items()
+    return html_page_items(exchange, url)
+
+
+def html_page_items(exchange: str, url: str) -> list[dict[str, Any]]:
     body = text(url)
     path_pattern, base = PAGE_RULES[exchange]
     pattern = rf'href=["\']([^"\']*{path_pattern}[^"\']*)["\'][^>]*>(.*?)</a>'
@@ -114,6 +120,26 @@ def page_items(exchange: str, url: str) -> list[dict[str, Any]]:
             "category": category, "published": datetime.now(timezone.utc),
         })
     return list({item["id"]: item for item in items}.values())[:40]
+
+
+def okx_items() -> list[dict[str, Any]]:
+    """Combine fixed-locale OKX pages so cloud-region HTML differences do not create false zeroes."""
+    urls = (
+        "https://www.okx.com/en-us/help/section/announcements-api",
+        "https://www.okx.com/en-eu/help/section/announcements-trading-updates",
+        "https://www.okx.com/help/section/announcements-latest-announcements",
+    )
+    items = []
+    errors = []
+    for url in urls:
+        try:
+            items.extend(html_page_items("OKX", url))
+        except Exception as exc:
+            errors.append(exc)
+    deduplicated = list({item["id"]: item for item in items}.values())[:60]
+    if not deduplicated and len(errors) == len(urls):
+        raise errors[0]
+    return deduplicated
 
 
 def binance_items() -> list[dict[str, Any]]:

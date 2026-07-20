@@ -41,6 +41,18 @@ class ExchangeAnnouncementTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["category"]["key"], "maintenance")
 
+    def test_okx_uses_fixed_locale_fallbacks_and_deduplicates(self):
+        body = '<a href="/en-us/help/notice">OKX Spot API Maintenance Notice</a>'
+        with patch.object(module, "text", side_effect=[OSError("region blocked"), body, body]):
+            items = module.okx_items()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["category"]["key"], "maintenance")
+
+    def test_okx_raises_only_when_every_source_errors(self):
+        with patch.object(module, "text", side_effect=OSError("blocked")):
+            with self.assertRaises(OSError):
+                module.okx_items()
+
     def test_binance_json_parser_filters_listing_content(self):
         payload = {"data": {"articles": [
             {"code": "maint", "title": "Binance Spot API Maintenance Notice"},
