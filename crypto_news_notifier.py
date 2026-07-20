@@ -248,7 +248,13 @@ def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
 
 def send_discord(webhook: str, embed: dict[str, Any]) -> None:
     payload = json.dumps({"username": "加密新聞雷達", "embeds": [embed]}).encode("utf-8")
-    request = Request(webhook, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    url = webhook + ("&" if "?" in webhook else "?") + "wait=true"
+    request = Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "User-Agent": "macro-discord-notifier/2.0"},
+        method="POST",
+    )
     with urlopen(request, timeout=25):
         pass
 
