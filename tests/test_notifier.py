@@ -3,7 +3,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from notifier import HTTP_HEADERS, classify, daily_embed, extract_numbers, fetch_bls_api_releases, parse_bls_calendar, parse_feed, source_health_embed
+from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
+                      fetch_bls_api_releases, format_metrics,
+                      full_source_health_embed, merge_calendar_events,
+                      parse_bls_calendar, parse_feed, pre_embed, revision_lines,
+                      source_health_embed)
 
 
 class OfficialSourceTests(unittest.TestCase):
@@ -40,6 +44,43 @@ class OfficialSourceTests(unittest.TestCase):
     def test_classify(self):
         self.assertEqual(classify("Employment Situation")["key"], "jobs")
         self.assertEqual(classify("Chair Powell speaks")["key"], "powell")
+        self.assertEqual(classify("Personal Income and Outlays")["key"], "pce")
+        self.assertEqual(classify("Unemployment Claims")["key"], "claims")
+        self.assertEqual(classify("JOLTS Job Openings")["key"], "jolts")
+        self.assertEqual(classify("Advance Retail Sales")["key"], "retail")
+        self.assertEqual(classify("Durable Goods Orders")["key"], "durable")
+
+    def test_day_before_reminder_copy(self):
+        from datetime import datetime, timezone
+        event = {"time": datetime(2026, 8, 12, 12, 30, tzinfo=timezone.utc),
+                 "rule": classify("Personal Income and Outlays")}
+        message = pre_embed(event, day_before=True)
+        self.assertIn("明日", message["title"])
+
+    def test_full_health_always_shows_successes(self):
+        message = full_source_health_embed([
+            ("BLS 官方動態", "正常", True),
+            ("DOL 官方動態", "HTTP 403", False),
+        ])
+        self.assertIn("1 個來源異常", message["title"])
+        self.assertIn("✅ **BLS 官方動態**", message["description"])
+        self.assertIn("❌ **DOL 官方動態**", message["description"])
+
+    def test_previous_and_revision_copy(self):
+        summary = "Retail sales rose 0.6 percent. The prior value was revised from 0.2 percent to 0.3 percent."
+        self.assertIn("前期數值", format_metrics(summary, "retail"))
+        self.assertIn("revised", revision_lines(summary))
+
+    def test_calendar_merge_deduplicates_same_release(self):
+        from datetime import datetime, timezone
+        event_time = datetime(2026, 8, 12, 12, 30, tzinfo=timezone.utc)
+        rule = classify("Consumer Price Index")
+        merged = merge_calendar_events(
+            [{"id": "official", "time": event_time, "rule": rule}],
+            [{"id": "auxiliary", "time": event_time, "rule": rule}],
+        )
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["id"], "official")
 
     def test_extract_numbers(self):
         self.assertEqual(extract_numbers("GDP increased 3.0 percent and prices rose 2.1%."), "3.0 percent、2.1%")
