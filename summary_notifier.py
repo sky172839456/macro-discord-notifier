@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from config import BLS_CALENDAR_URL, TAIPEI_ZONE
 from notifier import NY, classify, http_text, parse_bls_calendar
+from market_brief_data import collect_dashboard
 
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
 COINGECKO_SIMPLE = "https://api.coingecko.com/api/v3/simple/price"
@@ -145,6 +146,20 @@ def public_calendar_fallback() -> list[dict[str, Any]]:
     return events
 
 
+def public_calendar_fallback_with_status() -> tuple[list[dict[str, Any]], bool]:
+    """Return whether at least one public calendar responded, even with no matching events."""
+    events: list[dict[str, Any]] = []
+    succeeded = False
+    for url in FAIR_ECONOMY_CALENDARS:
+        try:
+            payload = http_json(url)
+            succeeded = True
+            events.extend(parse_fair_economy_calendar(payload))
+        except Exception:
+            continue
+    return events, succeeded
+
+
 def http_json(url: str) -> Any:
     request = Request(url, headers={"User-Agent": "macro-discord-notifier/3.0"})
     with urlopen(request, timeout=30) as response:
@@ -193,9 +208,10 @@ def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str
             break
     if not events:
         events = official_calendar_fallback(now, days)
+    public_succeeded = False
     if not events:
-        events = public_calendar_fallback()
-    if not events:
+        events, public_succeeded = public_calendar_fallback_with_status()
+    if not events and not public_succeeded:
         return [], "官方行事曆目前未完成同步，系統將於下次排程自動重試。"
     end = now + timedelta(days=days)
     filtered = sorted((event for event in events if now <= event["time"] < end), key=lambda item: item["time"])
@@ -223,6 +239,169 @@ def market_lines(market: dict[str, dict[str, float]] | None, error: str | None) 
     return "\n".join(lines)
 
 
+def money(value: float) -> str:
+    value = float(value)
+    if abs(value) >= 1_000_000_000_000:
+        return f"${value / 1_000_000_000_000:.2f}T"
+    if abs(value) >= 1_000_000_000:
+        return f"${value / 1_000_000_000:.2f}B"
+    if abs(value) >= 1_000_000:
+        return f"${value / 1_000_000:.1f}M"
+    return f"${value:,.0f}"
+
+
+def unavailable(dashboard: dict[str, Any], key: str) -> str:
+    error = dashboard.get("errors", {}).get(key, "來源暫時無法取得")
+    return f"⚠️ 暫時無法取得（{error}）"
+
+
+def crypto_detail_lines(dashboard: dict[str, Any]) -> str:
+    coins = dashboard.get("crypto")
+    if not coins:
+        return unavailable(dashboard, "crypto")
+    lines = []
+    for symbol in ("BTC", "ETH"):
+        item = coins[symbol]
+        marker = "🟢" if item["change_24h"] >= 0 else "🔴"
+        lines.append(
+            f"{marker} **{symbol}**　${item['price']:,.2f}　`{item['change_24h']:+.2f}%`\n"
+            f"└ 24h 高／低 `${item['high_24h']:,.2f}`／`${item['low_24h']:,.2f}`　量 {money(item['volume_24h'])}"
+        )
+    return "\n".join(lines)
+
+
+def derivatives_lines(dashboard: dict[str, Any]) -> str:
+    data = dashboard.get("derivatives")
+    if not data:
+        return unavailable(dashboard, "derivatives")
+    lines = []
+    for symbol in ("BTC", "ETH"):
+        item = data[symbol]
+        funding_at = datetime.fromtimestamp(item["next_funding"] / 1000, TAIPEI).strftime("%m/%d %H:%M")
+        lines.append(
+            f"**{symbol}**　OI {money(item['oi_usd'])}　資金費率 `{item['funding_rate']:+.4f}%`\n"
+            f"└ 下次結算 {funding_at}"
+        )
+    return "\n".join(lines)
+
+
+def breadth_lines(dashboard: dict[str, Any]) -> str:
+    global_data = dashboard.get("global")
+    sentiment = dashboard.get("sentiment")
+    lines = []
+    if global_data:
+        lines.append(
+            f"總市值 **{money(global_data['market_cap'])}**　`{global_data['market_cap_change_24h']:+.2f}%`\n"
+            f"24h 成交量 {money(global_data['volume_24h'])}　BTC 市占 `{global_data['btc_dominance']:.2f}%`"
+        )
+    else:
+        lines.append(unavailable(dashboard, "global"))
+    if sentiment:
+        labels = {
+            "Extreme Fear": "極度恐慌", "Fear": "恐慌", "Neutral": "中性",
+            "Greed": "貪婪", "Extreme Greed": "極度貪婪",
+        }
+        classification = labels.get(sentiment["classification"], sentiment["classification"])
+        lines.append(f"恐慌貪婪 **{sentiment['value']}／100**　{classification}")
+    else:
+        lines.append(unavailable(dashboard, "sentiment"))
+    return "\n".join(lines)
+
+
+def traditional_lines(dashboard: dict[str, Any]) -> str:
+    data = dashboard.get("traditional")
+    if not data:
+        return unavailable(dashboard, "traditional")
+    return "\n".join([
+        f"**DXY**　{data['DXY']['price']:.3f}　`{data['DXY']['change']:+.2f}%`",
+        f"**美債 10Y**　{data['US10Y']['price']:.3f}%　`{data['US10Y']['change_bp']:+.1f} bp`",
+        f"**黃金期貨**　${data['GOLD']['price']:,.2f}　`{data['GOLD']['change']:+.2f}%`",
+        f"**Nasdaq**　{data['NASDAQ']['price']:,.2f}　`{data['NASDAQ']['change']:+.2f}%`",
+    ])
+
+
+def risk_status_lines(dashboard: dict[str, Any]) -> str:
+    stablecoins = dashboard.get("stablecoins")
+    exchange = dashboard.get("exchange_risk")
+    lines = []
+    if stablecoins:
+        parts = []
+        for symbol in ("USDT", "USDC"):
+            price = stablecoins[symbol]
+            marker = "✅" if abs(price - 1) < 0.005 else "⚠️"
+            parts.append(f"{marker} {symbol} `${price:.4f}`")
+        lines.append("　".join(parts))
+    else:
+        lines.append(unavailable(dashboard, "crypto"))
+    if exchange:
+        if exchange["active_count"]:
+            lines.append(f"⚠️ Coinbase 未解決事件 {exchange['active_count']} 件：{'、'.join(exchange['names'])}")
+        else:
+            lines.append("✅ Coinbase 官方狀態目前無未解決事件")
+    else:
+        lines.append(unavailable(dashboard, "exchange_risk"))
+    return "\n".join(lines)
+
+
+def flow_lines(dashboard: dict[str, Any]) -> str:
+    etf = dashboard.get("etf")
+    eth_etf = dashboard.get("eth_etf")
+    liquidations = dashboard.get("liquidations")
+    lines = []
+    if etf:
+        direction = "淨流入" if etf["net_flow_musd"] >= 0 else "淨流出"
+        lines.append(
+            f"**美國現貨 BTC ETF**　{etf['date']:%m/%d} {direction} `${abs(etf['net_flow_musd']):,.1f}M`"
+        )
+    else:
+        lines.append("BTC ETF：" + unavailable(dashboard, "etf"))
+    if eth_etf:
+        direction = "淨流入" if eth_etf["net_flow_musd"] >= 0 else "淨流出"
+        lines.append(
+            f"**美國現貨 ETH ETF**　{eth_etf['date']:%m/%d} {direction} `${abs(eth_etf['net_flow_musd']):,.1f}M`"
+        )
+    else:
+        lines.append("ETH ETF：" + unavailable(dashboard, "eth_etf"))
+    if liquidations:
+        lines.append(
+            f"**24h 清算（{liquidations['scope']}）**　{money(liquidations['total_usd'])}\n"
+            f"└ 多單 {money(liquidations['long'])}　空單 {money(liquidations['short'])}"
+        )
+    else:
+        lines.append("清算：" + unavailable(dashboard, "liquidations"))
+    return "\n".join(lines)
+
+
+def risk_summary(dashboard: dict[str, Any], events: list[dict[str, Any]], event_error: str | None) -> str:
+    notes = []
+    sentiment = dashboard.get("sentiment")
+    if sentiment and sentiment["value"] <= 25:
+        notes.append("市場情緒處於極度恐慌區，短線波動與非理性拋售風險較高。")
+    elif sentiment and sentiment["value"] >= 75:
+        notes.append("市場情緒處於極度貪婪區，追價與回撤風險提高。")
+    derivatives = dashboard.get("derivatives") or {}
+    crowded = [symbol for symbol, item in derivatives.items() if abs(item["funding_rate"]) >= 0.05]
+    if crowded:
+        notes.append(f"{'／'.join(crowded)} 資金費率偏高，留意擁擠部位反向擠壓。")
+    stablecoins = dashboard.get("stablecoins") or {}
+    deviated = [symbol for symbol, price in stablecoins.items() if abs(price - 1) >= 0.005]
+    if deviated:
+        notes.append(f"{'／'.join(deviated)} 偏離 1 美元超過 0.5%，留意流動性與充提狀態。")
+    exchange = dashboard.get("exchange_risk") or {}
+    if exchange.get("active_count"):
+        notes.append("交易所官方狀態頁有未解決事件，操作前請確認服務狀態。")
+    if events and not event_error:
+        notes.append(f"未來三日有 {len(events)} 項追蹤中的重要總經事件，公布前後留意滑價。")
+    elif event_error:
+        notes.append("總經行事曆尚未完成同步，未來三日事件風險目前無法確認。")
+    if not notes:
+        notes.append("目前監測項目未出現明顯極端訊號；仍請依自身風險承受度管理部位。")
+    errors = dashboard.get("errors", {})
+    if errors:
+        notes.append(f"部分資料來源暫缺：{'、'.join(errors)}；結論未使用猜測值補齊。")
+    return "\n".join(f"• {note}" for note in notes[:4])
+
+
 def event_display_name(event: dict[str, Any]) -> str:
     if event["rule"]["key"] != "fed_official":
         return event["rule"]["name"]
@@ -245,21 +424,44 @@ def event_lines(events: list[dict[str, Any]], error: str | None, empty: str) -> 
 
 
 def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] | None,
-                market_error: str | None, events: list[dict[str, Any]], event_error: str | None) -> dict[str, Any]:
+                market_error: str | None, events: list[dict[str, Any]], event_error: str | None,
+                dashboard: dict[str, Any] | None = None) -> dict[str, Any]:
     local = now.astimezone(TAIPEI)
     daily = period == "daily"
+    fields = [
+        {"name": "📊 BTC／ETH 市場概況", "value": market_lines(market, market_error), "inline": False},
+        {"name": "🗓️ 未來三日重要總經事件" if daily else "🗓️ 未來七日總經事件",
+         "value": event_lines(events, event_error, "✅ 目前沒有符合條件的官方重要事件。"), "inline": False},
+    ]
+    if dashboard:
+        fields = [
+            {"name": "📊 BTC／ETH 價格與成交", "value": crypto_detail_lines(dashboard), "inline": False},
+            {"name": "⚙️ 衍生品部位", "value": derivatives_lines(dashboard), "inline": False},
+            {"name": "🌐 市場廣度與情緒", "value": breadth_lines(dashboard), "inline": False},
+            {"name": "🏛️ 傳統市場", "value": traditional_lines(dashboard), "inline": False},
+            {"name": "🗓️ 未來三日重要總經事件" if daily else "🗓️ 未來七日總經事件",
+             "value": event_lines(events, event_error, "✅ 目前沒有符合條件的官方重要事件。"), "inline": False},
+            {"name": "🛡️ 穩定幣與交易所狀態", "value": risk_status_lines(dashboard), "inline": False},
+            {"name": "💸 ETF 資金流與清算", "value": flow_lines(dashboard), "inline": False},
+            {"name": "🧭 今日風險摘要", "value": risk_summary(dashboard, events, event_error), "inline": False},
+        ]
+    fields.extend([
+        {"name": "🔎 閱讀方式", "value": "數據只描述市場狀態，不等同交易訊號；清算為 OKX 可觀測範圍，ETF 為最近完成更新的美國交易日。", "inline": False},
+        {"name": "🔗 原始資料", "value": (
+            "[CoinGecko](https://www.coingecko.com/)｜[OKX](https://www.okx.com/)｜"
+            "[恐慌貪婪](https://alternative.me/crypto/fear-and-greed-index/)｜"
+            "[美國財政部](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/)｜"
+            "[Yahoo Finance](https://finance.yahoo.com/)｜[Farside](https://farside.co.uk/btc/)｜"
+            "[Coinbase Status](https://status.coinbase.com/)｜"
+            "[BLS](https://www.bls.gov/schedule/news_release/)／[Forex Factory](https://www.forexfactory.com/calendar)"
+        ), "inline": False},
+    ])
     return {
         "author": {"name": "MARKET BRIEF｜市場摘要"},
         "title": f"{'📅 每日市場重點' if daily else '🗓️ 每週市場摘要'}｜{local:%Y/%m/%d}",
         "description": "以下數字來自免費公開資料；來源異常時保留警告，不以舊資料或推測值代替。",
         "color": 0x3498DB if daily else 0x8E44AD,
-        "fields": [
-            {"name": "📊 BTC／ETH 市場概況", "value": market_lines(market, market_error), "inline": False},
-            {"name": "🗓️ 今日重要總經事件" if daily else "🗓️ 未來七日總經事件",
-             "value": event_lines(events, event_error, "✅ 目前沒有符合條件的官方重要事件。"), "inline": False},
-            {"name": "🔎 閱讀方式", "value": "漲跌幅僅描述價格變化，不等同交易訊號；重大事件前後請留意流動性與滑價。", "inline": False},
-            {"name": "🔗 原始資料", "value": "https://www.coingecko.com/\nhttps://www.forexfactory.com/calendar\nhttps://www.bls.gov/schedule/news_release/", "inline": False},
-        ],
+        "fields": fields,
         "footer": {"text": "台灣時間｜免費公開資料｜僅供資訊參考，不構成投資建議"},
         "timestamp": now.isoformat(),
     }
@@ -283,13 +485,23 @@ def run(period: str, now: datetime, dry_run: bool = False) -> None:
     webhook = os.environ.get(secret)
     if not webhook and not dry_run:
         raise RuntimeError(f"缺少 {secret}")
-    try:
-        market = current_market() if period == "daily" else weekly_market()
+    dashboard = collect_dashboard(now)
+    if period == "daily" and dashboard.get("crypto"):
+        market = {symbol: {"price": item["price"], "change": item["change_24h"]}
+                  for symbol, item in dashboard["crypto"].items()}
         market_error = None
-    except Exception as exc:
-        market, market_error = None, f"CoinGecko 暫時無法取得（{type(exc).__name__}）"
-    events, event_error = upcoming_events(now, 1 if period == "daily" else 7)
-    send(webhook or "https://discord.invalid/webhook", build_embed(period, now, market, market_error, events, event_error), dry_run)
+    else:
+        try:
+            market = weekly_market() if period == "weekly" else current_market()
+            market_error = None
+        except Exception as exc:
+            market, market_error = None, f"CoinGecko 暫時無法取得（{type(exc).__name__}）"
+    events, event_error = upcoming_events(now, 3 if period == "daily" else 7)
+    embed = build_embed(period, now, market, market_error, events, event_error, dashboard)
+    if os.environ.get("MARKET_SUMMARY_TEST") == "1":
+        embed["title"] = f"🧪 測試｜{embed['title']}"
+        embed["description"] = "這是測試頻道預覽，不是正式公告。\n" + embed["description"]
+    send(webhook or "https://discord.invalid/webhook", embed, dry_run)
 
 
 def main() -> None:
