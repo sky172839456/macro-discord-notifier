@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
-from config import BLS_CALENDAR_URL, EVENT_RULES, MARKET_INTERPRETATIONS, OFFICIAL_FEEDS, PRE_ALERT_MINUTES, PRE_ALERT_WINDOW_MINUTES, TAIPEI_ZONE
+from config import BLS_CALENDAR_URL, DAY_BEFORE_MINUTES, EVENT_RULES, MARKET_INTERPRETATIONS, OFFICIAL_FEEDS, PRE_ALERT_MINUTES, PRE_ALERT_WINDOW_MINUTES, TAIPEI_ZONE
 
 STATE_FILE = Path(os.getenv("STATE_FILE", ".state/notified.json"))
 NY = ZoneInfo("America/New_York")
@@ -29,7 +29,16 @@ BLS_API_GROUPS = {
     "cpi": ("CUSR0000SA0", "CUUR0000SA0"),
     "ppi": ("WPSFD4", "WPUFD4"),
     "jobs": ("CES0000000001", "LNS14000000"),
+    "jolts": ("JTS000000000000000JOL",),
 }
+PUBLIC_CALENDARS = (
+    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+)
+OFFICIAL_PAGE_RELEASES = (
+    ("claims", "DOL", "https://oui.doleta.gov/unemploy/DataDashboard.asp", "seasonally adjusted initial claims"),
+    ("retail", "CENSUS", "https://www.census.gov/retail/sales.html", "advance monthly sales for retail and food services"),
+    ("durable", "CENSUS", "https://www.census.gov/manufacturing/m3/adv/current/index.html", "monthly advance report on durable goods"),
+)
 HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -69,6 +78,10 @@ def http_json_post(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     )
     with urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def http_json_get(url: str) -> Any:
+    return json.loads(http_text(url))
 
 
 def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -112,15 +125,97 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
                 annual_change = (float(annual[0]["value"]) / float(prior_year["value"]) - 1) * 100
                 summary += f" and {annual_change:.1f} percent over the last 12 months"
             summary += "."
-        else:
+        elif event_key == "jobs":
             payroll_change = float(datasets[0][0]["value"]) - float(datasets[0][1]["value"])
             summary = f"Payroll employment changed {payroll_change:+.0f} thousand; unemployment rate {latest[1]['value']} percent."
+        else:
+            current = float(datasets[0][0]["value"])
+            previous_value = float(datasets[0][1]["value"]) if len(datasets[0]) > 1 else current
+            summary = f"Job openings were {current / 1000:.1f} million; previous value {previous_value / 1000:.1f} million."
         releases.append({
             "id": f"bls-api-{event_key}-{reference}-{signature}",
             "title": rule["name"], "summary": summary, "url": rule["source"],
             "published": now, "rule": rule,
         })
     return releases
+
+
+def html_to_text(source: str) -> str:
+    source = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", source)
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", source))).strip()
+
+
+def fetch_official_page_releases(now: datetime, state: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Detect updates on official pages that do not provide a dependable RSS feed."""
+    saved = state.setdefault("official_pages", {})
+    releases, ok, errors = [], [], []
+    for event_key, provider, url, marker in OFFICIAL_PAGE_RELEASES:
+        try:
+            text = html_to_text(http_text(url))
+            index = text.lower().find(marker)
+            if index < 0:
+                raise ValueError(f"missing marker: {marker}")
+            excerpt = text[index:index + 2200]
+            signature = hashlib.sha256(excerpt.encode("utf-8")).hexdigest()[:20]
+            previous = saved.get(event_key)
+            saved[event_key] = signature
+            ok.append(f"{provider} {next(r['name'] for r in EVENT_RULES if r['key'] == event_key)}")
+            if previous and previous != signature:
+                rule = next(rule for rule in EVENT_RULES if rule["key"] == event_key)
+                releases.append({"id": f"page-{event_key}-{signature}", "title": rule["name"],
+                                 "summary": excerpt, "url": url, "published": now, "rule": rule})
+        except Exception as exc:
+            errors.append(f"{provider} {event_key}：{type(exc).__name__} / {exc}")
+    return releases, ok, errors
+
+
+def fetch_public_calendar() -> tuple[list[dict[str, Any]], bool]:
+    events, succeeded = [], False
+    aliases = {
+        "core pce": "personal consumption expenditures", "pce price": "personal consumption expenditures",
+        "jobless claims": "initial jobless claims", "unemployment claims": "initial jobless claims", "jolts": "jolts",
+        "retail sales": "retail sales", "durable goods": "durable goods",
+        "non-farm": "employment situation", "unemployment rate": "employment situation",
+        "advance gdp": "gross domestic product", "fomc": "monetary policy statement fomc",
+    }
+    for url in PUBLIC_CALENDARS:
+        try:
+            payload = http_json_get(url)
+            succeeded = True
+        except Exception:
+            continue
+        for item in payload if isinstance(payload, list) else []:
+            if str(item.get("country", "")).upper() != "USD":
+                continue
+            title = str(item.get("title", ""))
+            lower = title.lower()
+            if "fomc" in lower and any(word in lower for word in ("speaks", "speech", "member")):
+                expanded = title + " governor speech"
+            else:
+                expanded = title + " " + " ".join(value for key, value in aliases.items() if key in lower)
+            rule = classify(expanded)
+            if not rule:
+                continue
+            try:
+                event_time = datetime.fromisoformat(str(item["date"]).replace("Z", "+00:00"))
+                if event_time.tzinfo is None:
+                    event_time = event_time.replace(tzinfo=NY)
+            except (KeyError, ValueError):
+                continue
+            events.append({"id": hashlib.sha256(f"{title}|{event_time.isoformat()}".encode()).hexdigest(),
+                           "title": title, "time": event_time.astimezone(timezone.utc), "rule": rule,
+                           "calendar_source": "公開行事曆輔助"})
+    return events, succeeded
+
+
+def merge_calendar_events(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged, seen = [], set()
+    for event in sorted((item for group in groups for item in group), key=lambda item: item["time"]):
+        key = (event["rule"]["key"], event["time"].replace(second=0, microsecond=0))
+        if key not in seen:
+            seen.add(key)
+            merged.append(event)
+    return merged
 
 
 def classify(text: str) -> dict[str, Any] | None:
@@ -217,7 +312,36 @@ def format_metrics(summary: str, event_key: str) -> str:
         return f"**月增率（MoM）**　{values[0]}\n**年增率（YoY）**　{values[1]}"
     if event_key == "gdp" and values:
         return f"**GDP 年化季增率**　{values[0]}"
+    if event_key == "pce" and values:
+        labels = ("PCE 月增率", "核心 PCE 月增率", "PCE 年增率", "核心 PCE 年增率")
+        return "\n".join(f"**{label}**　{value}" for label, value in zip(labels, values[:4]))
+    if event_key == "jolts":
+        amounts = re.findall(r"\d[\d,.]*\s*(?:million|thousand)", clean, flags=re.I)
+        labels = ("職位空缺", "前值／聘僱", "離職／其他")
+        return "\n".join(f"**{label}**　{value}" for label, value in zip(labels, amounts[:3])) or extract_numbers(summary)
+    if event_key == "claims":
+        claims = re.search(r"initial claims was ([\d,]+)", clean, re.I)
+        previous = re.search(r"previous week(?:'s)?(?: revised)? level.*?([\d,]+)", clean, re.I)
+        lines = [f"**初領失業金**　{claims.group(1)}" if claims else ""]
+        if previous:
+            lines.append(f"**前週／修正值**　{previous.group(1)}")
+        return "\n".join(line for line in lines if line) or extract_numbers(summary)
+    if event_key in {"retail", "durable"} and values:
+        label = "零售銷售月增率" if event_key == "retail" else "耐久財訂單月增率"
+        lines = [f"**{label}**　{values[0]}"]
+        if len(values) > 1:
+            lines.append(f"**前期數值**　{values[1]}")
+        return "\n".join(lines)
     return extract_numbers(summary)
+
+
+def revision_lines(summary: str) -> str | None:
+    clean = re.sub(r"\s+", " ", html_to_text(summary))
+    sentences = re.split(r"(?<=[.!?])\s+", clean)
+    revisions = [sentence for sentence in sentences if re.search(r"revis(?:ed|ion)", sentence, re.I)]
+    if not revisions:
+        return None
+    return "\n".join(f"• {sentence[:300]}" for sentence in revisions[:2])
 
 
 def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
@@ -232,11 +356,14 @@ def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
         pass
 
 
-def pre_embed(event: dict[str, Any]) -> dict[str, Any]:
+def pre_embed(event: dict[str, Any], day_before: bool = False) -> dict[str, Any]:
     local = event["time"].astimezone(TAIPEI)
+    title = "📆 明日重要事件提醒" if day_before else "⏰ 公布前提醒"
+    description = ("明日將公布最高重要度總經數據，請提前準備波動與風險管理。" if day_before
+                   else f"距離公布約 {PRE_ALERT_MINUTES} 分鐘\n請留意公布前後的價格波動、流動性與滑價風險。")
     return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
-            "title": f"⏰ 公布前提醒｜{event['rule']['name']}",
-            "description": f"### 距離公布約 {PRE_ALERT_MINUTES} 分鐘\n請留意公布前後的價格波動、流動性與滑價風險。",
+            "title": f"{title}｜{event['rule']['name']}",
+            "description": f"### {description}",
             "color": 0xF1C40F,
             "fields": [{"name": "🗓️ 公布日期", "value": local.strftime("%Y/%m/%d"), "inline": True},
                        {"name": "🕐 台灣時間", "value": local.strftime("%H:%M"), "inline": True},
@@ -249,14 +376,18 @@ def release_embed(item: dict[str, Any]) -> dict[str, Any]:
     local = item["published"].astimezone(TAIPEI)
     source = item["url"] or item["rule"]["source"]
     numbers = format_metrics(item["summary"], item["rule"]["key"])
+    fields = [{"name": "📌 事件類型", "value": item["rule"]["name"], "inline": True},
+              {"name": "🕐 台灣時間", "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
+              {"name": "🧭 市場解讀參考", "value": MARKET_INTERPRETATIONS.get(item["rule"]["key"], "請綜合市場預期與官方完整內容判讀。"), "inline": False}]
+    revisions = revision_lines(item["summary"])
+    if revisions:
+        fields.append({"name": "🔄 前值與修正資訊", "value": revisions, "inline": False})
+    fields.append({"name": "🔗 官方原始資料", "value": source, "inline": False})
     return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
             "title": f"🔴 最新公布｜{item['rule']['name']}",
             "description": f"### 📊 官方摘要重點\n**{numbers}**\n\n> 數值由官方摘要擷取，請以原始公告內容為準。",
             "color": 0xE74C3C,
-            "fields": [{"name": "📌 事件類型", "value": item["rule"]["name"], "inline": True},
-                       {"name": "🕐 台灣時間", "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
-                       {"name": "🧭 市場解讀參考", "value": MARKET_INTERPRETATIONS.get(item["rule"]["key"], "請綜合市場預期與官方完整內容判讀。"), "inline": False},
-                       {"name": "🔗 官方原始資料", "value": source, "inline": False}],
+            "fields": fields,
             "footer": {"text": "官方免費資料｜不含市場預期值｜僅供資訊參考，不構成投資建議"},
             "timestamp": item["published"].isoformat()}
 
@@ -301,6 +432,15 @@ def source_health_embed(errors: list[str], recoveries: list[str]) -> dict[str, A
     return health_embed("🔴 官方來源讀取失敗｜備援未確認", "\n".join(lines), 0xE74C3C)
 
 
+def full_source_health_embed(statuses: list[tuple[str, str, bool]]) -> dict[str, Any]:
+    """Render the once-daily report, including sources that are healthy."""
+    failures = sum(not healthy for _, _, healthy in statuses)
+    lines = [f"{'✅' if healthy else '❌'} **{name}**：{detail}" for name, detail, healthy in statuses]
+    title = f"🟡 每日來源健康狀態｜{failures} 個來源異常" if failures else "🟢 每日來源健康狀態｜全部正常"
+    lines.append("\n註：輔助行事曆只補足提醒時間；正式數據與原文連結仍以政府官方來源為準。")
+    return health_embed(title, "\n".join(lines), 0xF1C40F if failures else 0x2ECC71)
+
+
 def load_state() -> dict[str, Any]:
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -313,7 +453,7 @@ def save_state(state: dict[str, Any]) -> None:
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tuple[int, int]:
+def legacy_run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tuple[int, int]:
     webhook = os.environ.get("DISCORD_WEBHOOK_URL")
     if not webhook and not dry_run:
         raise RuntimeError("缺少 DISCORD_WEBHOOK_URL")
@@ -386,6 +526,104 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tup
     return len(calendar), len(releases)
 
 
+def run(now: datetime, dry_run: bool = False, force_digest: bool = False) -> tuple[int, int]:
+    """Complete macro radar pipeline with redundant calendars and full health reporting."""
+    webhook = os.environ.get("DISCORD_WEBHOOK_URL")
+    if not webhook and not dry_run:
+        raise RuntimeError("缺少 DISCORD_WEBHOOK_URL")
+    webhook = webhook or "https://discord.invalid/webhook"
+    state = load_state()
+    errors: list[str] = []
+    recoveries: list[str] = []
+    statuses: list[tuple[str, str, bool]] = []
+
+    try:
+        official_calendar = parse_bls_calendar(http_text(BLS_CALENDAR_URL))
+        statuses.append(("BLS 官方行事曆", f"正常，{len(official_calendar)} 個追蹤事件", True))
+    except Exception as exc:
+        official_calendar = []
+        errors.append(f"BLS 行事曆：{type(exc).__name__} / {exc}")
+        statuses.append(("BLS 官方行事曆", f"{type(exc).__name__} / {exc}", False))
+    auxiliary_calendar, auxiliary_ok = fetch_public_calendar()
+    statuses.append(("輔助經濟行事曆", f"正常，{len(auxiliary_calendar)} 個追蹤事件" if auxiliary_ok else "所有端點皆無法讀取", auxiliary_ok))
+    calendar = merge_calendar_events(official_calendar, auxiliary_calendar)
+    calendar_error = None if calendar else "官方與輔助行事曆皆無法讀取"
+
+    releases: list[dict[str, Any]] = []
+    for provider, url in OFFICIAL_FEEDS:
+        try:
+            parsed = parse_feed(http_text(url), url, provider)
+            releases.extend(parsed)
+            statuses.append((f"{provider} 官方動態", f"正常，讀取 {len(parsed)} 筆", True))
+            if provider == "BLS":
+                statuses.append(("BLS API 備援", "待命，本次無須啟用", True))
+        except Exception as exc:
+            errors.append(f"{provider}：{type(exc).__name__} / {exc}")
+            statuses.append((f"{provider} 官方動態", f"{type(exc).__name__} / {exc}", False))
+            if provider == "BLS":
+                try:
+                    fallback = fetch_bls_api_releases(now, state)
+                    releases.extend(fallback)
+                    recoveries.append("BLS 官方 API 備援成功，可取得 CPI、PPI、就業與 JOLTS 數據")
+                    statuses.append(("BLS API 備援", f"正常，{len(fallback)} 筆候選更新", True))
+                except Exception as api_exc:
+                    errors.append(f"BLS API 備援：{type(api_exc).__name__} / {api_exc}")
+                    statuses.append(("BLS API 備援", f"{type(api_exc).__name__} / {api_exc}", False))
+
+    page_releases, healthy_pages, page_errors = fetch_official_page_releases(now, state)
+    releases.extend(page_releases)
+    statuses.extend((label, "官方頁面正常", True) for label in healthy_pages)
+    for error in page_errors:
+        errors.append(error)
+        statuses.append((error.split("：", 1)[0], error.split("：", 1)[-1], False))
+
+    sent = state.setdefault("sent", {})
+    digests = state.setdefault("digests", [])
+    health_alerts = state.setdefault("health_alerts", {})
+    daily_health = state.setdefault("daily_health", [])
+    local = now.astimezone(TAIPEI)
+    log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
+    health_key = f"sources:v3:{local:%Y-%m-%d}"
+    if errors and log_webhook and health_key not in health_alerts:
+        send_discord(log_webhook, source_health_embed(errors, recoveries), dry_run)
+        health_alerts[health_key] = local.date().isoformat()
+    digest_key = local.strftime("%Y-%m-%d")
+    if (force_digest or local.hour >= 7) and log_webhook and digest_key not in daily_health:
+        send_discord(log_webhook, full_source_health_embed(statuses), dry_run)
+        daily_health.append(digest_key)
+    if (force_digest or local.hour >= 7) and digest_key not in digests:
+        send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
+        digests.append(digest_key)
+
+    for event in calendar:
+        minutes = (event["time"] - now).total_seconds() / 60
+        day_key = f"day-before:{event['id']}"
+        if (event["rule"].get("priority") == "highest"
+                and 0 <= minutes - DAY_BEFORE_MINUTES <= PRE_ALERT_WINDOW_MINUTES
+                and day_key not in sent):
+            send_discord(webhook, pre_embed(event, day_before=True), dry_run)
+            sent[day_key] = now.date().isoformat()
+        pre_key = f"pre:{event['id']}"
+        if 0 <= minutes - PRE_ALERT_MINUTES <= PRE_ALERT_WINDOW_MINUTES and pre_key not in sent:
+            send_discord(webhook, pre_embed(event), dry_run)
+            sent[pre_key] = now.date().isoformat()
+    for item in releases:
+        age = (now - item["published"]).total_seconds() / 60
+        key = f"release:{item['id']}"
+        if 0 <= age <= 240 and key not in sent:
+            send_discord(webhook, release_embed(item), dry_run)
+            sent[key] = now.date().isoformat()
+
+    cutoff = (now - timedelta(days=45)).date().isoformat()
+    state["sent"] = {key: date for key, date in sent.items() if date >= cutoff}
+    state["digests"] = [date for date in digests if date >= cutoff]
+    state["health_alerts"] = {key: date for key, date in health_alerts.items() if date >= cutoff}
+    state["daily_health"] = [date for date in daily_health if date >= cutoff]
+    if not dry_run:
+        save_state(state)
+    return len(calendar), len(releases)
+
+
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -407,10 +645,14 @@ def main() -> int:
                 try:
                     counts[provider] = len(parse_feed(http_text(url), url, provider))
                 except Exception:
-                    if provider != "BLS":
-                        raise
-                    fetch_bls_api_releases(datetime.now(timezone.utc), load_state())
-                    counts["BLS_API_FALLBACK"] = len(BLS_API_GROUPS)
+                    counts[provider] = -1
+                    if provider == "BLS":
+                        fetch_bls_api_releases(datetime.now(timezone.utc), load_state())
+                        counts["BLS_API_FALLBACK"] = len(BLS_API_GROUPS)
+            auxiliary, auxiliary_ok = fetch_public_calendar()
+            counts["AUXILIARY_CALENDAR"] = len(auxiliary) if auxiliary_ok else -1
+            _, healthy_pages, page_errors = fetch_official_page_releases(datetime.now(timezone.utc), load_state())
+            counts["OFFICIAL_PAGES"] = len(healthy_pages) if not page_errors else -len(page_errors)
             print("官方來源檢查成功：" + ", ".join(f"{name}={count}" for name, count in counts.items()))
             return 0
         if args.test_notification:
@@ -420,13 +662,13 @@ def main() -> int:
             now = datetime.now(timezone.utc)
             sample = {
                 "published": now,
-                "summary": "The Consumer Price Index increased 0.2 percent and 3.0 percent over the last 12 months.",
-                "url": "https://www.bls.gov/cpi/",
-                "rule": next(rule for rule in EVENT_RULES if rule["key"] == "cpi"),
+                "summary": "PCE prices increased 0.2 percent; core PCE increased 0.3 percent. The prior value was revised from 0.1 percent to 0.2 percent.",
+                "url": "https://www.bea.gov/data/personal-consumption-expenditures-price-index",
+                "rule": next(rule for rule in EVENT_RULES if rule["key"] == "pce"),
             }
             embed = release_embed(sample)
-            embed["title"] = "🧪 測試通知｜美國消費者物價指數（CPI）"
-            embed["description"] = "### 📊 模擬官方摘要重點\n**年增率（YoY）**　3.0%\n**月增率（MoM）**　0.2%\n\n> 這是版面測試訊息，並非真實最新數據。"
+            embed["title"] = "🧪 總經雷達 v2 測試｜PCE／核心 PCE"
+            embed["description"] = "### 📊 模擬官方摘要重點\n**PCE 月增率**　0.2%\n**核心 PCE 月增率**　0.3%\n\n> 這是版面與功能測試，並非真實最新數據。新版另含初領失業金、JOLTS、零售銷售、耐久財、前一天提醒與前值／修正資訊。"
             send_discord(webhook, embed, False)
             log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
             if log_webhook:
