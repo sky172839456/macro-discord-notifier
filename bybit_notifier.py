@@ -288,6 +288,55 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     }
 
 
+def pair_labels(title: str) -> list[str]:
+    pairs = []
+    for base, quote in re.findall(r"\b([A-Z0-9]{2,24})/(USDT|USDC|USD|BTC|ETH)\b", title.upper()):
+        pairs.append(f"{base}/{quote}")
+    for base, quote in re.findall(r"\b([A-Z0-9]{2,24}?)(USDT|USDC|USD|BTC|ETH)\b", title.upper()):
+        label = f"{base}/{quote}"
+        if label not in pairs:
+            pairs.append(label)
+    return pairs
+
+
+def listing_summary_embed(exchange: str, items: list[dict[str, Any]], test: bool = False) -> dict[str, Any]:
+    groups = {key: [] for key in ("spot", "margin", "perpetual", "premarket", "delist", "migration")}
+    for item in items:
+        key = "margin" if "spot margin" in item["title"].lower() else (announcement_kind(item["title"]) or "spot")
+        labels = pair_labels(item["title"])
+        label = "、".join(labels) if labels else item["title"][:90]
+        groups[key].append(f"• [{label}]({item['url']})")
+    names = {
+        "spot": "🟢 現貨上幣", "margin": "🟣 現貨槓桿", "perpetual": "🔵 永續合約",
+        "premarket": "🟡 預上市／盤前交易", "delist": "🔴 下架", "migration": "🔄 代幣遷移／更名",
+    }
+    fields = [
+        {"name": names[key], "value": "\n".join(lines)[:1024], "inline": False}
+        for key, lines in groups.items() if lines
+    ]
+    published = [item.get("published") for item in items if item.get("published")]
+    official_range = "官方頁面未提供"
+    if published:
+        official_range = format_time(min(published))
+        if max(published) != min(published):
+            official_range += f"～{format_time(max(published))}"
+    discovered = format_time(max(
+        (item.get("discovered") or datetime.now(timezone.utc) for item in items),
+        default=datetime.now(timezone.utc),
+    ))
+    return {
+        "title": f"{'🧪 測試｜' if test else ''}📢 {exchange} 上幣公告整理",
+        "description": (
+            f"本輪共發現 **{len(items)}** 則新公告，已依類型合併。\n"
+            f"官方時間（台灣）：{official_range}\n機器人發現時間（台灣）：{discovered}"
+        ),
+        "color": 0x5865F2,
+        "fields": fields,
+        "footer": {"text": "同交易所同一輪合併通知｜點擊項目可開啟官方資料"},
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def send(webhook: str, message: dict[str, Any], dry_run: bool = False) -> None:
     payload = {"username": "交易所上幣通知", "embeds": [message], "allowed_mentions": {"parse": []}}
     if dry_run:
@@ -351,8 +400,13 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
         raise RuntimeError(f"缺少 {webhook_env}")
 
     if test or production_test:
-        sample = {"exchange": "Binance", "title": "Binance Will List ABC (ABC) for Spot Trading", "url": SOURCES["Binance"]}
-        message = embed(sample, test=True)
+        now = datetime.now(timezone.utc)
+        samples = [
+            {"exchange": "Bitget", "title": "Bitget Will List ABC for Spot Trading", "url": SOURCES["Bitget"], "published": now},
+            {"exchange": "Bitget", "title": "New spot margin trading pair — MAGMA/USDT, EVAA/USDT", "url": SOURCES["Bitget"], "published": now},
+            {"exchange": "Bitget", "title": "New USDT-M futures trading pair: PENGUSDT", "url": SOURCES["Bitget"], "published": now},
+        ]
+        message = listing_summary_embed("Bitget", samples, test=True)
         if production_test:
             message["title"] = message["title"].replace("🧪 測試｜", "🧪 正式頻道連線測試｜")
             message["description"] += "\n\n> 這是連線測試，不是最新上幣公告。"
@@ -375,12 +429,19 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
         fresh[state_key] = [item["id"] for item in items]
         if old and not migrating:
             unseen = [item for item in items if item["id"] not in old]
-            for item in reversed(unseen[:10]):
+            recent = []
+            for item in unseen[:10]:
                 published = item.get("published")
                 if published and datetime.now(timezone.utc) - published > timedelta(hours=24):
                     continue
                 item["discovered"] = datetime.now(timezone.utc)
-                send(webhook or "https://discord.invalid/webhook", embed(item), dry_run)
+                recent.append(item)
+            if recent:
+                send(
+                    webhook or "https://discord.invalid/webhook",
+                    listing_summary_embed(name, recent),
+                    dry_run,
+                )
 
     if not dry_run:
         state.update(fresh)
