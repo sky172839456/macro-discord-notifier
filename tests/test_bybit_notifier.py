@@ -90,6 +90,23 @@ class ExchangeListingTests(unittest.TestCase):
         self.assertEqual(items[0]["published"], datetime(2026, 7, 22, 2, 0, tzinfo=timezone.utc))
         self.assertEqual(items[0]["url"], "https://bingx.com/en-us/support/articles/123")
 
+    def test_bitget_general_announcements_include_spot_margin_pairs(self):
+        payload = {"code": "200", "data": {"items": [{
+            "title": "New spot margin trading pair — MAGMA/USDT, EVAA/USDT!",
+            "openUrl": "https://www.bitget.com/en/support/articles/12560603889948",
+            "sendTime": "1784718122622",
+        }]}}
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        with patch.object(bybit_notifier, "urlopen", return_value=response):
+            items = bybit_notifier.bitget_announcement_items()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(
+            items[0]["url"],
+            "https://www.bitget.com/zh-TC/support/articles/12560603889948",
+        )
+        self.assertEqual(announcement_kind(items[0]["title"]), "spot")
+
     def test_embed_shows_official_and_discovery_times(self):
         item = {
             "exchange": "BingX", "title": "ABC Coin Gets Listed on BingX Spot",
