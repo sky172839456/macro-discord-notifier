@@ -187,36 +187,38 @@ def bingx_announcement_items() -> list[dict[str, Any]]:
 
 
 def bitget_announcement_items() -> list[dict[str, Any]]:
-    request = Request(
-        "https://www.bitget.com/v1/msg/public/station/pageList",
-        data=json.dumps({"businessType": 70, "pageNo": 1, "pageSize": 100}).encode("utf-8"),
-        headers={"Content-Type": "application/json", "User-Agent": "exchange-listing-monitor/4.1"},
-        method="POST",
-    )
-    with urlopen(request, timeout=30) as response:
-        payload = json.loads(response.read().decode("utf-8", "replace"))
-    if str(payload.get("code")) != "200":
-        raise RuntimeError(f"Bitget API: {payload.get('msg') or payload.get('code')}")
     items = []
-    for article in payload.get("data", {}).get("items", []):
-        title = clean_title(str(article.get("title", "")))
-        link = str(article.get("openUrl") or "")
-        if not title or not link or not announcement_kind(title):
-            continue
-        match = re.search(r"/support/articles/(\d+)", link)
-        if match:
-            link = f"https://www.bitget.com/zh-TC/support/articles/{match.group(1)}"
-        published = None
-        try:
-            published = datetime.fromtimestamp(int(article.get("sendTime")) / 1000, tz=timezone.utc)
-        except (TypeError, ValueError, OSError):
-            pass
-        items.append({
-            "id": hashlib.sha256(("Bitget" + link).encode()).hexdigest()[:24],
-            "exchange": "Bitget", "title": title, "url": link,
-            "source_type": "announcement", "published": published,
-        })
-    return items
+    for business_type in (70, 50):
+        request = Request(
+            "https://www.bitget.com/v1/msg/public/station/pageList",
+            data=json.dumps({"businessType": business_type, "pageNo": 1, "pageSize": 100}).encode("utf-8"),
+            headers={"Content-Type": "application/json", "User-Agent": "exchange-listing-monitor/4.2"},
+            method="POST",
+        )
+        with urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
+        if str(payload.get("code")) != "200":
+            raise RuntimeError(f"Bitget API {business_type}: {payload.get('msg') or payload.get('code')}")
+        for article in payload.get("data", {}).get("items", []):
+            title = clean_title(str(article.get("title", "")))
+            link = str(article.get("openUrl") or "")
+            if not title or not link or not announcement_kind(title):
+                continue
+            match = re.search(r"/support/articles/(\d+)", link)
+            if match:
+                link = f"https://www.bitget.com/zh-TC/support/articles/{match.group(1)}"
+            published = None
+            try:
+                published = datetime.fromtimestamp(int(article.get("sendTime")) / 1000, tz=timezone.utc)
+            except (TypeError, ValueError, OSError):
+                pass
+            items.append({
+                "id": hashlib.sha256(("Bitget" + link).encode()).hexdigest()[:24],
+                "exchange": "Bitget", "title": title, "url": link,
+                "source_type": "announcement", "published": published,
+            })
+    deduplicated = list({item["id"]: item for item in items}.values())
+    return sorted(deduplicated, key=lambda item: item.get("published") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
 
 
 def announcement_kind(title: str) -> str | None:
@@ -372,13 +374,13 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
         old = set(state.get(state_key, []))
         fresh[state_key] = [item["id"] for item in items]
         if old and not migrating:
-            for item in reversed(items):
-                if item["id"] not in old:
-                    published = item.get("published")
-                    if published and datetime.now(timezone.utc) - published > timedelta(hours=24):
-                        continue
-                    item["discovered"] = datetime.now(timezone.utc)
-                    send(webhook or "https://discord.invalid/webhook", embed(item), dry_run)
+            unseen = [item for item in items if item["id"] not in old]
+            for item in reversed(unseen[:10]):
+                published = item.get("published")
+                if published and datetime.now(timezone.utc) - published > timedelta(hours=24):
+                    continue
+                item["discovered"] = datetime.now(timezone.utc)
+                send(webhook or "https://discord.invalid/webhook", embed(item), dry_run)
 
     if not dry_run:
         state.update(fresh)
