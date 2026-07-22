@@ -9,7 +9,7 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
@@ -186,6 +186,39 @@ def bingx_announcement_items() -> list[dict[str, Any]]:
     return items
 
 
+def bitget_announcement_items() -> list[dict[str, Any]]:
+    request = Request(
+        "https://www.bitget.com/v1/msg/public/station/pageList",
+        data=json.dumps({"businessType": 70, "pageNo": 1, "pageSize": 100}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "User-Agent": "exchange-listing-monitor/4.1"},
+        method="POST",
+    )
+    with urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8", "replace"))
+    if str(payload.get("code")) != "200":
+        raise RuntimeError(f"Bitget API: {payload.get('msg') or payload.get('code')}")
+    items = []
+    for article in payload.get("data", {}).get("items", []):
+        title = clean_title(str(article.get("title", "")))
+        link = str(article.get("openUrl") or "")
+        if not title or not link or not announcement_kind(title):
+            continue
+        match = re.search(r"/support/articles/(\d+)", link)
+        if match:
+            link = f"https://www.bitget.com/zh-TC/support/articles/{match.group(1)}"
+        published = None
+        try:
+            published = datetime.fromtimestamp(int(article.get("sendTime")) / 1000, tz=timezone.utc)
+        except (TypeError, ValueError, OSError):
+            pass
+        items.append({
+            "id": hashlib.sha256(("Bitget" + link).encode()).hexdigest()[:24],
+            "exchange": "Bitget", "title": title, "url": link,
+            "source_type": "announcement", "published": published,
+        })
+    return items
+
+
 def announcement_kind(title: str) -> str | None:
     """Classify only listing-related notices and keep the labels consistent."""
     lower = title.lower()
@@ -200,7 +233,7 @@ def announcement_kind(title: str) -> str | None:
     if any(word in lower for word in (
         "spot trading", "spot market", "new listing", "initial listing", "will list", "to list",
         "listed on", "available for trading", "market available", "adds trading pair", "add trading pair",
-        "gets listed", "get listed",
+        "gets listed", "get listed", "spot margin trading pair",
     )):
         return "spot"
     return None
@@ -286,6 +319,14 @@ def fetch_exchange(name: str) -> tuple[list[dict[str, Any]], str]:
         except Exception as exc:
             print(f"BingX 公告來源失敗，改用市場 API：{exc}", file=sys.stderr)
         return api_spot_items("BingX"), "market"
+    if name == "Bitget":
+        try:
+            items = bitget_announcement_items()
+            if items:
+                return items, "announcement"
+        except Exception as exc:
+            print(f"Bitget 公告 API 失敗，改用支援文章清單：{exc}", file=sys.stderr)
+        return page_items("Bitget", SOURCES["Bitget"]), "announcement"
     if name == "Coinbase":
         return coinbase_items(), "market"
     return page_items(name, SOURCES[name]), "announcement"
@@ -333,6 +374,9 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
         if old and not migrating:
             for item in reversed(items):
                 if item["id"] not in old:
+                    published = item.get("published")
+                    if published and datetime.now(timezone.utc) - published > timedelta(hours=24):
+                        continue
                     item["discovered"] = datetime.now(timezone.utc)
                     send(webhook or "https://discord.invalid/webhook", embed(item), dry_run)
 
