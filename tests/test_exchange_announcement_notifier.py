@@ -41,6 +41,38 @@ class ExchangeAnnouncementTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["category"]["key"], "maintenance")
 
+    def test_maintenance_notices_are_high_priority(self):
+        self.assertEqual(operational_kind("Deposit and withdrawal resumed")["priority"], "high")
+
+    def test_bitget_parser_uses_direct_traditional_chinese_article_link(self):
+        body = '<a href="/support/articles/12560603889914">Bitget resumes USDT withdrawals</a>'
+        with patch.object(module, "text", return_value=body):
+            items = page_items("Bitget", PAGE_SOURCES["Bitget"])
+        self.assertEqual(len(items), 1)
+        self.assertEqual(
+            items[0]["url"],
+            "https://www.bitget.com/zh-TC/support/articles/12560603889914",
+        )
+
+    def test_okx_parser_excludes_section_pages(self):
+        body = (
+            '<a href="/help/section/announcements-deposit-withdrawal-suspension-resumption">'
+            'Deposit and withdrawal maintenance</a>'
+            '<a href="/help/wallet-maintenance-notice">Wallet maintenance notice</a>'
+        )
+        with patch.object(module, "text", return_value=body):
+            items = module.html_page_items("OKX", PAGE_SOURCES["OKX"])
+        self.assertEqual([item["url"] for item in items], ["https://www.okx.com/help/wallet-maintenance-notice"])
+
+    def test_kucoin_parser_excludes_category_pages(self):
+        body = (
+            '<a href="/announcement/maintenance-updates">Maintenance updates</a>'
+            '<a href="/announcement/wallet-upgrade-notice">Wallet upgrade notice</a>'
+        )
+        with patch.object(module, "text", return_value=body):
+            items = module.html_page_items("KuCoin", PAGE_SOURCES["KuCoin"])
+        self.assertEqual([item["url"] for item in items], ["https://www.kucoin.com/announcement/wallet-upgrade-notice"])
+
     def test_okx_uses_fixed_locale_fallbacks_and_deduplicates(self):
         body = '<a href="/en-us/help/notice">OKX Spot API Maintenance Notice</a>'
         with patch.object(module, "text", side_effect=[OSError("region blocked"), body, body]):

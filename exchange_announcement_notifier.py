@@ -47,7 +47,7 @@ CATEGORIES = (
      "keywords": ("outage", "service unavailable", "system issue", "degraded", "incident", "trading interrupted", "emergency maintenance")},
     {"key": "regional", "icon": "🌍", "label": "區域／監管服務變更", "priority": "high",
      "keywords": ("regulatory", "regulation", "restricted region", "cease service", "discontinue service", "verification", "kyc", "fiat channel")},
-    {"key": "maintenance", "icon": "🛠️", "label": "維護／充提／鏈上升級", "priority": "normal",
+    {"key": "maintenance", "icon": "🛠️", "label": "維護／充提／鏈上升級", "priority": "high",
      "keywords": ("maintenance", "network upgrade", "hard fork", "wallet upgrade", "deposit", "withdrawal", "resume", "reopen")},
     {"key": "rules", "icon": "⚙️", "label": "交易規則調整", "priority": "normal",
      "keywords": ("tick size", "risk limit", "margin requirement", "leverage", "minimum order", "price precision", "api update", "api change", "collateral tier")},
@@ -114,6 +114,16 @@ def html_page_items(exchange: str, url: str) -> list[dict[str, Any]]:
         if not title or not category:
             continue
         link = urljoin(base, path)
+        if exchange == "OKX" and "/help/section/" in link:
+            continue
+        if exchange == "KuCoin" and re.search(
+            r"/announcement/(?:new-listings|product-updates|maintenance-updates)/?$", link, re.I
+        ):
+            continue
+        if exchange == "Bitget":
+            article = re.search(r"/support/articles/(\d+)", link)
+            if article:
+                link = f"https://www.bitget.com/zh-TC/support/articles/{article.group(1)}"
         items.append({
             "id": hashlib.sha256((exchange + link).encode()).hexdigest()[:24],
             "exchange": exchange, "title": title, "summary": title, "url": link,
@@ -364,7 +374,8 @@ def run(now: datetime) -> tuple[int, int]:
     immediate = [item for item in candidates if item["category"]["priority"] in {"critical", "high"}]
     normal = [item for item in candidates if item["category"]["priority"] == "normal"]
     sent_count = 0
-    for item in immediate[:4]:
+    immediate_limit = 8
+    for item in immediate[:immediate_limit]:
         item = enrich(item)
         send(webhook, embed(item))
         seen[item["id"]] = now.date().isoformat()
@@ -372,7 +383,7 @@ def run(now: datetime) -> tuple[int, int]:
 
     pending = state.setdefault("pending", [])
     pending_ids = {item["id"] for item in pending}
-    for item in normal + immediate[4:]:
+    for item in normal + immediate[immediate_limit:]:
         if item["id"] not in pending_ids:
             item = enrich(item)
             stored = dict(item)
