@@ -1,7 +1,7 @@
 name: Exchange Listing Monitor
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
     inputs:
       target:
@@ -14,6 +14,9 @@ on:
           - production-connectivity
 permissions:
   contents: read
+concurrency:
+  group: exchange-listing-monitor
+  cancel-in-progress: false
 jobs:
   monitor:
     runs-on: ubuntu-latest
@@ -34,6 +37,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python bybit_notifier.py --source-check
             if [ "${{ inputs.target }}" = "production-connectivity" ]; then
               python bybit_notifier.py --production-test
             else

@@ -1,4 +1,6 @@
+import json
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import bybit_notifier
@@ -52,7 +54,51 @@ class ExchangeListingTests(unittest.TestCase):
         with patch.object(bybit_notifier, "text", return_value=body):
             items = page_items("Bitget", SOURCES["Bitget"])
         self.assertEqual(items[0]["exchange"], "Bitget")
-        self.assertEqual(items[0]["url"], "https://www.bitget.com/support/articles/123")
+        self.assertEqual(items[0]["url"], "https://www.bitget.com/zh-TC/support/articles/123")
+
+    def test_section_pages_are_not_treated_as_articles(self):
+        body = (
+            '<a href="/help/section/announcements-new-listings">New listings spot trading</a>'
+            '<a href="/help/okx-to-list-abc">OKX to list ABC for spot trading</a>'
+        )
+        with patch.object(bybit_notifier, "text", return_value=body):
+            items = page_items("OKX", SOURCES["OKX"])
+        self.assertEqual([item["url"] for item in items], ["https://www.okx.com/help/okx-to-list-abc"])
+
+    def test_binance_uses_official_announcement_articles(self):
+        payload = {"data": {"articles": [
+            {"code": "abc123", "title": "Binance Will List ABC for Spot Trading"},
+            {"code": "promo", "title": "Trade ABC to Share Rewards"},
+        ]}}
+        with patch.object(bybit_notifier, "text", return_value=json.dumps(payload)):
+            items = bybit_notifier.binance_announcement_items()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["url"], "https://www.binance.com/en/support/announcement/abc123")
+        self.assertEqual(items[0]["source_type"], "announcement")
+
+    def test_bingx_announcement_keeps_publish_time_and_direct_link(self):
+        payload = {"code": 0, "data": [{
+            "title": "ABC Coin Gets Listed on BingX Spot",
+            "releaseTime": "2026-07-22T10:00:00+08:00",
+            "url": "https://bingx.com/en-us/support/articles/123",
+        }]}
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+        with patch.object(bybit_notifier, "urlopen", return_value=response):
+            items = bybit_notifier.bingx_announcement_items()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["published"], datetime(2026, 7, 22, 2, 0, tzinfo=timezone.utc))
+        self.assertEqual(items[0]["url"], "https://bingx.com/en-us/support/articles/123")
+
+    def test_embed_shows_official_and_discovery_times(self):
+        item = {
+            "exchange": "BingX", "title": "ABC Coin Gets Listed on BingX Spot",
+            "url": "https://example.com", "published": datetime(2026, 7, 22, 2, 0, tzinfo=timezone.utc),
+            "discovered": datetime(2026, 7, 22, 2, 5, tzinfo=timezone.utc),
+        }
+        fields = {field["name"]: field["value"] for field in embed(item)["fields"]}
+        self.assertEqual(fields["官方公告時間（台灣）"], "07/22 10:00")
+        self.assertEqual(fields["機器人發現時間（台灣）"], "07/22 10:05")
 
 
 if __name__ == "__main__":
