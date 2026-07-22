@@ -6,7 +6,7 @@ from unittest.mock import patch
 import bybit_notifier
 from bybit_notifier import (TEST_WEBHOOK_ENV, PRODUCTION_WEBHOOK_ENV,
                             SOURCES, announcement_kind, clean_title, embed,
-                            page_items)
+                            listing_summary_embed, pair_labels, page_items)
 
 
 class ExchangeListingTests(unittest.TestCase):
@@ -134,6 +134,23 @@ class ExchangeListingTests(unittest.TestCase):
         fields = {field["name"]: field["value"] for field in embed(item)["fields"]}
         self.assertEqual(fields["官方公告時間（台灣）"], "07/22 10:00")
         self.assertEqual(fields["機器人發現時間（台灣）"], "07/22 10:05")
+
+    def test_pair_labels_normalize_compact_and_slash_pairs(self):
+        self.assertEqual(pair_labels("PENGUSDT and EVAA/USDT"), ["EVAA/USDT", "PENG/USDT"])
+
+    def test_summary_groups_one_exchange_into_category_fields(self):
+        now = datetime(2026, 7, 22, 11, 14, tzinfo=timezone.utc)
+        items = [
+            {"title": "Bitget Will List ABC for Spot Trading", "url": "https://example.com/spot", "published": now},
+            {"title": "New spot margin trading pair — MAGMA/USDT, EVAA/USDT", "url": "https://example.com/margin", "published": now},
+            {"title": "New USDT-M futures trading pair: PENGUSDT", "url": "https://example.com/perp", "published": now},
+        ]
+        card = listing_summary_embed("Bitget", items)
+        fields = {field["name"]: field["value"] for field in card["fields"]}
+        self.assertEqual(card["title"], "📢 Bitget 上幣公告整理")
+        self.assertIn("ABC", fields["🟢 現貨上幣"])
+        self.assertIn("MAGMA/USDT", fields["🟣 現貨槓桿"])
+        self.assertIn("PENG/USDT", fields["🔵 永續合約"])
 
 
 if __name__ == "__main__":
