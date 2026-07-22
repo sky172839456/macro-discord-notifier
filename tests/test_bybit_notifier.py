@@ -107,6 +107,24 @@ class ExchangeListingTests(unittest.TestCase):
         )
         self.assertEqual(announcement_kind(items[0]["title"]), "spot")
 
+    def test_bitget_new_listing_feed_includes_perpetual_pairs(self):
+        general = {"code": "200", "data": {"items": []}}
+        listings = {"code": "200", "data": {"items": [{
+            "title": "New USDT-M futures trading pair: PENGUSDT",
+            "openUrl": "https://www.bitget.com/en/futures/usdt/PENGSTOCKUSDT_UMCBL",
+            "sendTime": "1784718871724",
+        }]}}
+        responses = []
+        for payload in (general, listings):
+            response = unittest.mock.MagicMock()
+            response.__enter__.return_value.read.return_value = json.dumps(payload).encode()
+            responses.append(response)
+        with patch.object(bybit_notifier, "urlopen", side_effect=responses):
+            items = bybit_notifier.bitget_announcement_items()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(announcement_kind(items[0]["title"]), "perpetual")
+        self.assertIn("PENGSTOCKUSDT_UMCBL", items[0]["url"])
+
     def test_embed_shows_official_and_discovery_times(self):
         item = {
             "exchange": "BingX", "title": "ABC Coin Gets Listed on BingX Spot",
