@@ -128,6 +128,7 @@ def html_page_items(exchange: str, url: str) -> list[dict[str, Any]]:
             "id": hashlib.sha256((exchange + link).encode()).hexdigest()[:24],
             "exchange": exchange, "title": title, "summary": title, "url": link,
             "category": category, "published": datetime.now(timezone.utc),
+            "published_is_official": False,
         })
     return list({item["id"]: item for item in items}.values())[:40]
 
@@ -173,6 +174,7 @@ def binance_items() -> list[dict[str, Any]]:
                 "id": hashlib.sha256(("Binance" + link).encode()).hexdigest()[:24],
                 "exchange": "Binance", "title": title, "summary": title, "url": link,
                 "category": category, "published": datetime.now(timezone.utc),
+                "published_is_official": False,
             })
     return list({item["id"]: item for item in items}.values())
 
@@ -209,6 +211,7 @@ def bingx_items() -> list[dict[str, Any]]:
                 "id": hashlib.sha256(("BingX" + link).encode()).hexdigest()[:24],
                 "exchange": "BingX", "title": title, "summary": summary, "url": link,
                 "category": category, "published": published,
+                "published_is_official": bool(raw_time),
             })
     return list({item["id"]: item for item in items}.values())[:60]
 
@@ -243,12 +246,14 @@ def status_items(exchange: str, url: str) -> list[dict[str, Any]]:
             "id": hashlib.sha256((exchange + link + title).encode()).hexdigest()[:24],
             "exchange": exchange, "title": title, "summary": summary, "url": link,
             "category": category, "published": published,
+            "published_is_official": bool(published_text),
         })
     return items
 
 
 def enrich(item: dict[str, Any]) -> dict[str, Any]:
     result = dict(item)
+    result["discovered"] = datetime.now(timezone.utc)
     try:
         result["title_zh"] = translate_title(item["title"])
     except Exception:
@@ -273,6 +278,8 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     points = item.get("points") or [ZH_FALLBACK[category["key"]]]
     point_text = "\n".join(f"• {point}" for point in points)
     local = item["published"].astimezone(TAIPEI)
+    discovered = item.get("discovered", datetime.now(timezone.utc)).astimezone(TAIPEI)
+    time_name = "官方公告時間" if item.get("published_is_official") else "機器人發現時間"
     return {
         "author": {"name": "EXCHANGE NOTICE RADAR｜交易所公告"},
         "title": f"{'🧪 測試｜' if test else ''}{category['icon']} {item['exchange']}｜{category['label']}",
@@ -280,7 +287,9 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
         "color": 0xE74C3C if category["priority"] == "critical" else 0xF39C12 if category["priority"] == "high" else 0x3498DB,
         "fields": [
             {"name": "交易所", "value": item["exchange"], "inline": True},
-            {"name": "公告時間", "value": local.strftime("%m/%d %H:%M（台灣）"), "inline": True},
+            {"name": time_name, "value": local.strftime("%m/%d %H:%M（台灣）"), "inline": True},
+            *([{"name": "機器人發現時間", "value": discovered.strftime("%m/%d %H:%M（台灣）"), "inline": True}]
+              if item.get("published_is_official") else []),
             {"name": "官方原始資料", "value": item["url"], "inline": False},
         ],
         "footer": {"text": "交易所官方資料｜已排除上幣與行銷活動｜不構成投資建議"},
@@ -289,8 +298,13 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
 
 
 def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
-    lines = [f"{item['category']['icon']} **{item['exchange']}｜{item.get('title_zh', item['title'])}**\n└ [官方原文]({item['url']})"
-             for item in items[:8]]
+    lines = []
+    for item in items[:8]:
+        point = (item.get("points") or [ZH_FALLBACK[item["category"]["key"]]])[0]
+        lines.append(
+            f"{item['category']['icon']} **{item['exchange']}｜{item.get('title_zh', item['title'])}**\n"
+            f"└ 重點：{point}\n└ [官方原文]({item['url']})"
+        )
     return {
         "author": {"name": "EXCHANGE NOTICE RADAR｜交易所公告"},
         "title": "📢 交易所公告三小時摘要",
@@ -388,6 +402,7 @@ def run(now: datetime) -> tuple[int, int]:
             item = enrich(item)
             stored = dict(item)
             stored["published"] = item["published"].isoformat()
+            stored["discovered"] = item["discovered"].isoformat()
             stored["category"] = item["category"]["key"]
             pending.append(stored)
             pending_ids.add(item["id"])

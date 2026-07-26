@@ -1,8 +1,6 @@
 name: Discord Macro Alerts
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -31,6 +29,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install locked runtime dependency
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
 
       - name: Restore notification state
         uses: actions/cache/restore@v4

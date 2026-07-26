@@ -328,7 +328,11 @@ def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
         category = item["category"]
         translated = item.get("title_zh", item["title"])
         original = f"\n└ 原標題：{item['title']}" if translated != item["title"] else ""
-        lines.append(f"{category['icon']} **{translated}**{original}\n└ {item['source']}｜[原文]({item['url']})")
+        point = (item.get("summary_zh_points") or [ZH_SUMMARY[category["key"]]])[0]
+        lines.append(
+            f"{category['icon']} **{translated}**{original}\n"
+            f"└ 重點：{point}\n└ {item['source']}｜[原文]({item['url']})"
+        )
     return {
         "author": {"name": "CRYPTO NEWS RADAR｜加密新聞"},
         "title": "📰 加密新聞三小時摘要",

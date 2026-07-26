@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import io
 import json
 import os
 import re
@@ -18,6 +19,8 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
+
+from pypdf import PdfReader
 
 from config import BLS_CALENDAR_URL, DAY_BEFORE_MINUTES, EVENT_RULES, MARKET_INTERPRETATIONS, OFFICIAL_FEEDS, PRE_ALERT_MINUTES, PRE_ALERT_WINDOW_MINUTES, TAIPEI_ZONE
 
@@ -42,7 +45,6 @@ PUBLIC_CALENDARS = (
     "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
 )
 OFFICIAL_PAGE_RELEASES = (
-    ("claims", "DOL", "https://www.dol.gov/newsroom/releases", "unemployment insurance weekly claims report"),
     ("retail", "CENSUS", "https://www.census.gov/retail/sales.html", "advance monthly sales for retail and food services"),
     ("durable", "CENSUS", "https://www.census.gov/manufacturing/m3/adv/current/index.html", "monthly advance report on durable goods"),
 )
@@ -73,6 +75,22 @@ def http_text(url: str, attempts: int = 3) -> str:
                 return response.read().decode(
                     response.headers.get_content_charset() or "utf-8", errors="replace"
                 )
+        except Exception as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(2 ** attempt)
+    assert last_error is not None
+    raise last_error
+
+
+def http_bytes(url: str, attempts: int = 3) -> bytes:
+    """Read a binary official source with bounded retries."""
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            request = Request(url, headers=HTTP_HEADERS)
+            with urlopen(request, timeout=30) as response:
+                return response.read()
         except Exception as exc:
             last_error = exc
             if attempt + 1 < attempts:
@@ -183,7 +201,67 @@ def fetch_official_page_releases(now: datetime, state: dict[str, Any]) -> tuple[
                                  "time_label": "官方公布時間", "rule": rule})
         except Exception as exc:
             errors.append(f"{provider} {event_key}：{type(exc).__name__} / {exc}")
+    try:
+        claims_release = fetch_claims_pdf_release(now, state)
+        ok.append("DOL 美國初領失業救濟金人數")
+        if claims_release:
+            releases.append(claims_release)
+    except Exception as exc:
+        errors.append(f"DOL claims：{type(exc).__name__} / {exc}")
     return releases, ok, errors
+
+
+def claims_pdf_url(release_date: datetime) -> str:
+    return f"https://oui.doleta.gov/press/{release_date:%Y}/{release_date:%m%d%y}.pdf"
+
+
+def latest_claims_pdf(now: datetime) -> tuple[datetime, str, bytes]:
+    """Locate the newest official weekly-claims PDF, including holiday Wednesdays."""
+    local_date = now.astimezone(NY).date()
+    errors: list[str] = []
+    for days_back in range(0, 14):
+        candidate_date = local_date - timedelta(days=days_back)
+        if candidate_date.weekday() not in {2, 3}:
+            continue
+        candidate = datetime.combine(candidate_date, datetime.min.time(), tzinfo=NY)
+        url = claims_pdf_url(candidate)
+        try:
+            payload = http_bytes(url, attempts=1)
+            if payload.startswith(b"%PDF"):
+                return candidate, url, payload
+        except Exception as exc:
+            errors.append(f"{candidate_date:%Y-%m-%d}: {type(exc).__name__}")
+    raise RuntimeError("latest official PDF unavailable; " + ", ".join(errors[-4:]))
+
+
+def fetch_claims_pdf_release(now: datetime, state: dict[str, Any]) -> dict[str, Any] | None:
+    """Detect and parse the official DOL weekly-claims PDF without using blocked dol.gov pages."""
+    release_date, url, payload = latest_claims_pdf(now)
+    reader = PdfReader(io.BytesIO(payload))
+    summary = "\n".join((page.extract_text() or "") for page in reader.pages[:3])
+    if "UNEMPLOYMENT INSURANCE WEEKLY CLAIMS" not in summary.upper():
+        raise ValueError("weekly claims marker missing from official PDF")
+    signature = hashlib.sha256(payload).hexdigest()[:20]
+    saved = state.setdefault("official_pages", {})
+    previous = saved.get("claims")
+    published = release_date.replace(hour=8, minute=30).astimezone(timezone.utc)
+    if now < published:
+        # A file can be uploaded shortly before the embargo time.  Do not
+        # baseline it early or the official release would be missed at 08:30 ET.
+        return None
+    saved["claims"] = signature
+    if previous is None or previous == signature:
+        return None
+    rule = next(rule for rule in EVENT_RULES if rule["key"] == "claims")
+    return {
+        "id": f"pdf-claims-{release_date:%Y%m%d}-{signature}",
+        "title": rule["name"],
+        "summary": summary,
+        "url": url,
+        "published": published,
+        "time_label": "官方公布時間",
+        "rule": rule,
+    }
 
 
 def official_page_published_at(excerpt: str, event_key: str, now: datetime) -> datetime:
@@ -455,9 +533,13 @@ def parse_feed(source: str, base_url: str, provider: str) -> list[dict[str, Any]
 
 
 def extract_numbers(summary: str) -> str:
-    clean = re.sub(r"<[^>]+>", " ", html.unescape(summary))
+    clean = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(summary))).strip()
     matches = re.findall(r"(?:[-+]?\d[\d,.]*\s*(?:percent|%|thousand|million|billion))", clean, flags=re.I)
-    return "、".join(matches[:4]) if matches else "請開啟官方公告查看完整數據"
+    if matches:
+        return "、".join(matches[:4])
+    if clean:
+        return f"**官方摘要**　{clean[:700]}{'…' if len(clean) > 700 else ''}"
+    return "官方來源本次未提供可直接擷取的摘要；系統將於下一輪重新確認。"
 
 
 def format_metrics(summary: str, event_key: str) -> str:
@@ -479,30 +561,33 @@ def format_metrics(summary: str, event_key: str) -> str:
         labels = ("職位空缺", "前值／聘僱", "離職／其他")
         return "\n".join(f"**{label}**　{value}" for label, value in zip(labels, amounts[:3])) or extract_numbers(summary)
     if event_key == "claims":
-        claims = re.search(r"initial claims was ([\d,]+)", clean, re.I)
+        claims = re.search(r"initial claims was\s+([\d,]+)", clean, re.I)
         change = re.search(
-            r"(increase|decrease) of ([\d,]+) from the previous week(?:'s)?", clean, re.I
+            r"(increase|decrease)\s+of\s+([\d,]+)\s+from\s+the\s+previous\s+week(?:'s)?",
+            clean,
+            re.I,
         )
         revision = re.search(
-            r"previous week(?:'s)? level was revised (?:up|down) by [\d,]+ "
-            r"from ([\d,]+) to ([\d,]+)",
+            r"previous\s+week(?:'s)?\s+level\s+was\s+revised\s+(?:up|down)\s+by\s+[\d,]+\s+"
+            r"from\s+([\d,]+)\s+to\s+([\d,]+)",
             clean,
             re.I,
         )
         previous_level = re.search(
             r"previous week(?:'s)? (?:revised|unrevised) level of ([\d,]+)", clean, re.I
         )
-        four_week = re.search(r"4-week moving average was ([\d,]+)", clean, re.I)
-        lines = [f"**實際值｜初領失業金**　{claims.group(1)}" if claims else ""]
+        four_week = re.search(r"4-week\s+moving\s+average\s+was\s+([\d,]+)", clean, re.I)
+        number = lambda match, group=1: match.group(group).rstrip(",")  # noqa: E731
+        lines = [f"**實際值｜初領失業金**　{number(claims)}" if claims else ""]
         if revision:
-            lines.append(f"**前值修正**　{revision.group(1)} → {revision.group(2)}")
+            lines.append(f"**前值修正**　{number(revision)} → {number(revision, 2)}")
         elif previous_level:
             lines.append(f"**前週值**　{previous_level.group(1)}")
         if change:
             direction = "增加" if change.group(1).lower() == "increase" else "減少"
-            lines.append(f"**較前週變化**　{direction} {change.group(2)}")
+            lines.append(f"**較前週變化**　{direction} {number(change, 2)}")
         if four_week:
-            lines.append(f"**四週移動平均**　{four_week.group(1)}")
+            lines.append(f"**四週移動平均**　{number(four_week)}")
         return "\n".join(line for line in lines if line) or extract_numbers(summary)
     if event_key in {"retail", "durable"} and values:
         label = "零售銷售月增率" if event_key == "retail" else "耐久財訂單月增率"
@@ -534,11 +619,14 @@ def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
         pass
 
 
-def pre_embed(event: dict[str, Any], day_before: bool = False) -> dict[str, Any]:
+def pre_embed(event: dict[str, Any], day_before: bool = False, minutes_until: float | None = None) -> dict[str, Any]:
     local = event["time"].astimezone(TAIPEI)
     title = "📆 明日重要事件提醒" if day_before else "⏰ 公布前提醒"
-    description = ("明日將公布最高重要度總經數據，請提前準備波動與風險管理。" if day_before
-                   else f"距離公布約 {PRE_ALERT_MINUTES} 分鐘\n請留意公布前後的價格波動、流動性與滑價風險。")
+    if day_before:
+        description = "將於 24 小時內公布最高重要度總經數據，請提前準備波動與風險管理。"
+    else:
+        remaining = max(1, round(minutes_until if minutes_until is not None else PRE_ALERT_MINUTES))
+        description = f"距離公布約 {remaining} 分鐘\n請留意公布前後的價格波動、流動性與滑價風險。"
     return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
             "title": f"{title}｜{event['rule']['name']}",
             "description": f"### {description}",
@@ -564,7 +652,7 @@ def release_embed(item: dict[str, Any]) -> dict[str, Any]:
     fields.append({"name": "🔗 官方原始資料", "value": source, "inline": False})
     return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
             "title": f"🔴 最新公布｜{item['rule']['name']}",
-            "description": f"### 📊 官方摘要重點\n**{numbers}**\n\n> 數值由官方摘要擷取，請以原始公告內容為準。",
+            "description": f"### 📊 官方摘要重點\n{numbers}\n\n> 數值由官方摘要擷取，請以原始公告內容為準。",
             "color": 0xE74C3C,
             "fields": fields,
             "footer": {"text": "官方免費資料｜不含市場預期值｜僅供資訊參考，不構成投資建議"},
@@ -900,13 +988,15 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         minutes = (event["time"] - now).total_seconds() / 60
         day_key = f"day-before:{event['id']}"
         if (event["rule"].get("priority") == "highest"
-                and 0 <= minutes - DAY_BEFORE_MINUTES <= PRE_ALERT_WINDOW_MINUTES
+                and 0 <= minutes <= DAY_BEFORE_MINUTES
                 and day_key not in sent):
-            send_discord(webhook, pre_embed(event, day_before=True), dry_run)
+            send_discord(webhook, pre_embed(event, day_before=True, minutes_until=minutes), dry_run)
             sent[day_key] = now.date().isoformat()
         pre_key = f"pre:{event['id']}"
-        if 0 <= minutes - PRE_ALERT_MINUTES <= PRE_ALERT_WINDOW_MINUTES and pre_key not in sent:
-            send_discord(webhook, pre_embed(event), dry_run)
+        # GitHub scheduled workflows can be delayed.  Send on the closest run
+        # within three hours rather than silently missing the event.
+        if 0 <= minutes <= 180 and pre_key not in sent:
+            send_discord(webhook, pre_embed(event, minutes_until=minutes), dry_run)
             sent[pre_key] = now.date().isoformat()
     for item in releases:
         age = (now - item["published"]).total_seconds() / 60

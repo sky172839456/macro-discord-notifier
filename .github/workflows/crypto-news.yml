@@ -1,8 +1,6 @@
 name: Crypto News Radar
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       target:

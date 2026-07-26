@@ -7,11 +7,23 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import exchange_announcement_notifier as module
-from exchange_announcement_notifier import (PAGE_SOURCES, STATUS_SOURCES, embed,
+from exchange_announcement_notifier import (PAGE_SOURCES, STATUS_SOURCES, digest_embed, embed,
                                              operational_kind, page_items, sample)
 
 
 class ExchangeAnnouncementTests(unittest.TestCase):
+    def test_digest_contains_direct_key_point(self):
+        item = sample(datetime(2026, 7, 26, tzinfo=timezone.utc))
+        message = digest_embed([item], datetime(2026, 7, 26, tzinfo=timezone.utc))
+        self.assertIn("重點：Bybit 將支援區塊鏈網路升級", message["description"])
+
+    def test_discovery_time_is_not_mislabeled_as_official_time(self):
+        item = sample(datetime(2026, 7, 26, tzinfo=timezone.utc))
+        item["published_is_official"] = False
+        names = [field["name"] for field in embed(item)["fields"]]
+        self.assertIn("機器人發現時間", names)
+        self.assertNotIn("官方公告時間", names)
+
     def test_all_eight_exchanges_are_covered(self):
         self.assertEqual(set(PAGE_SOURCES) | set(STATUS_SOURCES),
                          {"Binance", "OKX", "Bybit", "Bitget", "Coinbase", "Kraken", "KuCoin", "BingX"})

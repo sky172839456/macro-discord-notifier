@@ -8,7 +8,7 @@ from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
                       fetch_bls_api_releases, fetch_extended_calendar, format_metrics,
                       full_source_health_embed, merge_calendar_events,
                       load_bls_schedule_snapshot,
-                      macro_overview_embed, overview_snapshot,
+                      claims_pdf_url, macro_overview_embed, overview_snapshot,
                       official_page_published_at, overview_update_embed,
                       parse_bls_calendar, parse_feed,
                       pre_embed, revision_lines,
@@ -16,6 +16,14 @@ from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
 
 
 class OfficialSourceTests(unittest.TestCase):
+    def test_claims_pdf_uses_official_predictable_archive_url(self):
+        from datetime import datetime, timezone
+        release = datetime(2026, 7, 23, tzinfo=timezone.utc)
+        self.assertEqual(
+            claims_pdf_url(release),
+            "https://oui.doleta.gov/press/2026/072326.pdf",
+        )
+
     def test_run_supports_forced_production_overview(self):
         import notifier
         self.assertIn("force_overview", inspect.signature(notifier.run).parameters)
@@ -169,6 +177,16 @@ class OfficialSourceTests(unittest.TestCase):
                  "rule": classify("Personal Income and Outlays")}
         message = pre_embed(event, day_before=True)
         self.assertIn("明日", message["title"])
+        self.assertIn("24 小時內", message["description"])
+
+    def test_delayed_scheduler_uses_actual_minutes_in_pre_alert(self):
+        from datetime import datetime, timezone
+        event = {
+            "time": datetime(2026, 8, 12, 12, 30, tzinfo=timezone.utc),
+            "rule": {"name": "CPI", "source": "https://example.com"},
+        }
+        message = pre_embed(event, minutes_until=83)
+        self.assertIn("約 83 分鐘", message["description"])
 
     def test_full_health_always_shows_successes(self):
         message = full_source_health_embed([
@@ -198,6 +216,19 @@ class OfficialSourceTests(unittest.TestCase):
         self.assertIn("較前週變化**　減少 22,000", metrics)
         self.assertIn("四週移動平均**　207,500", metrics)
 
+    def test_claims_parser_accepts_pdf_line_breaks(self):
+        summary = (
+            "initial claims was 187,000, a decrease of 22,000\n"
+            "from the previous week's revised level. The previous week's level was revised "
+            "up by 1,000 from 208,000 to 209,000. The 4-week moving average was 207,500, "
+            "a decrease of 7,250 from the previous week's revised average."
+        )
+        metrics = format_metrics(summary, "claims")
+        self.assertIn("初領失業金**　187,000", metrics)
+        self.assertIn("前值修正**　208,000 → 209,000", metrics)
+        self.assertIn("較前週變化**　減少 22,000", metrics)
+        self.assertIn("四週移動平均**　207,500", metrics)
+
     def test_claims_listing_date_uses_official_830_eastern_release_time(self):
         from datetime import datetime, timezone
         published = official_page_published_at(
@@ -220,6 +251,8 @@ class OfficialSourceTests(unittest.TestCase):
 
     def test_extract_numbers(self):
         self.assertEqual(extract_numbers("GDP increased 3.0 percent and prices rose 2.1%."), "3.0 percent、2.1%")
+        self.assertIn("官方摘要", extract_numbers("The agency published an operational update."))
+        self.assertNotIn("請開啟", extract_numbers("The agency published an operational update."))
 
     def test_rss_keeps_original_url(self):
         rss = """<rss><channel><item><title>Gross Domestic Product</title><description>GDP increased 3.0 percent.</description><link>https://www.bea.gov/news/1</link><pubDate>Thu, 30 Jul 2026 12:30:00 GMT</pubDate></item></channel></rss>"""

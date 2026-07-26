@@ -11,6 +11,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -21,6 +22,7 @@ from notifier import NY, classify, http_text, parse_bls_calendar
 from market_brief_data import collect_dashboard, collect_weekly_dashboard
 
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
+SCHEDULE_STATE = Path(os.getenv("MARKET_SUMMARY_STATE_FILE", ".state/market-summaries.json"))
 COINGECKO_SIMPLE = "https://api.coingecko.com/api/v3/simple/price"
 COINGECKO_HISTORY = "https://api.coingecko.com/api/v3/coins/{coin}/market_chart"
 BLS_CALENDAR_MIRRORS = (
@@ -614,14 +616,55 @@ def run(period: str, now: datetime, dry_run: bool = False) -> None:
     send(webhook or "https://discord.invalid/webhook", embed, dry_run)
 
 
+def run_scheduled(now: datetime) -> list[str]:
+    """Send each due summary once, even when a delayed scheduler retries."""
+    local = now.astimezone(TAIPEI)
+    try:
+        state = json.loads(SCHEDULE_STATE.read_text(encoding="utf-8"))
+        initialized = True
+    except (FileNotFoundError, json.JSONDecodeError):
+        state = {}
+        initialized = False
+    today = local.date().isoformat()
+    week = f"{local:%G-W%V}"
+    if not initialized:
+        if local.hour >= 7:
+            state["daily"] = today
+        if local.weekday() == 0 and local.hour >= 7:
+            state["weekly"] = week
+        SCHEDULE_STATE.parent.mkdir(parents=True, exist_ok=True)
+        SCHEDULE_STATE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        return []
+
+    sent: list[str] = []
+    if local.hour >= 7 and state.get("daily") != today:
+        run("daily", now)
+        state["daily"] = today
+        sent.append("daily")
+    if local.weekday() == 0 and local.hour >= 7 and state.get("weekly") != week:
+        run("weekly", now)
+        state["weekly"] = week
+        sent.append("weekly")
+    SCHEDULE_STATE.parent.mkdir(parents=True, exist_ok=True)
+    SCHEDULE_STATE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    return sent
+
+
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--period", choices=("daily", "weekly"), required=True)
+    parser.add_argument("--period", choices=("daily", "weekly"))
+    parser.add_argument("--scheduled", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    run(args.period, datetime.now(timezone.utc), args.dry_run)
+    if args.scheduled:
+        sent = run_scheduled(datetime.now(timezone.utc))
+        print("完成：排程摘要 " + ("、".join(sent) if sent else "本輪無需發送"))
+    elif args.period:
+        run(args.period, datetime.now(timezone.utc), args.dry_run)
+    else:
+        parser.error("請指定 --period 或 --scheduled")
 
 
 if __name__ == "__main__":
