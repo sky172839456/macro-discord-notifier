@@ -35,6 +35,20 @@ BLS 排程採四層容錯：官方 ICS 行事曆、官方 HTML 發布表、已�
 
 Webhook 是敏感資料，請勿貼在 README、Issue 或 commit。
 
+即時監控由單一 `Realtime Discord Monitors` 工作流程集中排程，避免多個高頻
+GitHub schedule 互相競爭。正式環境使用以下獨立 secret：
+
+- `DISCORD_WEBHOOK_URL`：美國總經通知
+- `DISCORD_LOG_WEBHOOK_URL`：來源健康與工作流程錯誤
+- `DISCORD_EXCHANGE_LISTING_WEBHOOK_URL`：上幣通知
+- `DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL`：交易所公告
+- `DISCORD_CRYPTO_NEWS_WEBHOOK_URL`：加密新聞
+- `DISCORD_RISK_WEBHOOK_URL`：穩定幣與交易所風險
+- `DISCORD_DERIVATIVES_WEBHOOK_URL`：衍生品異常
+- `DISCORD_DAILY_SUMMARY_WEBHOOK_URL`：每日市場摘要
+- `DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL`：每週市場摘要
+- `DISCORD_TEST_WEBHOOK_URL`：所有手動測試與預覽
+
 ## 本機測試
 
 ```powershell
@@ -55,7 +69,9 @@ python notifier.py --dry-run --digest
 python -m unittest discover -s tests -v
 ```
 
-程式僅使用 Python 標準函式庫。GitHub Actions 每 10 分鐘執行一次；免費排程可能延遲數分鐘，不適合秒級交易。
+初領失業金使用 DOL 官方固定 PDF 新聞稿並由鎖定版本的 `pypdf` 解析；其餘
+功能以 Python 標準函式庫為主。GitHub Actions 採單一錯峰排程並補償錯過的
+總經提醒，但免費排程仍不保證準點，不適合秒級交易。
 
 ## 加密新聞雷達
 
@@ -68,7 +84,7 @@ python -m unittest discover -s tests -v
 - 正式頻道 secret：`DISCORD_CRYPTO_NEWS_WEBHOOK_URL`
 - 手動測試沿用 `DISCORD_TEST_WEBHOOK_URL`，並清楚標示「🧪 測試」
 
-GitHub Actions 工作流程名稱為 `Crypto News Radar`，每 15 分鐘執行。繁中內容目前採不需付費 API 的保守分類式摘要，不會把推測冒充成新聞事實。
+手動測試工作流程名稱為 `Crypto News Radar`；正式監控由集中排程執行。繁中內容目前採不需付費 API 的保守分類式摘要，不會把推測冒充成新聞事實。
 
 ## 交易所公告雷達
 
@@ -79,4 +95,4 @@ GitHub Actions 工作流程名稱為 `Crypto News Radar`，每 15 分鐘執行�
 - 繁體中文標題、最多三項繁中重點、英文原標題與官方連結
 - 首次啟用只建立基準，不會把舊公告洗進頻道
 - 正式頻道 secret：`DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL`
-- 工作流程：`Exchange Announcement Radar`，每 15 分鐘執行
+- 手動測試工作流程：`Exchange Announcement Radar`；正式監控由集中排程執行

@@ -99,7 +99,7 @@ def interpretation(price_change: float, oi_change: float, funding_rate: float) -
 
 
 def alert_embed(item: dict[str, Any], price_change: float, oi_change: float, severity: str,
-                test: bool = False) -> dict[str, Any]:
+                test: bool = False, interval_minutes: float = 60) -> dict[str, Any]:
     style = {
         "normal": ("🟢 正常", 0x2ECC71),
         "warning": ("🟡 注意", 0xF1C40F),
@@ -111,7 +111,7 @@ def alert_embed(item: dict[str, Any], price_change: float, oi_change: float, sev
     return {
         "author": {"name": "CRYPTO DERIVATIVES WATCH｜衍生品監控"},
         "title": f"{prefix}{style[0]}｜{coin} 衍生品異常監控",
-        "description": f"### 約 1 小時變化\n**價格**　{price_change:+.2f}%\n**未平倉量（OI）**　{oi_change:+.2f}%\n**資金費率**　{item['funding_rate']:+.4f}%",
+        "description": f"### 約 {max(1, round(interval_minutes))} 分鐘變化\n**價格**　{price_change:+.2f}%\n**未平倉量（OI）**　{oi_change:+.2f}%\n**資金費率**　{item['funding_rate']:+.4f}%",
         "color": style[1],
         "fields": [
             {"name": "📊 即時數據", "value": f"價格　${item['price']:,.2f}\nOI　{money(item['open_interest_usd'])}\n下次費率結算　{next_funding}", "inline": True},
@@ -189,13 +189,17 @@ def run_monitor(webhook: str) -> None:
         candidates = [row for row in history if datetime.fromisoformat(row["time"]) <= target]
         if candidates:
             previous = candidates[-1]
+            interval_minutes = (now - datetime.fromisoformat(previous["time"])).total_seconds() / 60
             price_delta = percent_change(item["price"], previous["price"])
             oi_delta = percent_change(item["open_interest_usd"], previous["open_interest_usd"])
             severity = classify(price_delta, oi_delta, item["funding_rate"])
             last_alert = datetime.fromisoformat(cooldowns[item["symbol"]]) if item["symbol"] in cooldowns else None
             cooled_down = last_alert is None or now - last_alert >= timedelta(hours=COOLDOWN_HOURS)
             if severity != "normal" and cooled_down:
-                send_discord(webhook, alert_embed(item, price_delta, oi_delta, severity))
+                send_discord(
+                    webhook,
+                    alert_embed(item, price_delta, oi_delta, severity, interval_minutes=interval_minutes),
+                )
                 cooldowns[item["symbol"]] = now.isoformat()
         history.append({"time": now.isoformat(), "price": item["price"], "open_interest_usd": item["open_interest_usd"]})
         cutoff = now - timedelta(hours=7)
@@ -223,9 +227,10 @@ def main() -> int:
         embed = snapshot_embed(items)
         print(json.dumps(embed, ensure_ascii=False, indent=2))
         return 0
-    webhook = os.environ.get("DISCORD_TEST_WEBHOOK_URL")
+    secret = "DISCORD_TEST_WEBHOOK_URL" if args.test_templates else "DISCORD_DERIVATIVES_WEBHOOK_URL"
+    webhook = os.environ.get(secret)
     if not webhook:
-        raise RuntimeError("缺少 DISCORD_TEST_WEBHOOK_URL")
+        raise RuntimeError(f"缺少 {secret}")
     if args.test_templates:
         send_test_templates(webhook)
         print("完成：已送出正常、注意、危險三種測試模板")

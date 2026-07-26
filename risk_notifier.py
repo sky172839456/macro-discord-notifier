@@ -4,6 +4,7 @@ import argparse, json, os
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 STATE_FILE = Path(".state/risk-monitor.json")
 PAIRS = {"USDT": "USDT-USD", "USDC": "USDC-USD", "DAI": "DAI-USD"}
@@ -38,20 +39,31 @@ def depeg_embed(coin, price, level, test=False):
 def incident_embed(item, test=False):
     status = item.get("status","investigating"); resolved = status == "resolved"
     prefix = "🧪 測試｜" if test else ""; latest=(item.get("incident_updates") or [{}])[0].get("body","")
+    updated = item.get("updated_at") or item.get("created_at")
     return {"title":f"{prefix}{'✅ 已恢復' if resolved else '🚨 交易所服務異常'}｜{item.get('name','Coinbase 事件')}",
             "description":latest[:2500] or "Coinbase 官方狀態頁發布服務事件更新。",
             "color":0x2ECC71 if resolved else 0xE74C3C,
-            "fields":[{"name":"狀態","value":status,"inline":True},{"name":"官方來源","value":item.get("shortlink") or "https://status.coinbase.com/","inline":False}],
+            "fields":[
+                {"name":"狀態","value":status,"inline":True},
+                {"name":"官方更新時間","value":updated or "官方未提供","inline":True},
+                {"name":"機器人發現時間","value":datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Taipei")).strftime("%Y/%m/%d %H:%M（台灣）"),"inline":True},
+                {"name":"官方來源","value":item.get("shortlink") or "https://status.coinbase.com/","inline":False},
+            ],
             "footer":{"text":"Coinbase 官方狀態頁｜原文保留，不構成投資建議"},"timestamp":datetime.now(timezone.utc).isoformat()}
 
 def monitor(webhook):
-    state=load(); counts=state.setdefault("counts",{}); known=state.setdefault("incidents",{}); first=not known
+    state=load(); counts=state.setdefault("counts",{}); active=state.setdefault("active",{}); known=state.setdefault("incidents",{}); first=not known
     for coin,pair in PAIRS.items():
         try: price=float(get_json(f"https://api.exchange.coinbase.com/products/{pair}/ticker")["price"])
         except Exception as exc: print(f"警告：{coin} 價格無法取得：{exc}"); continue
         level="danger" if price < .99 or price > 1.01 else "warning" if price < .995 or price > 1.005 else "normal"
         counts[coin] = counts.get(coin,0)+1 if level != "normal" else 0
-        if counts[coin] == 2: send(webhook, depeg_embed(coin,price,level))
+        should_alert = level == "danger" or (level == "warning" and counts[coin] >= 2)
+        if should_alert and not active.get(coin):
+            send(webhook, depeg_embed(coin,price,level))
+            active[coin] = True
+        elif level == "normal":
+            active[coin] = False
     for item in get_json(STATUS_URL).get("incidents",[])[:20]:
         key=item["id"]; marker=item.get("updated_at","") + item.get("status","")
         if not first and known.get(key) != marker: send(webhook, incident_embed(item))
@@ -64,8 +76,9 @@ def tests(webhook):
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument("--test-templates",action="store_true"); a=p.parse_args()
-    webhook=os.environ.get("DISCORD_TEST_WEBHOOK_URL")
-    if not webhook: raise RuntimeError("缺少 DISCORD_TEST_WEBHOOK_URL")
+    secret="DISCORD_TEST_WEBHOOK_URL" if a.test_templates else "DISCORD_RISK_WEBHOOK_URL"
+    webhook=os.environ.get(secret)
+    if not webhook: raise RuntimeError(f"缺少 {secret}")
     tests(webhook) if a.test_templates else monitor(webhook)
     print("完成：風險監控已執行")
 if __name__ == "__main__": main()

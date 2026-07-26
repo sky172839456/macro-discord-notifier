@@ -5,12 +5,26 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from crypto_news_notifier import (SOURCES, canonical_url, category_for, connectivity_embed,
+from crypto_news_notifier import (SOURCES, canonical_url, category_for, connectivity_embed, digest_embed,
                                   deduplicate, is_relevant, news_embed, normalize_zh_title,
                                   parse_feed, send_discord, similar_title, utf8_prefix)
 
 
 class CryptoNewsTests(unittest.TestCase):
+    def test_digest_contains_direct_chinese_key_point(self):
+        now = datetime(2026, 7, 26, tzinfo=timezone.utc)
+        item = {
+            "title": "SEC approves crypto rule",
+            "title_zh": "SEC 核准加密規則",
+            "summary_zh_points": ["SEC 已正式核准新的加密規則。"],
+            "url": "https://example.com/news",
+            "source": "SEC",
+            "published": now,
+            "official": True,
+            "category": category_for("SEC approves crypto regulation"),
+        }
+        self.assertIn("重點：SEC 已正式核准", digest_embed([item], now)["description"])
+
     def test_sources_include_media_and_official(self):
         self.assertGreaterEqual(sum(not source["official"] for source in SOURCES), 3)
         self.assertTrue(any(source["official"] for source in SOURCES))

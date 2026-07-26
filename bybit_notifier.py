@@ -299,13 +299,46 @@ def pair_labels(title: str) -> list[str]:
     return pairs
 
 
+def listing_details(item: dict[str, Any]) -> list[str]:
+    """Extract useful details from the official article, while keeping title-only fallbacks safe."""
+    details: list[str] = []
+    labels = pair_labels(item["title"])
+    if labels:
+        details.append("交易對：" + "、".join(labels[:12]))
+    if item.get("source_type") != "announcement":
+        return details
+    try:
+        body = clean_title(text(item["url"]))
+    except Exception:
+        return details
+    leverage = re.search(r"(?:up to\s*)?(\d{1,3})x\s+leverage", body, re.I)
+    if leverage:
+        details.append(f"最高槓桿：{leverage.group(1)}x")
+    time_match = re.search(
+        r"((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+        r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+        r"\s+\d{1,2},?\s+20\d{2}.{0,40}?(?:UTC|GMT))",
+        body,
+        re.I,
+    )
+    if time_match:
+        details.append("官方交易時間：" + time_match.group(1)[:100])
+    elif re.search(r"\b20\d{2}-\d{2}-\d{2}\s+\d{1,2}:\d{2}", body):
+        details.append("官方交易時間：" + re.search(
+            r"\b20\d{2}-\d{2}-\d{2}\s+\d{1,2}:\d{2}(?:\s*\(UTC[+-]?\d*\))?", body
+        ).group(0))
+    return list(dict.fromkeys(details))[:3]
+
+
 def listing_summary_embed(exchange: str, items: list[dict[str, Any]], test: bool = False) -> dict[str, Any]:
     groups = {key: [] for key in ("spot", "margin", "perpetual", "premarket", "delist", "migration")}
     for item in items:
         key = "margin" if "spot margin" in item["title"].lower() else (announcement_kind(item["title"]) or "spot")
         labels = pair_labels(item["title"])
         label = "、".join(labels) if labels else item["title"][:90]
-        groups[key].append(f"• [{label}]({item['url']})")
+        detail_lines = item.get("details") or listing_details(item)
+        suffix = "".join(f"\n  └ {detail}" for detail in detail_lines)
+        groups[key].append(f"• [{label}]({item['url']}){suffix}")
     names = {
         "spot": "🟢 現貨上幣", "margin": "🟣 現貨槓桿", "perpetual": "🔵 永續合約",
         "premarket": "🟡 預上市／盤前交易", "delist": "🔴 下架", "migration": "🔄 代幣遷移／更名",
@@ -435,6 +468,7 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
                 if published and datetime.now(timezone.utc) - published > timedelta(hours=24):
                     continue
                 item["discovered"] = datetime.now(timezone.utc)
+                item["details"] = listing_details(item)
                 recent.append(item)
             if recent:
                 send(

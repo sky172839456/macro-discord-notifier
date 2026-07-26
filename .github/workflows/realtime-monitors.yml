@@ -1,0 +1,187 @@
+name: Realtime Discord Monitors
+
+on:
+  schedule:
+    # One staggered schedule replaces six competing high-frequency workflows.
+    - cron: "6,11,16,21,26,31,36,41,46,51,56 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: realtime-discord-monitors
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked runtime dependency
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Restore macro state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/notified.json
+          key: macro-state-${{ github.run_id }}
+          restore-keys: macro-state-
+      - name: Restore listing state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/exchange-listings.json
+          key: exchange-listing-state-${{ github.run_id }}
+          restore-keys: exchange-listing-state-
+      - name: Restore announcement state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/exchange-announcements.json
+          key: exchange-announcement-state-${{ github.run_id }}
+          restore-keys: exchange-announcement-state-
+      - name: Restore news state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/crypto-news.json
+          key: crypto-news-state-${{ github.run_id }}
+          restore-keys: crypto-news-state-
+      - name: Restore risk state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/risk-monitor.json
+          key: risk-state-${{ github.run_id }}
+          restore-keys: risk-state-
+      - name: Restore derivatives state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/derivatives.json
+          key: derivatives-state-${{ github.run_id }}
+          restore-keys: derivatives-state-
+      - name: Restore market summary state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/market-summaries.json
+          key: market-summary-state-${{ github.run_id }}
+          restore-keys: market-summary-state-
+
+      - name: Run all realtime monitors independently
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          DISCORD_EXCHANGE_LISTING_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_LISTING_WEBHOOK_URL }}
+          DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL }}
+          DISCORD_CRYPTO_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
+          DISCORD_RISK_WEBHOOK_URL: ${{ secrets.DISCORD_RISK_WEBHOOK_URL }}
+          DISCORD_DERIVATIVES_WEBHOOK_URL: ${{ secrets.DISCORD_DERIVATIVES_WEBHOOK_URL }}
+          DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
+          DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          failures=0
+          run_if_configured() {
+            name="$1"
+            secret_value="$2"
+            shift 2
+            if [ -z "$secret_value" ]; then
+              echo "::warning::$name production webhook is not configured; monitor skipped."
+              return
+            fi
+            "$@" || failures=$((failures + 1))
+          }
+
+          run_if_configured "Macro" "$DISCORD_WEBHOOK_URL" python notifier.py
+          run_if_configured "Exchange listing" "$DISCORD_EXCHANGE_LISTING_WEBHOOK_URL" python bybit_notifier.py
+          run_if_configured "Exchange announcement" "$DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL" python exchange_announcement_notifier.py
+          run_if_configured "Crypto news" "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" python crypto_news_notifier.py
+          run_if_configured "Risk" "$DISCORD_RISK_WEBHOOK_URL" python risk_notifier.py
+          run_if_configured "Derivatives" "$DISCORD_DERIVATIVES_WEBHOOK_URL" python derivatives_notifier.py
+          if [ -n "$DISCORD_DAILY_SUMMARY_WEBHOOK_URL" ] && [ -n "$DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL" ]; then
+            python summary_notifier.py --scheduled || failures=$((failures + 1))
+          else
+            echo "::warning::Daily or weekly summary webhook is not configured; scheduled summaries skipped."
+          fi
+
+          if [ "$failures" -gt 0 ]; then
+            echo "::error::$failures realtime monitor(s) failed."
+            exit 1
+          fi
+
+      - name: Save macro state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/notified.json
+          key: macro-state-${{ github.run_id }}
+      - name: Save listing state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/exchange-listings.json
+          key: exchange-listing-state-${{ github.run_id }}
+      - name: Save announcement state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/exchange-announcements.json
+          key: exchange-announcement-state-${{ github.run_id }}
+      - name: Save news state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/crypto-news.json
+          key: crypto-news-state-${{ github.run_id }}
+      - name: Save risk state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/risk-monitor.json
+          key: risk-state-${{ github.run_id }}
+      - name: Save derivatives state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/derivatives.json
+          key: derivatives-state-${{ github.run_id }}
+      - name: Save market summary state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/market-summaries.json
+          key: market-summary-state-${{ github.run_id }}
+
+      - name: Report workflow failure
+        if: failure()
+        env:
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          if [ -n "$DISCORD_LOG_WEBHOOK_URL" ]; then
+            python - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+
+          payload = {
+              "username": "通知系統｜健康監控",
+              "embeds": [{
+                  "title": "🔴 即時監控排程執行失敗",
+                  "description": f"部分監控來源或通知執行失敗：\n{os.environ['RUN_URL']}",
+                  "color": 0xE74C3C,
+              }],
+          }
+          request = Request(
+              os.environ["DISCORD_LOG_WEBHOOK_URL"],
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urlopen(request, timeout=20):
+              pass
+          PY
+          fi

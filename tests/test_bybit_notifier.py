@@ -6,10 +6,25 @@ from unittest.mock import patch
 import bybit_notifier
 from bybit_notifier import (TEST_WEBHOOK_ENV, PRODUCTION_WEBHOOK_ENV,
                             SOURCES, announcement_kind, clean_title, embed,
-                            listing_summary_embed, pair_labels, page_items)
+                            listing_details, listing_summary_embed, pair_labels, page_items)
 
 
 class ExchangeListingTests(unittest.TestCase):
+    @patch.object(bybit_notifier, "text")
+    def test_listing_details_show_time_and_leverage_without_opening_article(self, mocked):
+        mocked.return_value = (
+            "<p>ABC/USDT trading starts July 30, 2026 at 10:00 UTC "
+            "with up to 20x leverage.</p>"
+        )
+        details = listing_details({
+            "title": "ABC/USDT perpetual listing",
+            "url": "https://example.com/article",
+            "source_type": "announcement",
+        })
+        self.assertIn("交易對：ABC/USDT", details)
+        self.assertIn("最高槓桿：20x", details)
+        self.assertTrue(any("官方交易時間" in value for value in details))
+
     def test_production_and_test_webhooks_are_separate(self):
         self.assertNotEqual(PRODUCTION_WEBHOOK_ENV, TEST_WEBHOOK_ENV)
 
