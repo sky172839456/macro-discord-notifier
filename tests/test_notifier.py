@@ -9,7 +9,8 @@ from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
                       full_source_health_embed, merge_calendar_events,
                       load_bls_schedule_snapshot,
                       macro_overview_embed, overview_snapshot,
-                      overview_update_embed, parse_bls_calendar, parse_feed,
+                      official_page_published_at, overview_update_embed,
+                      parse_bls_calendar, parse_feed,
                       pre_embed, revision_lines,
                       source_health_embed, supplement_dynamic_bls_calendar)
 
@@ -182,6 +183,29 @@ class OfficialSourceTests(unittest.TestCase):
         summary = "Retail sales rose 0.6 percent. The prior value was revised from 0.2 percent to 0.3 percent."
         self.assertIn("前期數值", format_metrics(summary, "retail"))
         self.assertIn("revised", revision_lines(summary))
+
+    def test_claims_notification_shows_complete_official_values(self):
+        summary = (
+            "July 23, 2026 Unemployment Insurance Weekly Claims Report "
+            "In the week ending July 18, the advance figure for seasonally adjusted "
+            "initial claims was 187,000, a decrease of 22,000 from the previous week's "
+            "revised level. The previous week's level was revised up by 1,000 from "
+            "208,000 to 209,000. The 4-week moving average was 207,500."
+        )
+        metrics = format_metrics(summary, "claims")
+        self.assertIn("實際值｜初領失業金**　187,000", metrics)
+        self.assertIn("前值修正**　208,000 → 209,000", metrics)
+        self.assertIn("較前週變化**　減少 22,000", metrics)
+        self.assertIn("四週移動平均**　207,500", metrics)
+
+    def test_claims_listing_date_uses_official_830_eastern_release_time(self):
+        from datetime import datetime, timezone
+        published = official_page_published_at(
+            "July 23, 2026 Unemployment Insurance Weekly Claims Report",
+            "claims",
+            datetime(2026, 7, 26, tzinfo=timezone.utc),
+        )
+        self.assertEqual(published.isoformat(), "2026-07-23T12:30:00+00:00")
 
     def test_calendar_merge_deduplicates_same_release(self):
         from datetime import datetime, timezone

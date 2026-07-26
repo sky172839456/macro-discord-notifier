@@ -42,7 +42,7 @@ PUBLIC_CALENDARS = (
     "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
 )
 OFFICIAL_PAGE_RELEASES = (
-    ("claims", "DOL", "https://oui.doleta.gov/unemploy/DataDashboard.asp", "seasonally adjusted initial claims"),
+    ("claims", "DOL", "https://www.dol.gov/newsroom/releases", "unemployment insurance weekly claims report"),
     ("retail", "CENSUS", "https://www.census.gov/retail/sales.html", "advance monthly sales for retail and food services"),
     ("durable", "CENSUS", "https://www.census.gov/manufacturing/m3/adv/current/index.html", "monthly advance report on durable goods"),
 )
@@ -167,7 +167,10 @@ def fetch_official_page_releases(now: datetime, state: dict[str, Any]) -> tuple[
             index = text.lower().find(marker)
             if index < 0:
                 raise ValueError(f"missing marker: {marker}")
-            excerpt = text[index:index + 2200]
+            # Include the date immediately before a newsroom headline.  This
+            # lets us reject an old release when changing sources or restoring
+            # state instead of treating it as newly published.
+            excerpt = text[max(0, index - 100):index + 2200]
             signature = hashlib.sha256(excerpt.encode("utf-8")).hexdigest()[:20]
             previous = saved.get(event_key)
             saved[event_key] = signature
@@ -175,10 +178,28 @@ def fetch_official_page_releases(now: datetime, state: dict[str, Any]) -> tuple[
             if previous and previous != signature:
                 rule = next(rule for rule in EVENT_RULES if rule["key"] == event_key)
                 releases.append({"id": f"page-{event_key}-{signature}", "title": rule["name"],
-                                 "summary": excerpt, "url": url, "published": now, "rule": rule})
+                                 "summary": excerpt, "url": url,
+                                 "published": official_page_published_at(excerpt, event_key, now),
+                                 "time_label": "官方公布時間", "rule": rule})
         except Exception as exc:
             errors.append(f"{provider} {event_key}：{type(exc).__name__} / {exc}")
     return releases, ok, errors
+
+
+def official_page_published_at(excerpt: str, event_key: str, now: datetime) -> datetime:
+    """Recover an official release time from a dated listing page."""
+    if event_key != "claims":
+        return now
+    match = re.search(
+        r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+        r"\s+\d{1,2},\s+\d{4}",
+        excerpt,
+        re.I,
+    )
+    if not match:
+        return now
+    release_date = datetime.strptime(match.group(0).title(), "%B %d, %Y")
+    return release_date.replace(hour=8, minute=30, tzinfo=NY).astimezone(timezone.utc)
 
 
 def fetch_public_calendar() -> tuple[list[dict[str, Any]], bool]:
@@ -459,10 +480,29 @@ def format_metrics(summary: str, event_key: str) -> str:
         return "\n".join(f"**{label}**　{value}" for label, value in zip(labels, amounts[:3])) or extract_numbers(summary)
     if event_key == "claims":
         claims = re.search(r"initial claims was ([\d,]+)", clean, re.I)
-        previous = re.search(r"previous week(?:'s)?(?: revised)? level.*?([\d,]+)", clean, re.I)
-        lines = [f"**初領失業金**　{claims.group(1)}" if claims else ""]
-        if previous:
-            lines.append(f"**前週／修正值**　{previous.group(1)}")
+        change = re.search(
+            r"(increase|decrease) of ([\d,]+) from the previous week(?:'s)?", clean, re.I
+        )
+        revision = re.search(
+            r"previous week(?:'s)? level was revised (?:up|down) by [\d,]+ "
+            r"from ([\d,]+) to ([\d,]+)",
+            clean,
+            re.I,
+        )
+        previous_level = re.search(
+            r"previous week(?:'s)? (?:revised|unrevised) level of ([\d,]+)", clean, re.I
+        )
+        four_week = re.search(r"4-week moving average was ([\d,]+)", clean, re.I)
+        lines = [f"**實際值｜初領失業金**　{claims.group(1)}" if claims else ""]
+        if revision:
+            lines.append(f"**前值修正**　{revision.group(1)} → {revision.group(2)}")
+        elif previous_level:
+            lines.append(f"**前週值**　{previous_level.group(1)}")
+        if change:
+            direction = "增加" if change.group(1).lower() == "increase" else "減少"
+            lines.append(f"**較前週變化**　{direction} {change.group(2)}")
+        if four_week:
+            lines.append(f"**四週移動平均**　{four_week.group(1)}")
         return "\n".join(line for line in lines if line) or extract_numbers(summary)
     if event_key in {"retail", "durable"} and values:
         label = "零售銷售月增率" if event_key == "retail" else "耐久財訂單月增率"
@@ -515,7 +555,8 @@ def release_embed(item: dict[str, Any]) -> dict[str, Any]:
     source = item["url"] or item["rule"]["source"]
     numbers = format_metrics(item["summary"], item["rule"]["key"])
     fields = [{"name": "📌 事件類型", "value": item["rule"]["name"], "inline": True},
-              {"name": "🕐 台灣時間", "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
+              {"name": f"🕐 {item.get('time_label', '官方發布時間')}（台灣）",
+               "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
               {"name": "🧭 市場解讀參考", "value": MARKET_INTERPRETATIONS.get(item["rule"]["key"], "請綜合市場預期與官方完整內容判讀。"), "inline": False}]
     revisions = revision_lines(item["summary"])
     if revisions:
