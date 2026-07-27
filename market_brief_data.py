@@ -25,6 +25,18 @@ TREASURY_YIELDS = (
 )
 
 
+class SourceFetchError(RuntimeError):
+    """Preserve useful source/status details after all fallbacks fail."""
+
+
+def error_label(exc: Exception) -> str:
+    if isinstance(exc, HTTPError):
+        return f"HTTPError {exc.code}"
+    if isinstance(exc, SourceFetchError):
+        return str(exc)
+    return type(exc).__name__
+
+
 def get_text(url: str, *, referer: str | None = None) -> str:
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json,text/html,application/xml;q=0.9,*/*;q=0.8"}
     if referer:
@@ -110,23 +122,59 @@ def fear_greed_snapshot() -> dict[str, Any]:
     }
 
 
-def weekly_crypto_snapshot() -> dict[str, dict[str, float]]:
-    result: dict[str, dict[str, float]] = {}
+def weekly_crypto_snapshot() -> dict[str, dict[str, float | str]]:
+    result: dict[str, dict[str, float | str]] = {}
     for symbol, coin_id in (("BTC", "bitcoin"), ("ETH", "ethereum")):
-        query = urlencode({"vs_currency": "usd", "days": "7", "interval": "daily"})
-        data = get_json(f"{COINGECKO}/coins/{coin_id}/market_chart?{query}")
-        prices = [float(point[1]) for point in data.get("prices", [])]
-        volumes = [float(point[1]) for point in data.get("total_volumes", [])]
-        if len(prices) < 2:
-            raise ValueError(f"{symbol} 七日價格資料不足")
-        result[symbol] = {
-            "price": prices[-1],
-            "change_7d": (prices[-1] / prices[0] - 1) * 100,
-            "high_7d": max(prices),
-            "low_7d": min(prices),
-            "volume_7d": sum(volumes[:7]),
-        }
+        try:
+            query = urlencode({"vs_currency": "usd", "days": "7", "interval": "daily"})
+            data = get_json(f"{COINGECKO}/coins/{coin_id}/market_chart?{query}")
+            prices = [float(point[1]) for point in data.get("prices", [])]
+            volumes = [float(point[1]) for point in data.get("total_volumes", [])]
+            if len(prices) < 2:
+                raise ValueError(f"{symbol} 七日價格資料不足")
+            result[symbol] = {
+                "price": prices[-1],
+                "change_7d": (prices[-1] / prices[0] - 1) * 100,
+                "high_7d": max(prices),
+                "low_7d": min(prices),
+                "volume_7d": sum(volumes[:7]),
+                "source": "CoinGecko",
+            }
+            continue
+        except Exception as primary_error:
+            try:
+                result[symbol] = okx_weekly_crypto_snapshot(symbol)
+                continue
+            except Exception as fallback_error:
+                raise SourceFetchError(
+                    f"{symbol} CoinGecko {error_label(primary_error)}；"
+                    f"OKX {error_label(fallback_error)}"
+                ) from fallback_error
     return result
+
+
+def okx_weekly_crypto_snapshot(symbol: str) -> dict[str, float | str]:
+    query = urlencode({"instId": f"{symbol}-USDT", "bar": "1Dutc", "limit": "8"})
+    payload = get_json(f"{OKX}/api/v5/market/history-candles?{query}")
+    if payload.get("code") != "0":
+        raise ValueError(f"API code {payload.get('code') or 'unknown'}")
+    rows = [row for row in payload.get("data", []) if len(row) >= 9 and row[8] == "1"]
+    rows.sort(key=lambda row: int(row[0]))
+    rows = rows[-7:]
+    if len(rows) < 7:
+        raise ValueError(f"{symbol} 已完成日線不足 7 根")
+    first_open = float(rows[0][1])
+    last_close = float(rows[-1][4])
+    if first_open <= 0:
+        raise ValueError(f"{symbol} 日線開盤價無效")
+    return {
+        "price": last_close,
+        "change_7d": (last_close / first_open - 1) * 100,
+        "high_7d": max(float(row[2]) for row in rows),
+        "low_7d": min(float(row[3]) for row in rows),
+        "volume_7d": sum(float(row[7]) for row in rows),
+        "source": "OKX",
+    }
 
 
 def weekly_sentiment_snapshot() -> dict[str, Any]:
@@ -304,13 +352,13 @@ def collect_dashboard(now: datetime) -> dict[str, Any]:
             dashboard[name] = function()
         except Exception as exc:
             dashboard[name] = None
-            dashboard["errors"][name] = f"{type(exc).__name__}"
+            dashboard["errors"][name] = error_label(exc)
 
     try:
         dashboard["crypto"], dashboard["stablecoins"] = crypto_snapshot()
     except Exception as exc:
         dashboard["crypto"] = dashboard["stablecoins"] = None
-        dashboard["errors"]["crypto"] = f"{type(exc).__name__}"
+        dashboard["errors"]["crypto"] = error_label(exc)
     collect("global", global_snapshot)
     collect("derivatives", derivatives_snapshot)
     collect("sentiment", fear_greed_snapshot)
@@ -330,7 +378,7 @@ def collect_weekly_dashboard(now: datetime) -> dict[str, Any]:
             dashboard[name] = function()
         except Exception as exc:
             dashboard[name] = None
-            dashboard["errors"][name] = type(exc).__name__
+            dashboard["errors"][name] = error_label(exc)
 
     collect("weekly_crypto", weekly_crypto_snapshot)
     collect("weekly_sentiment", weekly_sentiment_snapshot)
