@@ -90,6 +90,8 @@ python -m unittest discover -s tests -v
 
 `exchange_announcement_notifier.py` 獨立監控 Binance、OKX、Bybit、Bitget、Coinbase、Kraken、KuCoin 與 BingX 的官方公告及狀態頁。內容包含安全事件、服務中斷、維護與充提、鏈上升級、交易規則、區域監管服務變更、儲備資訊與重大產品更新；上幣、下架、遷移及行銷活動會被排除，避免與 `#上幣通知` 重複。
 
+`risk_notifier.py` 監控 USDT、USDC、DAI 偏離美元，以及 Coinbase、Bybit 官方狀態更新；並從 Binance、OKX、Bybit、Bitget 官方公告中只同步安全事件與服務中斷等重大風險。通知先顯示繁體中文重點，再保留官方英文原文。一般維護與規則更新仍只送往交易所公告頻道，避免兩個頻道重複洗版。
+
 - 重大安全、服務中斷與區域限制：立即通知
 - 一般維護與規則調整：每三小時摘要
 - 繁體中文標題、最多三項繁中重點、英文原標題與官方連結

@@ -27,7 +27,13 @@ class ReliabilityMonitorTests(unittest.TestCase):
         self.assertIn("約 137 分鐘變化", card["description"])
 
     def test_risk_monitor_danger_alerts_on_first_observation(self):
-        state = {"counts": {}, "active": {}, "incidents": {"baseline": "ok"}}
+        state = {
+            "counts": {}, "active": {}, "incidents": {"baseline": "ok"},
+            "exchange_events": {
+                "BybitStatus": {"baseline": "ok"},
+                "CriticalNotices": {"baseline": "ok"},
+            },
+        }
         prices = {"USDT-USD": 0.98, "USDC-USD": 1.0, "DAI-USD": 1.0}
 
         def fake_json(url):
@@ -39,10 +45,74 @@ class ReliabilityMonitorTests(unittest.TestCase):
         with patch.object(risk_notifier, "load", return_value=state), \
              patch.object(risk_notifier, "save"), \
              patch.object(risk_notifier, "get_json", side_effect=fake_json), \
+             patch.object(risk_notifier, "bybit_incidents", return_value=[]), \
+             patch.object(risk_notifier, "critical_official_notices", return_value=[]), \
              patch.object(risk_notifier, "send") as send:
             risk_notifier.monitor("https://discord.invalid")
         send.assert_called_once()
         self.assertTrue(state["active"]["USDT"])
+
+    def test_exchange_incident_embed_has_traditional_chinese_and_original(self):
+        card = risk_notifier.exchange_incident_embed("Coinbase", {
+            "name": "Degraded Performance - Transactions",
+            "status": "resolved",
+            "incident_updates": [{"body": "This incident has been resolved."}],
+            "shortlink": "https://status.coinbase.com/",
+        })
+        self.assertIn("交易服務", card["title"])
+        self.assertIn("繁中重點", card["description"])
+        self.assertIn("This incident has been resolved.", card["description"])
+        self.assertEqual(card["fields"][0]["value"], "已恢復（resolved）")
+
+    def test_bybit_status_parser_normalizes_official_events(self):
+        with patch.object(risk_notifier, "get_json", return_value={
+            "retCode": 0,
+            "result": {"list": [{
+                "id": "42",
+                "title": "System Maintenance",
+                "state": "scheduled",
+                "beginTime": "2026-07-28T01:00:00Z",
+            }]},
+        }):
+            items = risk_notifier.bybit_incidents()
+        self.assertEqual(items[0]["id"], "42")
+        self.assertEqual(items[0]["state"], "scheduled")
+        self.assertIn("bybit.com", items[0]["url"])
+
+    def test_critical_notice_filter_includes_bitget_and_excludes_maintenance(self):
+        critical = {"key": "outage", "label": "服務中斷／異常", "icon": "🔴"}
+        maintenance = {"key": "maintenance", "label": "維護", "icon": "🛠️"}
+
+        def fake_items(exchange, _url):
+            category = critical if exchange == "Bitget" else maintenance
+            return [{
+                "id": exchange, "exchange": exchange, "title": "Official notice",
+                "url": f"https://{exchange}.invalid", "category": category,
+            }]
+
+        with patch("exchange_announcement_notifier.page_items", side_effect=fake_items):
+            items = risk_notifier.critical_official_notices()
+        self.assertEqual([item["exchange"] for item in items], ["Bitget"])
+
+    def test_empty_initial_baseline_does_not_hide_next_new_exchange_event(self):
+        state = {"counts": {}, "active": {}, "incidents": {}, "exchange_events": {}}
+        normal_prices = {"price": "1.0"}
+        notice = {
+            "id": "new-risk", "exchange": "Bitget",
+            "title": "Official service outage",
+            "url": "https://www.bitget.com/support/articles/new-risk",
+            "category": {"key": "outage", "label": "服務中斷／異常", "icon": "🔴"},
+        }
+        with patch.object(risk_notifier, "load", return_value=state), \
+             patch.object(risk_notifier, "save"), \
+             patch.object(risk_notifier, "get_json", return_value=normal_prices), \
+             patch.object(risk_notifier, "bybit_incidents", return_value=[]), \
+             patch.object(risk_notifier, "critical_official_notices", side_effect=[[], [notice]]), \
+             patch.object(risk_notifier, "send") as send:
+            risk_notifier.monitor("https://discord.invalid")
+            risk_notifier.monitor("https://discord.invalid")
+        send.assert_called_once()
+        self.assertIn("Bitget", send.call_args.args[1]["title"])
 
     def test_production_monitors_do_not_fall_back_to_test_webhook(self):
         source = Path(risk_notifier.__file__).read_text(encoding="utf-8")
