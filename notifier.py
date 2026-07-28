@@ -1087,9 +1087,8 @@ def main() -> int:
             update_preview["title"] = "🧪 測試｜🔄 美國總經監控總覽更新"
             update_preview["footer"]["text"] = f"BLS 官方排程更新預覽｜核對日 {verified_at}"
             send_discord(webhook, update_preview, False)
-            log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
-            if log_webhook:
-                send_discord(log_webhook, health_embed(
+            if webhook:
+                send_discord(webhook, health_embed(
                     "✅ 健康監控測試成功",
                     "測試通知已成功執行，GitHub Actions、Discord Webhook 與通知程式皆可正常運作。",
                     0x2ECC71,
