@@ -58,6 +58,8 @@ GitHub schedule 互相競爭。正式環境使用以下獨立 secret：
 執行 GitHub Actions 的 `All Channel Notification Preview`，會將 12 種通知範例分成
 兩批送到共用的 `#測試通知`。工作流程只讀取 `DISCORD_TEST_WEBHOOK_URL`，不會取得或
 使用任何正式頻道 Webhook。所有卡片均標示「🧪 測試」與「測試資料」。
+第二版卡片統一顯示繁中標題、繁中重點、事件狀態、台灣時間、官方來源及資料
+健康狀態；有英文原標題的通知會保留該欄位。
 
 ## 本機測試
 

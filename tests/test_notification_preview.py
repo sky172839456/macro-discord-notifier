@@ -8,6 +8,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import notification_preview
+from notification_format import source_status_text
 
 
 class NotificationPreviewTests(unittest.TestCase):
@@ -29,6 +30,32 @@ class NotificationPreviewTests(unittest.TestCase):
             self.assertIn("測試資料", embed["description"])
             self.assertIn("只送 #測試通知", embed["footer"]["text"])
             self.assertEqual(embed["fields"][-1]["name"], "✅ 測試狀態")
+            field_names = [field["name"] for field in embed["fields"]]
+            self.assertIn("📌 繁中標題", field_names)
+            self.assertIn("📝 繁中重點", field_names)
+            self.assertIn("📍 數據／事件狀態", field_names)
+            self.assertIn("🕒 時間資訊（台灣）", field_names)
+            self.assertIn("🔗 官方原始資料", field_names)
+            self.assertIn("🩺 資料狀態", field_names)
+
+    def test_original_english_title_is_kept_when_available(self):
+        previews = {
+            item["channel"]: embed
+            for item, embed in zip(
+                notification_preview.CHANNEL_PREVIEWS,
+                notification_preview.preview_embeds(self.now),
+            )
+        }
+        for channel in ("總經通知", "上幣通知", "重大快訊", "加密新聞", "交易所公告", "監管與etf"):
+            names = [field["name"] for field in previews[channel]["fields"]]
+            self.assertIn("🌐 英文原標題", names)
+
+    def test_all_four_source_health_states_have_clear_copy(self):
+        values = [source_status_text(status) for status in ("ok", "backup", "partial", "error")]
+        self.assertIn("✅ 正常取得", values[0])
+        self.assertIn("🟡 使用備援來源", values[1])
+        self.assertIn("⚠️ 部分資料缺少", values[2])
+        self.assertIn("❌ 所有來源失敗", values[3])
 
     def test_discord_limit_splits_twelve_cards_into_two_batches(self):
         batches = notification_preview.payload_batches(self.now)

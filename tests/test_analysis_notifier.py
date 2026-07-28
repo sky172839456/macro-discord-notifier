@@ -53,6 +53,18 @@ class AnalysisNotifierTests(unittest.TestCase):
         self.assertEqual(destination, default)
         self.assertEqual(username, "加密新聞雷達")
 
+    def test_critical_news_routes_only_to_breaking_channel(self):
+        default = "https://discord.invalid/general"
+        critical = next(item for item in crypto_news_notifier.CATEGORIES if item["priority"] == "critical")
+        with patch.dict(os.environ, {
+            "DISCORD_BREAKING_NEWS_WEBHOOK_URL": "https://discord.invalid/breaking",
+            "DISCORD_CRYPTO_NEWS_WEBHOOK_URL": default,
+        }, clear=True):
+            destination, username = crypto_news_notifier.destination_for({"category": critical}, default)
+        self.assertEqual(destination, "https://discord.invalid/breaking")
+        self.assertNotEqual(destination, default)
+        self.assertEqual(username, "加密重大快訊")
+
     def test_daily_analysis_sends_once(self):
         now = datetime(2026, 7, 28, 1, 0, tzinfo=timezone.utc)
         with tempfile.TemporaryDirectory() as directory, \
