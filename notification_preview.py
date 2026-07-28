@@ -12,7 +12,9 @@ from zoneinfo import ZoneInfo
 from notification_format import standard_fields
 
 TAIPEI = ZoneInfo("Asia/Taipei")
-MAX_EMBEDS_PER_MESSAGE = 10
+# Bilingual previews contain many fields; keep batches small for Discord webhook reliability.
+MAX_EMBEDS_PER_MESSAGE = 4
+MAX_EMBED_TEXT_PER_MESSAGE = 5500
 
 CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
     {
@@ -222,19 +224,44 @@ def preview_embeds(now: datetime) -> list[dict[str, Any]]:
     return [preview_embed(item, now) for item in CHANNEL_PREVIEWS]
 
 
+def embed_text_size(embed: dict[str, Any]) -> int:
+    total = len(str(embed.get("title") or "")) + len(str(embed.get("description") or ""))
+    total += len(str((embed.get("author") or {}).get("name") or ""))
+    total += len(str((embed.get("footer") or {}).get("text") or ""))
+    for field in embed.get("fields") or []:
+        total += len(str(field.get("name") or "")) + len(str(field.get("value") or ""))
+    return total
+
+
 def payload_batches(now: datetime) -> list[dict[str, Any]]:
     embeds = preview_embeds(now)
+    groups: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    current_size = 0
+    for embed in embeds:
+        size = embed_text_size(embed)
+        if current and (
+            len(current) >= MAX_EMBEDS_PER_MESSAGE
+            or current_size + size > MAX_EMBED_TEXT_PER_MESSAGE
+        ):
+            groups.append(current)
+            current = []
+            current_size = 0
+        current.append(embed)
+        current_size += size
+    if current:
+        groups.append(current)
+
     batches = []
-    total = (len(embeds) + MAX_EMBEDS_PER_MESSAGE - 1) // MAX_EMBEDS_PER_MESSAGE
-    for index in range(0, len(embeds), MAX_EMBEDS_PER_MESSAGE):
-        batch_number = index // MAX_EMBEDS_PER_MESSAGE + 1
+    total = len(groups)
+    for batch_number, group in enumerate(groups, start=1):
         batches.append({
             "username": "通知格式驗收",
             "content": (
                 f"🧪 **全頻道通知第二版驗收（{batch_number}/{total}）**\n"
                 "以下均為測試資料，不代表真實市場事件。"
             ),
-            "embeds": embeds[index:index + MAX_EMBEDS_PER_MESSAGE],
+            "embeds": group,
             "allowed_mentions": {"parse": []},
         })
     return batches
