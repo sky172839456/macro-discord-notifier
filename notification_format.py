@@ -43,11 +43,17 @@ def source_status_text(status: str, detail: str | None = None) -> str:
 def infer_source_status(embed: dict[str, Any]) -> str:
     text = json.dumps(embed, ensure_ascii=False).lower()
     if any(marker in text for marker in (
-        "所有來源失敗", "來源暫時無法確認", "暫時無法取得", "httperror", "來源讀取異常",
+        "所有來源失敗", "備援未確認", "沒有確認成功的對應備援", "來源暫時無法確認",
     )):
         return "error"
-    if any(marker in text for marker in ("使用備援", "備援來源", "fallback")):
+    if any(marker in text for marker in (
+        "使用備援", "備援來源", "備援成功", "備援正常", "fallback",
+    )):
         return "backup"
+    if any(marker in text for marker in (
+        "暫時無法取得", "httperror", "來源讀取異常",
+    )):
+        return "error"
     if any(marker in text for marker in ("部分資料缺少", "部分來源", "缺少資料", "未提供")):
         return "partial"
     return "ok"

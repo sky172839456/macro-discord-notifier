@@ -81,6 +81,21 @@ class NotificationPreviewTests(unittest.TestCase):
         )
         self.assertIn("❌ 所有來源失敗", card["fields"][-1]["value"])
 
+    def test_successful_fallback_overrides_primary_http_error(self):
+        card = apply_delivery_format(
+            {
+                "title": "🟡 部分來源異常｜備援正常",
+                "description": (
+                    "⚠️ 主來源失敗：BLS 行事曆：HTTPError / HTTP Error 403\n"
+                    "✅ 備援成功：BLS 官方年度排程快照備援成功\n"
+                    "✅ 備援成功：BLS 官方 API 備援成功"
+                ),
+            },
+            "bot_log",
+        )
+        self.assertIn("🟡 使用備援來源", card["fields"][-1]["value"])
+        self.assertNotIn("❌ 所有來源失敗", card["fields"][-1]["value"])
+
     def test_all_production_delivery_wrappers_use_shared_formatter(self):
         root = Path(__file__).resolve().parents[1]
         files = (
