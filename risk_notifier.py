@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
-from notification_format import apply_delivery_format
+from notification_format import apply_delivery_format, bilingual_sections, clean_source_text, english_key_points
 
 STATE_FILE = Path(".state/risk-monitor.json")
 PAIRS = {"USDT": "USDT-USD", "USDC": "USDC-USD", "DAI": "DAI-USD"}
@@ -144,13 +144,17 @@ def exchange_incident_embed(exchange, item, test=False):
     }.get(exchange, "")
     prefix = "🧪 測試｜" if test else ""
     zh_title = translate_title(original_title)
+    source_summary = clean_source_text(original_body, 1300)
+    bilingual = bilingual_sections(
+        original_title=original_title,
+        english_summary=source_summary,
+        english_points=english_key_points(source_summary),
+        zh_title=zh_title,
+        zh_points=[update_summary(status, original_body)],
+    )
     return {
         "title": f"{prefix}{'✅ 已恢復' if resolved else '🚨 交易所服務異常'}｜{exchange}｜{zh_title}",
-        "description": (
-            f"**繁中重點**\n{update_summary(status, original_body)}\n\n"
-            f"**官方事件名稱**\n{original_title[:900]}\n\n"
-            f"**官方原文更新**\n{original_body[:1300] or '官方未提供文字說明。'}"
-        ),
+        "description": bilingual,
         "color": 0x2ECC71 if resolved else 0xE74C3C,
         "fields": [
             {"name": "狀態", "value": f"{translate_status(status)}（{status}）", "inline": True},
@@ -176,13 +180,21 @@ def official_notice_embed(item):
     category = item["category"]
     title = str(item.get("title", "官方公告"))
     exchange = item["exchange"]
+    zh_point = (
+        "官方公告涉及安全或資產風險，請優先確認受影響服務與官方處置。"
+        if category["key"] == "security"
+        else "官方公告涉及服務中斷或重大異常，請留意交易、登入與充提功能。"
+    )
+    bilingual = bilingual_sections(
+        original_title=title,
+        english_summary=None,
+        english_points=None,
+        zh_title=translate_title(title),
+        zh_points=[zh_point],
+    )
     return {
         "title": f"{category['icon']} {exchange}｜{category['label']}",
-        "description": (
-            f"**繁中重點**\n"
-            f"{'官方公告涉及安全或資產風險，請優先確認受影響服務與官方處置。' if category['key'] == 'security' else '官方公告涉及服務中斷或重大異常，請留意交易、登入與充提功能。'}\n\n"
-            f"**官方公告標題**\n{title[:1200]}"
-        ),
+        "description": bilingual,
         "color": 0xE74C3C,
         "fields": [
             {"name": "事件類型", "value": category["label"], "inline": True},

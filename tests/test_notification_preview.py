@@ -52,6 +52,26 @@ class NotificationPreviewTests(unittest.TestCase):
             names = [field["name"] for field in previews[channel]["fields"]]
             self.assertIn("🌐 英文原標題", names)
 
+    def test_bilingual_sections_are_english_first_with_visible_separator(self):
+        for item, embed in zip(
+            notification_preview.CHANNEL_PREVIEWS,
+            notification_preview.preview_embeds(self.now),
+        ):
+            if not item.get("original_title"):
+                continue
+            names = [field["name"] for field in embed["fields"]]
+            expected = [
+                "🌐 英文原標題",
+                "📰 英文摘要",
+                "🔎 英文重點",
+                "\u200b",
+                "📌 繁中標題",
+                "📝 繁中重點",
+            ]
+            positions = [names.index(name) for name in expected]
+            self.assertEqual(positions, sorted(positions), item["key"])
+            self.assertEqual(embed["fields"][positions[3]]["value"], "\u200b")
+
     def test_all_four_source_health_states_have_clear_copy(self):
         values = [source_status_text(status) for status in ("ok", "backup", "partial", "error")]
         self.assertIn("✅ 正常取得", values[0])

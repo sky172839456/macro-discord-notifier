@@ -166,6 +166,12 @@ class ExchangeListingTests(unittest.TestCase):
         self.assertIn("ABC", fields["🟢 現貨上幣"])
         self.assertIn("MAGMA/USDT", fields["🟣 現貨槓桿"])
         self.assertIn("PENG/USDT", fields["🔵 永續合約"])
+        for value in fields.values():
+            self.assertIn("🌐 英文原標題", value)
+            self.assertIn("📰 英文摘要", value)
+            self.assertIn("🔎 英文重點", value)
+            self.assertIn("📌 繁中標題", value)
+            self.assertLess(value.index("🌐 英文原標題"), value.index("📌 繁中標題"))
 
 
 if __name__ == "__main__":

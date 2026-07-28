@@ -19,12 +19,13 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
-from notification_format import apply_delivery_format
+from notification_format import apply_delivery_format, bilingual_sections, clean_source_text, english_key_points
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 STATE_FILE = Path(os.getenv("CRYPTO_NEWS_STATE_FILE", ".state/crypto-news.json"))
 MAX_IMMEDIATE_PER_RUN = 4
 MAX_DIGEST_ITEMS = 8
+DIGEST_ITEMS_PER_CARD = 4
 RECENT_HOURS = 48
 TRANSLATION_URL = "https://api.mymemory.translated.net/get"
 
@@ -302,21 +303,23 @@ def news_embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     if len(item["summary"]) > 360:
         excerpt += "…"
     translated = item.get("title_zh", item["title"])
-    headline = f"### {translated}"
-    if translated != item["title"]:
-        headline += f"\n*英文原標題：{item['title']}*"
     points = item.get("summary_zh_points") or [ZH_SUMMARY[category["key"]]]
-    point_text = "\n".join(f"• {point}" for point in points)
+    bilingual = bilingual_sections(
+        original_title=item["title"],
+        english_summary=excerpt,
+        english_points=english_key_points(excerpt),
+        zh_title=translated,
+        zh_points=points,
+    )
     return {
         "author": {"name": "CRYPTO NEWS RADAR｜加密新聞"},
         "title": f"{prefix}{category['icon']} {priority}｜{category['label']}",
-        "description": f"{headline}\n\n**繁體中文重點**\n{point_text}\n\n**市場觀察**\n{IMPACT[category['key']]}",
+        "description": f"{bilingual}\n\n**市場觀察**\n{IMPACT[category['key']]}",
         "color": 0xE74C3C if category["priority"] == "critical" else 0xF39C12,
         "fields": [
             {"name": "可信狀態", "value": status, "inline": True},
             {"name": "來源", "value": item["source"], "inline": True},
             {"name": "發布時間", "value": local.strftime("%m/%d %H:%M（台灣）"), "inline": True},
-            {"name": "英文原文摘要", "value": excerpt or "來源未提供摘要，請開啟原文確認。", "inline": False},
             {"name": "🔗 原文連結", "value": item["url"], "inline": False},
         ],
         "footer": {"text": "原標題與原文連結保留｜繁中重點為分類式摘要｜不構成投資建議"},
@@ -326,14 +329,21 @@ def news_embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
 
 def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
     lines = []
-    for item in items[:MAX_DIGEST_ITEMS]:
+    for item in items[:DIGEST_ITEMS_PER_CARD]:
         category = item["category"]
         translated = item.get("title_zh", item["title"])
-        original = f"\n└ 原標題：{item['title']}" if translated != item["title"] else ""
         point = (item.get("summary_zh_points") or [ZH_SUMMARY[category["key"]]])[0]
+        source_summary = clean_source_text(item.get("summary", ""), 160)
+        english_point = (english_key_points(source_summary, 1) or [
+            "Open the original article for complete details."
+        ])[0][:180]
         lines.append(
-            f"{category['icon']} **{translated}**{original}\n"
-            f"└ 重點：{point}\n└ {item['source']}｜[原文]({item['url']})"
+            f"{category['icon']} **English Original Title**\n{clean_source_text(item['title'], 180)}\n"
+            f"**English Summary**\n{source_summary or 'No separate source summary was provided.'}\n"
+            f"**English Key Point**\n• {english_point}\n\n"
+            f"**繁中標題**\n{str(translated)[:180]}\n"
+            f"**繁中重點**\n• {str(point)[:180]}\n"
+            f"└ {item['source']}｜[原文]({item['url']})"
         )
     return {
         "author": {"name": "CRYPTO NEWS RADAR｜加密新聞"},
@@ -485,12 +495,13 @@ def run(now: datetime) -> tuple[int, int]:
             item["published"] = datetime.fromisoformat(item["published"])
             item["category"] = categories[item["category"]]
             restored.append(item)
-        send_discord(webhook, digest_embed(restored, now))
+        for index in range(0, len(restored), DIGEST_ITEMS_PER_CARD):
+            send_discord(webhook, digest_embed(restored[index:index + DIGEST_ITEMS_PER_CARD], now))
         for item in pending[:MAX_DIGEST_ITEMS]:
             seen[item["id"]] = now.date().isoformat()
         pending[:] = pending[MAX_DIGEST_ITEMS:]
         state["last_digest_slot"] = digest_slot
-        sent += 1
+        sent += (len(restored) + DIGEST_ITEMS_PER_CARD - 1) // DIGEST_ITEMS_PER_CARD
 
     cutoff = (now - timedelta(days=14)).date().isoformat()
     state["seen"] = {key: date for key, date in seen.items() if date >= cutoff}
