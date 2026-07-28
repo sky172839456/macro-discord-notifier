@@ -68,6 +68,12 @@ jobs:
           path: .state/market-summaries.json
           key: market-summary-state-${{ github.run_id }}
           restore-keys: market-summary-state-
+      - name: Restore analysis state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/channel-analysis.json
+          key: channel-analysis-state-${{ github.run_id }}
+          restore-keys: channel-analysis-state-
 
       - name: Run all realtime monitors independently
         env:
@@ -80,6 +86,10 @@ jobs:
           DISCORD_DERIVATIVES_WEBHOOK_URL: ${{ secrets.DISCORD_DERIVATIVES_WEBHOOK_URL }}
           DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
           DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL }}
+          DISCORD_BREAKING_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_BREAKING_NEWS_WEBHOOK_URL }}
+          DISCORD_REGULATION_ETF_WEBHOOK_URL: ${{ secrets.DISCORD_REGULATION_ETF_WEBHOOK_URL }}
+          DISCORD_MACRO_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_MACRO_ANALYSIS_WEBHOOK_URL }}
+          DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL }}
         shell: bash
         run: |
           failures=0
@@ -100,6 +110,11 @@ jobs:
           run_if_configured "Crypto news" "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" python crypto_news_notifier.py
           run_if_configured "Risk" "$DISCORD_RISK_WEBHOOK_URL" python risk_notifier.py
           run_if_configured "Derivatives" "$DISCORD_DERIVATIVES_WEBHOOK_URL" python derivatives_notifier.py
+          if [ -n "$DISCORD_MACRO_ANALYSIS_WEBHOOK_URL" ] || [ -n "$DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL" ]; then
+            python analysis_notifier.py --scheduled || failures=$((failures + 1))
+          else
+            echo "::warning::Macro and technical analysis webhooks are not configured; analysis skipped."
+          fi
           if [ -n "$DISCORD_DAILY_SUMMARY_WEBHOOK_URL" ] && [ -n "$DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL" ]; then
             python summary_notifier.py --scheduled || failures=$((failures + 1))
           else
@@ -123,6 +138,12 @@ jobs:
         with:
           path: .state/exchange-listings.json
           key: exchange-listing-state-${{ github.run_id }}
+      - name: Save analysis state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/channel-analysis.json
+          key: channel-analysis-state-${{ github.run_id }}
       - name: Save announcement state
         if: always()
         uses: actions/cache/save@v4

@@ -343,8 +343,8 @@ def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
     }
 
 
-def send_discord(webhook: str, embed: dict[str, Any]) -> None:
-    payload = json.dumps({"username": "加密新聞雷達", "embeds": [embed]}).encode("utf-8")
+def send_discord(webhook: str, embed: dict[str, Any], username: str = "加密新聞雷達") -> None:
+    payload = json.dumps({"username": username, "embeds": [embed]}).encode("utf-8")
     url = webhook + ("&" if "?" in webhook else "?") + "wait=true"
     request = Request(
         url,
@@ -354,6 +354,20 @@ def send_discord(webhook: str, embed: dict[str, Any]) -> None:
     )
     with urlopen(request, timeout=25):
         pass
+
+
+def destination_for(item: dict[str, Any], default_webhook: str) -> tuple[str, str]:
+    """Route specialized categories once; fall back to the general news channel."""
+    category = item["category"]
+    if category["priority"] == "critical":
+        webhook = os.environ.get("DISCORD_BREAKING_NEWS_WEBHOOK_URL")
+        if webhook:
+            return webhook, "加密重大快訊"
+    if category["key"] in {"regulation", "etf"}:
+        webhook = os.environ.get("DISCORD_REGULATION_ETF_WEBHOOK_URL")
+        if webhook:
+            return webhook, "監管與 ETF 雷達"
+    return default_webhook, "加密新聞雷達"
 
 
 def load_state() -> dict[str, Any]:
@@ -435,7 +449,8 @@ def run(now: datetime) -> tuple[int, int]:
     sent = 0
     for item in immediate[:MAX_IMMEDIATE_PER_RUN]:
         item = add_translated_title(item, state, now)
-        send_discord(webhook, news_embed(item))
+        destination, username = destination_for(item, webhook)
+        send_discord(destination, news_embed(item), username)
         seen[item["id"]] = now.date().isoformat()
         sent += 1
 
