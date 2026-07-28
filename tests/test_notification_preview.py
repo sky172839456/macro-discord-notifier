@@ -132,10 +132,15 @@ class NotificationPreviewTests(unittest.TestCase):
         exchange_source = (root / "exchange_announcement_notifier.py").read_text(encoding="utf-8")
         self.assertIn('channel_key="exchange_announcements"', exchange_source)
 
-    def test_discord_limit_splits_twelve_cards_into_two_batches(self):
+    def test_discord_limits_split_twelve_cards_into_safe_batches(self):
         batches = notification_preview.payload_batches(self.now)
-        self.assertEqual([len(item["embeds"]) for item in batches], [10, 2])
+        self.assertEqual(sum(len(item["embeds"]) for item in batches), 12)
+        self.assertGreaterEqual(len(batches), 3)
         self.assertTrue(all(len(item["embeds"]) <= 10 for item in batches))
+        self.assertTrue(all(
+            sum(notification_preview.embed_text_size(embed) for embed in item["embeds"]) <= 5500
+            for item in batches
+        ))
         self.assertTrue(all(item["allowed_mentions"] == {"parse": []} for item in batches))
 
     def test_run_uses_only_the_test_webhook(self):
@@ -149,7 +154,7 @@ class NotificationPreviewTests(unittest.TestCase):
             count = notification_preview.run(self.now)
 
         self.assertEqual(count, 12)
-        self.assertEqual(send.call_count, 2)
+        self.assertEqual(send.call_count, len(notification_preview.payload_batches(self.now)))
         self.assertTrue(all(call.args[0] == environment["DISCORD_TEST_WEBHOOK_URL"] for call in send.call_args_list))
 
     def test_missing_test_webhook_never_falls_back_to_production(self):
