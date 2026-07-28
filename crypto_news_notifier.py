@@ -25,7 +25,7 @@ TAIPEI = ZoneInfo("Asia/Taipei")
 STATE_FILE = Path(os.getenv("CRYPTO_NEWS_STATE_FILE", ".state/crypto-news.json"))
 MAX_IMMEDIATE_PER_RUN = 4
 MAX_DIGEST_ITEMS = 8
-RECENT_HOURS = 8
+RECENT_HOURS = 48
 TRANSLATION_URL = "https://api.mymemory.translated.net/get"
 
 SOURCES = (

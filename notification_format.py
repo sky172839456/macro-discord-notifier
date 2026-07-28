@@ -5,6 +5,9 @@ import copy
 import json
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
+
+TAIPEI = ZoneInfo("Asia/Taipei")
 
 CHANNEL_AUTHORS = {
     "macro_alerts": "US MACRO WATCH｜總經數據快訊",
@@ -82,9 +85,12 @@ def apply_delivery_format(
             additions.append("系統紀錄")
     elif "不構成投資建議" not in footer_text:
         additions.append("不構成投資建議")
+    sent_at = datetime.now(timezone.utc).astimezone(TAIPEI)
+    if "機器人送出：" not in footer_text:
+        additions.append(f"機器人送出：{sent_at:%Y/%m/%d %H:%M}")
     footer["text"] = "｜".join(part for part in (footer_text, *additions) if part)
     card["footer"] = footer
-    card.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+    card.setdefault("timestamp", sent_at.astimezone(timezone.utc).isoformat())
     return card
 
 

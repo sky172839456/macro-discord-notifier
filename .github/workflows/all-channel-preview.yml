@@ -21,3 +21,7 @@ jobs:
         env:
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
         run: python notification_preview.py
+      - name: Send realtime health preview only to the test channel
+        env:
+          DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
+        run: python realtime_health.py --test-preview

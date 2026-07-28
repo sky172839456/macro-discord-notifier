@@ -23,6 +23,7 @@ PRODUCTION_WEBHOOK_ENV = "DISCORD_EXCHANGE_LISTING_WEBHOOK_URL"
 TEST_WEBHOOK_ENV = "DISCORD_TEST_WEBHOOK_URL"
 STATE_VERSION = 2
 TAIPEI = ZoneInfo("Asia/Taipei")
+LISTING_BACKFILL_HOURS = 72
 SOURCES = {
     "Bybit": "https://announcements.bybit.com/en/?category=new_crypto",
     "OKX": "https://www.okx.com/help/section/announcements-new-listings",
@@ -470,7 +471,11 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
             recent = []
             for item in unseen[:10]:
                 published = item.get("published")
-                if published and datetime.now(timezone.utc) - published > timedelta(hours=24):
+                if (
+                    published
+                    and datetime.now(timezone.utc) - published
+                    > timedelta(hours=LISTING_BACKFILL_HOURS)
+                ):
                     continue
                 item["discovered"] = datetime.now(timezone.utc)
                 item["details"] = listing_details(item)

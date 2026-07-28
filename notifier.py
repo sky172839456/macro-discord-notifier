@@ -26,6 +26,7 @@ from config import BLS_CALENDAR_URL, DAY_BEFORE_MINUTES, EVENT_RULES, MARKET_INT
 from notification_format import apply_delivery_format
 
 STATE_FILE = Path(os.getenv("STATE_FILE", ".state/notified.json"))
+RELEASE_BACKFILL_MINUTES = 48 * 60
 NY = ZoneInfo("America/New_York")
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
 BLS_API_URL = "https://api.bls.gov/publicAPI/v2/timeseries/data/"
@@ -861,7 +862,7 @@ def legacy_run(now: datetime, dry_run: bool = False, force_digest: bool = False)
     for item in releases:
         age = (now - item["published"]).total_seconds() / 60
         key = f"release:{item['id']}"
-        if 0 <= age <= 240 and key not in sent:
+        if 0 <= age <= RELEASE_BACKFILL_MINUTES and key not in sent:
             send_discord(webhook, release_embed(item), dry_run)
             sent[key] = now.date().isoformat()
     cutoff = (now - timedelta(days=45)).date().isoformat()
@@ -1006,7 +1007,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
     for item in releases:
         age = (now - item["published"]).total_seconds() / 60
         key = f"release:{item['id']}"
-        if 0 <= age <= 240 and key not in sent:
+        if 0 <= age <= RELEASE_BACKFILL_MINUTES and key not in sent:
             send_discord(webhook, release_embed(item), dry_run)
             sent[key] = now.date().isoformat()
 

@@ -8,11 +8,71 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import derivatives_notifier
+import bybit_notifier
+import crypto_news_notifier
+import notifier
+import realtime_health
 import risk_notifier
 import summary_notifier
 
 
 class ReliabilityMonitorTests(unittest.TestCase):
+    def test_heartbeat_warns_after_more_than_ten_minutes_of_extra_delay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "health.json"
+            first = datetime(2026, 7, 29, 0, 0, tzinfo=timezone.utc)
+            delayed = datetime(2026, 7, 29, 0, 16, tzinfo=timezone.utc)
+            with patch.object(realtime_health, "send_webhook") as send:
+                self.assertIsNone(realtime_health.begin(first, "https://discord.invalid", state_file))
+                self.assertEqual(
+                    realtime_health.begin(delayed, "https://discord.invalid", state_file),
+                    16,
+                )
+            send.assert_called_once()
+            self.assertIn("排程間隔異常", send.call_args.args[1]["title"])
+            self.assertIn("加長回補視窗", send.call_args.args[1]["description"])
+
+    def test_daily_execution_health_reports_once_and_lists_every_monitor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "health.json"
+            now = datetime(2026, 7, 29, 0, 5, tzinfo=timezone.utc)
+            results = {
+                name: ("ok", "本輪執行完成")
+                for name in realtime_health.MONITOR_LABELS
+            }
+            with patch.object(realtime_health, "send_webhook") as send:
+                self.assertTrue(
+                    realtime_health.finish(now, results, "https://discord.invalid", state_file)
+                )
+                self.assertFalse(
+                    realtime_health.finish(now, results, "https://discord.invalid", state_file)
+                )
+            send.assert_called_once()
+            card = send.call_args.args[1]
+            self.assertIn("全部正常", card["title"])
+            for name in realtime_health.MONITOR_LABELS:
+                self.assertIn(name, card["description"])
+
+    def test_daily_health_never_labels_skipped_monitor_as_normal(self):
+        results = {
+            name: ("ok", "本輪執行完成")
+            for name in realtime_health.MONITOR_LABELS
+        }
+        results["衍生品"] = ("skipped", "Webhook 未設定")
+        card = realtime_health.daily_health_embed(
+            results,
+            {"last_gap_minutes": 5},
+            datetime(2026, 7, 29, 0, 5, tzinfo=timezone.utc),
+        )
+        self.assertIn("1 個監控未設定", card["title"])
+        self.assertNotIn("全部正常", card["title"])
+        self.assertIn("未執行項目不會被標示為正常", card["fields"][-1]["value"])
+
+    def test_recovery_windows_cover_multi_hour_github_delays(self):
+        self.assertEqual(notifier.RELEASE_BACKFILL_MINUTES, 48 * 60)
+        self.assertEqual(crypto_news_notifier.RECENT_HOURS, 48)
+        self.assertEqual(bybit_notifier.LISTING_BACKFILL_HOURS, 72)
+
     def test_derivatives_card_uses_actual_observation_interval(self):
         item = {
             "symbol": "BTCUSDT",
@@ -131,6 +191,9 @@ class ReliabilityMonitorTests(unittest.TestCase):
         workflows = Path(__file__).resolve().parents[1] / ".github" / "workflows"
         realtime = (workflows / "realtime-monitors.yml").read_text(encoding="utf-8")
         self.assertIn('cron: "6,11,16,21,26,31,36,41,46,51,56 * * * *"', realtime)
+        self.assertIn("python realtime_health.py --begin", realtime)
+        self.assertIn("python realtime_health.py --finish", realtime)
+        self.assertIn(".state/realtime-health.json", realtime)
         for name in (
             "macro.yml", "bybit-monitor.yml", "exchange-announcements.yml",
             "crypto-news.yml", "risk-monitor.yml", "derivatives-test.yml",
