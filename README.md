@@ -38,20 +38,27 @@ Webhook 是敏感資料，請勿貼在 README、Issue 或 commit。
 即時監控由單一 `Realtime Discord Monitors` 工作流程集中排程，避免多個高頻
 GitHub schedule 互相競爭。正式環境使用以下獨立 secret：
 
-- `DISCORD_WEBHOOK_URL`：美國總經通知
+- `DISCORD_WEBHOOK_URL`：總經數據快訊
 - `DISCORD_LOG_WEBHOOK_URL`：來源健康與工作流程錯誤
 - `DISCORD_EXCHANGE_LISTING_WEBHOOK_URL`：上幣通知
 - `DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL`：交易所公告
 - `DISCORD_CRYPTO_NEWS_WEBHOOK_URL`：加密新聞
-- `DISCORD_RISK_WEBHOOK_URL`：穩定幣與交易所風險
-- `DISCORD_DERIVATIVES_WEBHOOK_URL`：衍生品異常
-- `DISCORD_DAILY_SUMMARY_WEBHOOK_URL`：每日市場摘要
-- `DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL`：每週市場摘要
+- `DISCORD_RISK_WEBHOOK_URL`：市場風險警報
+- `DISCORD_DERIVATIVES_WEBHOOK_URL`：衍生品異常（與市場風險警報共用頻道）
+- `DISCORD_DAILY_SUMMARY_WEBHOOK_URL`：市場摘要（每日版）
+- `DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL`：市場摘要（每週版，共用頻道）
 - `DISCORD_BREAKING_NEWS_WEBHOOK_URL`：重大快訊
 - `DISCORD_REGULATION_ETF_WEBHOOK_URL`：監管與 ETF
-- `DISCORD_MACRO_ANALYSIS_WEBHOOK_URL`：每日總體經濟觀察
+- `DISCORD_MACRO_ANALYSIS_WEBHOOK_URL`：每日總經觀察
 - `DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL`：每日 BTC／ETH 技術分析
 - `DISCORD_TEST_WEBHOOK_URL`：所有手動測試與預覽
+
+正式通知保留 12 種內容模板，但合併為 10 個目的頻道：
+
+- `市場風險警報`：市場風險與衍生品警報
+- `市場摘要`：每日市場重點與每週市場摘要
+
+舊的 `封存-衍生品警報` 與 `封存-每週市場摘要` 僅保留歷史訊息，不再接收新通知。
 
 ### 全頻道版面驗收
 

@@ -119,8 +119,8 @@ def macro_embed(dashboard, events, event_error, now):
         else:
             lines.append(f"**{label}**　`{item['price']:,.3f}`　`{item['change']:+.2f}%`")
     return {
-        "author": {"name": "MACRO LENS｜總體經濟"},
-        "title": f"🏛️ 每日總體經濟觀察｜{now.astimezone(TAIPEI):%Y/%m/%d}",
+        "author": {"name": "MACRO LENS｜每日總經觀察"},
+        "title": f"🏛️ 每日總經觀察｜{now.astimezone(TAIPEI):%Y/%m/%d}",
         "description": "追蹤傳統市場對加密資產風險偏好的背景影響，不與數據公布通知重複。",
         "color": 0x3498DB,
         "fields": [
@@ -158,7 +158,7 @@ def run(now, test=False):
         card = macro_embed(dashboard, events, error, now)
         if test:
             card["title"] = "🧪 測試｜" + card["title"]
-        send(macro_webhook, "總體經濟觀察", card)
+        send(macro_webhook, "每日總經觀察", card)
         sent.append("macro")
     if technical_webhook:
         card = technical_embed([
