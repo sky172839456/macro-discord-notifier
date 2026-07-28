@@ -12,6 +12,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+from notification_format import apply_delivery_format
+
 OKX_API = "https://openapi.okx.com"
 SYMBOLS = ("BTCUSDT", "ETHUSDT")
 TAIPEI = ZoneInfo("Asia/Taipei")
@@ -155,7 +157,8 @@ def snapshot_embed(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def send_discord(webhook: str, embed: dict[str, Any]) -> None:
-    payload = {"username": "加密衍生品監控", "embeds": [embed], "allowed_mentions": {"parse": []}}
+    card = apply_delivery_format(embed, "derivatives")
+    payload = {"username": "加密衍生品監控", "embeds": [card], "allowed_mentions": {"parse": []}}
     request = Request(
         webhook + ("&" if "?" in webhook else "?") + "wait=true",
         data=json.dumps(payload).encode("utf-8"),

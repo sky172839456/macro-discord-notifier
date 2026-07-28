@@ -391,7 +391,7 @@ def run(now: datetime) -> tuple[int, int]:
     immediate_limit = 8
     for item in immediate[:immediate_limit]:
         item = enrich(item)
-        send(webhook, embed(item))
+        send(webhook, embed(item), channel_key="exchange_announcements")
         seen[item["id"]] = now.date().isoformat()
         sent_count += 1
 
@@ -417,7 +417,7 @@ def run(now: datetime) -> tuple[int, int]:
             item["published"] = datetime.fromisoformat(item["published"])
             item["category"] = category_map[item["category"]]
             restored.append(item)
-        send(webhook, digest_embed(restored, now))
+        send(webhook, digest_embed(restored, now), channel_key="exchange_announcements")
         for item in pending[:8]:
             seen[item["id"]] = now.date().isoformat()
         pending[:] = pending[8:]
@@ -459,14 +459,16 @@ def main() -> int:
             webhook = os.environ.get(TEST_WEBHOOK_ENV)
             if not webhook:
                 raise RuntimeError(f"缺少 {TEST_WEBHOOK_ENV}")
-            send(webhook, embed(sample(now), test=True))
+            send(webhook, embed(sample(now), test=True),
+                 channel_key="exchange_announcements")
             return 0
         if args.production_test:
             webhook = os.environ.get(PRODUCTION_WEBHOOK_ENV)
             if not webhook:
                 raise RuntimeError(f"缺少 {PRODUCTION_WEBHOOK_ENV}")
             count, statuses = initialize(now)
-            send(webhook, connectivity_embed(count, statuses, now))
+            send(webhook, connectivity_embed(count, statuses, now),
+                 channel_key="exchange_announcements")
             return 0
         count, sent_count = run(now)
         print(f"完成：公告 {count} 筆，本次送出 {sent_count} 則")
