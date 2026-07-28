@@ -16,7 +16,7 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
-from notification_format import apply_delivery_format
+from notification_format import apply_delivery_format, bilingual_sections
 
 STATE = Path(".state/exchange-listings.json")
 PRODUCTION_WEBHOOK_ENV = "DISCORD_EXCHANGE_LISTING_WEBHOOK_URL"
@@ -273,12 +273,22 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
         "delist": ("下架", "🔴", 0xE74C3C),
         "migration": ("代幣遷移／更名", "🔄", 0x9B59B6),
     }[kind_key]
+    labels = pair_labels(item["title"])
+    pair_text = "、".join(labels) if labels else "請查看官方原文"
+    english_points = (
+        [f"Trading pair: {', '.join(labels)}.", "Open the official notice to confirm the trading schedule and eligibility."]
+        if labels else ["Open the official notice to confirm the affected asset, schedule, and eligibility."]
+    )
+    bilingual = bilingual_sections(
+        original_title=item["title"],
+        english_summary=f"{item['exchange']} published an official {kind_key} market announcement.",
+        english_points=english_points,
+        zh_title=f"{item['exchange']}｜{kind}",
+        zh_points=[f"交易對：{pair_text}", "請以官方原文確認交易時間、交易對與適用地區。"],
+    )
     return {
         "title": f"{'🧪 測試｜' if test else ''}{icon} {item['exchange']} {kind}",
-        "description": (
-            f"### {item['title']}\n\n**繁體中文摘要**\n"
-            f"{item['exchange']} 發布{kind}資訊，請開啟官方原文確認交易時間、交易對與適用地區。"
-        ),
+        "description": bilingual,
         "color": color,
         "fields": [
             {"name": "交易所", "value": item["exchange"], "inline": True},
@@ -335,21 +345,56 @@ def listing_details(item: dict[str, Any]) -> list[str]:
 
 def listing_summary_embed(exchange: str, items: list[dict[str, Any]], test: bool = False) -> dict[str, Any]:
     groups = {key: [] for key in ("spot", "margin", "perpetual", "premarket", "delist", "migration")}
+    names = {
+        "spot": "🟢 現貨上幣", "margin": "🟣 現貨槓桿", "perpetual": "🔵 永續合約",
+        "premarket": "🟡 預上市／盤前交易", "delist": "🔴 下架", "migration": "🔄 代幣遷移／更名",
+    }
     for item in items:
         key = "margin" if "spot margin" in item["title"].lower() else (announcement_kind(item["title"]) or "spot")
         labels = pair_labels(item["title"])
         label = "、".join(labels) if labels else item["title"][:90]
         detail_lines = item.get("details") or listing_details(item)
-        suffix = "".join(f"\n  └ {detail}" for detail in detail_lines)
-        groups[key].append(f"• [{label}]({item['url']}){suffix}")
-    names = {
-        "spot": "🟢 現貨上幣", "margin": "🟣 現貨槓桿", "perpetual": "🔵 永續合約",
-        "premarket": "🟡 預上市／盤前交易", "delist": "🔴 下架", "migration": "🔄 代幣遷移／更名",
-    }
-    fields = [
-        {"name": names[key], "value": "\n".join(lines)[:1024], "inline": False}
-        for key, lines in groups.items() if lines
-    ]
+        english_kind = {
+            "spot": "spot listing", "margin": "spot margin listing", "perpetual": "perpetual contract listing",
+            "premarket": "pre-market listing", "delist": "delisting", "migration": "token migration or rename",
+        }[key]
+        english_point = (
+            f"Trading pair: {', '.join(labels)}."
+            if labels else "Open the official notice to confirm the affected asset."
+        )
+        zh_points = [f"交易對：{label}"]
+        zh_points.extend(detail_lines)
+        block = bilingual_sections(
+            original_title=item["title"],
+            english_summary=f"{exchange} published an official {english_kind} announcement.",
+            english_points=[english_point, "Confirm the schedule and eligibility in the official notice."],
+            zh_title=f"{exchange}｜{names[key]}",
+            zh_points=zh_points,
+        )
+        groups[key].append(f"{block}\n\n[🔗 官方原文]({item['url']})")
+    fields = []
+    for key, blocks in groups.items():
+        current: list[str] = []
+        for block in blocks:
+            if len(block) > 1024:
+                block = block[:1000].rstrip() + "\n…"
+            candidate = "\n\n".join((*current, block))
+            if current and len(candidate) > 1024:
+                fields.append({
+                    "name": names[key] if not fields or fields[-1]["name"] != names[key] else f"{names[key]}（續）",
+                    "value": "\n\n".join(current),
+                    "inline": False,
+                })
+                current = [block]
+            else:
+                current.append(block)
+        if current:
+            fields.append({
+                "name": names[key] if not any(field["name"].startswith(names[key]) for field in fields)
+                else f"{names[key]}（續）",
+                "value": "\n\n".join(current),
+                "inline": False,
+            })
     published = [item.get("published") for item in items if item.get("published")]
     official_range = "官方頁面未提供"
     if published:

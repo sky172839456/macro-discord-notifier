@@ -15,7 +15,8 @@ class ExchangeAnnouncementTests(unittest.TestCase):
     def test_digest_contains_direct_key_point(self):
         item = sample(datetime(2026, 7, 26, tzinfo=timezone.utc))
         message = digest_embed([item], datetime(2026, 7, 26, tzinfo=timezone.utc))
-        self.assertIn("重點：Bybit 將支援區塊鏈網路升級", message["description"])
+        self.assertIn("**繁中重點**", message["description"])
+        self.assertIn("Bybit 將支援區塊鏈網路升級", message["description"])
 
     def test_discovery_time_is_not_mislabeled_as_official_time(self):
         item = sample(datetime(2026, 7, 26, tzinfo=timezone.utc))
@@ -144,8 +145,13 @@ class ExchangeAnnouncementTests(unittest.TestCase):
 
     def test_card_has_chinese_points_and_official_link(self):
         message = embed(sample(datetime.now(timezone.utc)))
-        self.assertIn("繁體中文重點", message["description"])
-        self.assertGreaterEqual(message["description"].count("\n• "), 3)
+        self.assertIn("📝 繁中重點", message["description"])
+        self.assertIn("🌐 英文原標題", message["description"])
+        self.assertIn("📰 英文摘要", message["description"])
+        self.assertIn("🔎 英文重點", message["description"])
+        self.assertLess(message["description"].index("🌐 英文原標題"), message["description"].index("📌 繁中標題"))
+        chinese = message["description"].split("**📝 繁中重點**", 1)[1].split("**市場觀察**", 1)[0]
+        self.assertGreaterEqual(chinese.count("\n• "), 3)
         self.assertEqual(message["fields"][-1]["name"], "官方原始資料")
 
     def test_production_connectivity_uses_independent_webhook(self):

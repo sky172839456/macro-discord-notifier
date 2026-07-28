@@ -20,11 +20,13 @@ from zoneinfo import ZoneInfo
 
 from bybit_notifier import PAGE_RULES, announcement_kind, clean_title, send, text
 from crypto_news_notifier import normalize_zh_title, summary_points, translate_title
+from notification_format import bilingual_sections, clean_source_text, english_key_points
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 STATE = Path(".state/exchange-announcements.json")
 PRODUCTION_WEBHOOK_ENV = "DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL"
 TEST_WEBHOOK_ENV = "DISCORD_TEST_WEBHOOK_URL"
+DIGEST_ITEMS_PER_CARD = 4
 
 PAGE_SOURCES = {
     "Binance": "https://www.binance.com/en/support/announcement",
@@ -272,18 +274,22 @@ def enrich(item: dict[str, Any]) -> dict[str, Any]:
 def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     category = item["category"]
     title_zh = item.get("title_zh", item["title"])
-    headline = f"### {title_zh}"
-    if title_zh != item["title"]:
-        headline += f"\n*英文原標題：{item['title']}*"
     points = item.get("points") or [ZH_FALLBACK[category["key"]]]
-    point_text = "\n".join(f"• {point}" for point in points)
+    source_summary = clean_source_text(item.get("summary", ""), 700)
+    bilingual = bilingual_sections(
+        original_title=item["title"],
+        english_summary=source_summary,
+        english_points=english_key_points(source_summary),
+        zh_title=title_zh,
+        zh_points=points,
+    )
     local = item["published"].astimezone(TAIPEI)
     discovered = item.get("discovered", datetime.now(timezone.utc)).astimezone(TAIPEI)
     time_name = "官方公告時間" if item.get("published_is_official") else "機器人發現時間"
     return {
         "author": {"name": "EXCHANGE NOTICE RADAR｜交易所公告"},
         "title": f"{'🧪 測試｜' if test else ''}{category['icon']} {item['exchange']}｜{category['label']}",
-        "description": f"{headline}\n\n**繁體中文重點**\n{point_text}\n\n**市場觀察**\n{OBSERVATION[category['key']]}",
+        "description": f"{bilingual}\n\n**市場觀察**\n{OBSERVATION[category['key']]}",
         "color": 0xE74C3C if category["priority"] == "critical" else 0xF39C12 if category["priority"] == "high" else 0x3498DB,
         "fields": [
             {"name": "交易所", "value": item["exchange"], "inline": True},
@@ -299,11 +305,19 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
 
 def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
     lines = []
-    for item in items[:8]:
+    for item in items[:DIGEST_ITEMS_PER_CARD]:
         point = (item.get("points") or [ZH_FALLBACK[item["category"]["key"]]])[0]
+        source_summary = clean_source_text(item.get("summary", ""), 160)
+        english_point = (english_key_points(source_summary, 1) or [
+            "Open the official announcement for complete details."
+        ])[0][:180]
         lines.append(
-            f"{item['category']['icon']} **{item['exchange']}｜{item.get('title_zh', item['title'])}**\n"
-            f"└ 重點：{point}\n└ [官方原文]({item['url']})"
+            f"{item['category']['icon']} **English Original Title**\n{clean_source_text(item['title'], 180)}\n"
+            f"**English Summary**\n{source_summary or 'No separate source summary was provided.'}\n"
+            f"**English Key Point**\n• {english_point}\n\n"
+            f"**繁中標題**\n{str(item.get('title_zh', item['title']))[:180]}\n"
+            f"**繁中重點**\n• {str(point)[:180]}\n"
+            f"└ [官方原文]({item['url']})"
         )
     return {
         "author": {"name": "EXCHANGE NOTICE RADAR｜交易所公告"},
@@ -417,12 +431,17 @@ def run(now: datetime) -> tuple[int, int]:
             item["published"] = datetime.fromisoformat(item["published"])
             item["category"] = category_map[item["category"]]
             restored.append(item)
-        send(webhook, digest_embed(restored, now), channel_key="exchange_announcements")
+        for index in range(0, len(restored), DIGEST_ITEMS_PER_CARD):
+            send(
+                webhook,
+                digest_embed(restored[index:index + DIGEST_ITEMS_PER_CARD], now),
+                channel_key="exchange_announcements",
+            )
         for item in pending[:8]:
             seen[item["id"]] = now.date().isoformat()
         pending[:] = pending[8:]
         state["last_digest"] = slot
-        sent_count += 1
+        sent_count += (len(restored) + DIGEST_ITEMS_PER_CARD - 1) // DIGEST_ITEMS_PER_CARD
 
     cutoff = (now - timedelta(days=21)).date().isoformat()
     state["seen"] = {key: date for key, date in seen.items() if date >= cutoff}

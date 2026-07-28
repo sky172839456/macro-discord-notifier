@@ -120,7 +120,11 @@ class ReliabilityMonitorTests(unittest.TestCase):
             "shortlink": "https://status.coinbase.com/",
         })
         self.assertIn("交易服務", card["title"])
-        self.assertIn("繁中重點", card["description"])
+        self.assertIn("📝 繁中重點", card["description"])
+        self.assertIn("🌐 英文原標題", card["description"])
+        self.assertIn("📰 英文摘要", card["description"])
+        self.assertIn("🔎 英文重點", card["description"])
+        self.assertLess(card["description"].index("🌐 英文原標題"), card["description"].index("📌 繁中標題"))
         self.assertIn("This incident has been resolved.", card["description"])
         self.assertEqual(card["fields"][0]["value"], "已恢復（resolved）")
 

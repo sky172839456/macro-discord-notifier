@@ -23,7 +23,9 @@ class CryptoNewsTests(unittest.TestCase):
             "official": True,
             "category": category_for("SEC approves crypto regulation"),
         }
-        self.assertIn("重點：SEC 已正式核准", digest_embed([item], now)["description"])
+        description = digest_embed([item], now)["description"]
+        self.assertIn("**繁中重點**", description)
+        self.assertIn("SEC 已正式核准", description)
 
     def test_sources_include_media_and_official(self):
         self.assertGreaterEqual(sum(not source["official"] for source in SOURCES), 3)
@@ -73,8 +75,9 @@ class CryptoNewsTests(unittest.TestCase):
                 "url": "https://example.com/x", "published": now, "source": "Official", "official": True,
                 "category": category_for("wallet exploit hacked")}
         embed = news_embed(item)
-        self.assertIn("繁體中文重點", embed["description"])
+        self.assertIn("📝 繁中重點", embed["description"])
         self.assertIn("市場觀察", embed["description"])
+        self.assertLess(embed["description"].index("🌐 英文原標題"), embed["description"].index("📌 繁中標題"))
         self.assertEqual(embed["fields"][0]["value"], "✅ 官方確認")
 
     def test_embed_shows_chinese_and_original_headlines(self):
@@ -83,8 +86,12 @@ class CryptoNewsTests(unittest.TestCase):
                 "summary": "Official update.", "url": "https://example.com/x", "published": now,
                 "source": "Official", "official": True, "category": category_for("SEC regulation crypto")}
         embed = news_embed(item)
-        self.assertIn("### SEC 核准現貨 Bitcoin ETF", embed["description"])
-        self.assertIn("英文原標題：SEC approves spot Bitcoin ETF", embed["description"])
+        self.assertIn("📌 繁中標題", embed["description"])
+        self.assertIn("SEC 核准現貨 Bitcoin ETF", embed["description"])
+        self.assertIn("🌐 英文原標題", embed["description"])
+        self.assertIn("SEC approves spot Bitcoin ETF", embed["description"])
+        self.assertIn("📰 英文摘要", embed["description"])
+        self.assertIn("🔎 英文重點", embed["description"])
 
     def test_embed_supports_multiple_chinese_key_points(self):
         now = datetime.now(timezone.utc)
@@ -93,7 +100,8 @@ class CryptoNewsTests(unittest.TestCase):
                 "url": "https://example.com/x", "published": now, "source": "Official", "official": True,
                 "category": category_for("exchange wallet exploit hacked")}
         description = news_embed(item)["description"]
-        self.assertEqual(description.count("\n• "), 3)
+        chinese = description.split("**📝 繁中重點**", 1)[1].split("**市場觀察**", 1)[0]
+        self.assertEqual(chinese.count("\n• "), 3)
         self.assertIn("**市場觀察**", description)
 
     def test_translation_input_respects_utf8_byte_limit(self):

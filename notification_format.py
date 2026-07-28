@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import copy
+import html
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -38,6 +40,67 @@ def source_status_text(status: str, detail: str | None = None) -> str:
         raise ValueError(f"unsupported source status: {status}")
     label, default_detail = SOURCE_STATUS[status]
     return f"**{label}**\n{detail or default_detail}"
+
+
+def clean_source_text(value: str, limit: int = 900) -> str:
+    """Turn source-provided HTML/text into a compact Discord-safe excerpt."""
+    cleaned = re.sub(r"<[^>]+>", " ", html.unescape(str(value or "")))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:limit].rstrip()
+
+
+def english_key_points(value: str, limit: int = 3) -> list[str]:
+    """Extract factual English bullets from source text without adding new claims."""
+    cleaned = clean_source_text(value, 1800)
+    if not cleaned:
+        return []
+    parts = [
+        part.strip(" •-\t")
+        for part in re.split(r"(?<=[.!?])\s+|[;\n]+", cleaned)
+        if part.strip(" •-\t")
+    ]
+    if len(parts) == 1 and len(parts[0]) > 220:
+        clauses = [part.strip(" ,") for part in parts[0].split(",") if len(part.strip()) >= 20]
+        if len(clauses) >= 2:
+            parts = clauses
+    return [part[:320].rstrip() for part in parts[:limit]]
+
+
+def bilingual_sections(
+    *,
+    original_title: str,
+    english_summary: str | None,
+    english_points: list[str] | tuple[str, ...] | str | None,
+    zh_title: str,
+    zh_points: list[str] | tuple[str, ...] | str,
+) -> str:
+    """Render the shared English-first, Traditional-Chinese-second layout."""
+    source_summary = clean_source_text(english_summary or "")
+    if isinstance(english_points, str):
+        en_points = english_key_points(english_points)
+    else:
+        en_points = [clean_source_text(point, 320) for point in (english_points or [])]
+        en_points = [point for point in en_points if point]
+    if not en_points:
+        en_points = english_key_points(source_summary)
+    if not source_summary:
+        source_summary = "The official source did not provide a separate English summary."
+    if not en_points:
+        en_points = ["Open the official source for the complete announcement details."]
+
+    if isinstance(zh_points, str):
+        zh_point_text = zh_points
+    else:
+        zh_point_text = "\n".join(f"• {point}" for point in zh_points if point)
+
+    return (
+        f"**🌐 英文原標題**\n{clean_source_text(original_title, 900)}\n\n"
+        f"**📰 英文摘要**\n{source_summary}\n\n"
+        f"**🔎 英文重點**\n" + "\n".join(f"• {point}" for point in en_points) +
+        "\n\n\u200b\n\n"
+        f"**📌 繁中標題**\n{zh_title}\n\n"
+        f"**📝 繁中重點**\n{zh_point_text}"
+    )
 
 
 def infer_source_status(embed: dict[str, Any]) -> str:
@@ -110,14 +173,35 @@ def standard_fields(
     source_status: str,
     source_detail: str | None = None,
     original_title: str | None = None,
+    english_summary: str | None = None,
+    english_points: list[str] | tuple[str, ...] | str | None = None,
     test: bool = False,
 ) -> list[dict[str, Any]]:
-    fields: list[dict[str, Any]] = [
+    fields: list[dict[str, Any]] = []
+    if original_title:
+        source_summary = clean_source_text(english_summary or "")
+        points = english_key_points(english_points if isinstance(english_points, str) else source_summary)
+        if not isinstance(english_points, str) and english_points:
+            points = [clean_source_text(point, 320) for point in english_points if clean_source_text(point, 320)]
+        fields.extend([
+            {"name": "🌐 英文原標題", "value": original_title, "inline": False},
+            {
+                "name": "📰 英文摘要",
+                "value": source_summary or "The official source did not provide a separate English summary.",
+                "inline": False,
+            },
+            {
+                "name": "🔎 英文重點",
+                "value": "\n".join(f"• {point}" for point in points)
+                or "• Open the official source for the complete announcement details.",
+                "inline": False,
+            },
+            {"name": "\u200b", "value": "\u200b", "inline": False},
+        ])
+    fields.extend([
         {"name": "📌 繁中標題", "value": f"**{summary}**", "inline": False},
         {"name": "📝 繁中重點", "value": details, "inline": False},
-    ]
-    if original_title:
-        fields.append({"name": "🌐 英文原標題", "value": original_title, "inline": False})
+    ])
     fields.extend([
         {"name": "📍 數據／事件狀態", "value": event_status, "inline": False},
         {"name": "🕒 時間資訊（台灣）", "value": timing, "inline": False},
