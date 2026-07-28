@@ -17,7 +17,7 @@ MAX_EMBEDS_PER_MESSAGE = 10
 CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
     {
         "key": "macro_alerts",
-        "channel": "總經通知",
+        "channel": "總經數據快訊",
         "icon": "🔴",
         "color": 0xE74C3C,
         "summary": "美國 CPI 公布結果",
@@ -57,7 +57,7 @@ CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "market_risk",
-        "channel": "市場風險",
+        "channel": "市場風險警報",
         "icon": "⚠️",
         "color": 0xF1C40F,
         "summary": "USDT 短暫偏離美元錨定",
@@ -71,7 +71,7 @@ CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "derivatives",
-        "channel": "衍生品警報",
+        "channel": "市場風險警報",
         "icon": "📈",
         "color": 0xE67E22,
         "summary": "BTC 未平倉量快速增加",
@@ -123,7 +123,7 @@ CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "macro_analysis",
-        "channel": "總體經濟",
+        "channel": "每日總經觀察",
         "icon": "🌐",
         "color": 0x3498DB,
         "summary": "每日傳統市場與未來三日事件",
@@ -148,7 +148,7 @@ CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "daily_market",
-        "channel": "每日市場重點",
+        "channel": "市場摘要",
         "icon": "🗓️",
         "color": 0x9B59B6,
         "summary": "價格、衍生品、ETF、總經與風險摘要",
@@ -161,7 +161,7 @@ CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
     },
     {
         "key": "weekly_market",
-        "channel": "每週市場摘要",
+        "channel": "市場摘要",
         "icon": "📅",
         "color": 0x9B59B6,
         "summary": "本週市場表現與下週風險展望",

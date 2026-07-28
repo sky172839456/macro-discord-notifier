@@ -7,18 +7,18 @@ from datetime import datetime, timezone
 from typing import Any
 
 CHANNEL_AUTHORS = {
-    "macro_alerts": "US MACRO WATCH｜總經通知",
+    "macro_alerts": "US MACRO WATCH｜總經數據快訊",
     "exchange_listings": "EXCHANGE LISTING RADAR｜上幣通知",
     "breaking_news": "BREAKING NEWS｜重大快訊",
-    "market_risk": "CRYPTO RISK WATCH｜市場風險",
-    "derivatives": "DERIVATIVES WATCH｜衍生品警報",
+    "market_risk": "CRYPTO RISK WATCH｜市場風險警報",
+    "derivatives": "DERIVATIVES WATCH｜市場風險警報",
     "crypto_news": "CRYPTO NEWS RADAR｜加密新聞",
     "exchange_announcements": "EXCHANGE NOTICE RADAR｜交易所公告",
     "regulation_etf": "REGULATION & ETF｜監管與 ETF",
-    "macro_analysis": "MACRO LENS｜總體經濟",
+    "macro_analysis": "MACRO LENS｜每日總經觀察",
     "technical_analysis": "MARKET ANALYSIS｜技術分析",
-    "daily_market": "MARKET BRIEF｜每日市場重點",
-    "weekly_market": "MARKET BRIEF｜每週市場摘要",
+    "daily_market": "MARKET BRIEF｜市場摘要",
+    "weekly_market": "MARKET BRIEF｜市場摘要",
     "bot_log": "SYSTEM HEALTH｜機器人紀錄",
 }
 

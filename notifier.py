@@ -611,7 +611,7 @@ def revision_lines(summary: str) -> str | None:
 def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool,
                  channel_key: str = "macro_alerts") -> None:
     card = apply_delivery_format(embed, channel_key)
-    username = "總經系統監控" if channel_key == "bot_log" else "美國總經通知"
+    username = "總經系統監控" if channel_key == "bot_log" else "總經數據快訊"
     payload = {"username": username, "embeds": [card], "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -631,7 +631,7 @@ def pre_embed(event: dict[str, Any], day_before: bool = False, minutes_until: fl
     else:
         remaining = max(1, round(minutes_until if minutes_until is not None else PRE_ALERT_MINUTES))
         description = f"距離公布約 {remaining} 分鐘\n請留意公布前後的價格波動、流動性與滑價風險。"
-    return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
+    return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
             "title": f"{title}｜{event['rule']['name']}",
             "description": f"### {description}",
             "color": 0xF1C40F,
@@ -654,7 +654,7 @@ def release_embed(item: dict[str, Any]) -> dict[str, Any]:
     if revisions:
         fields.append({"name": "🔄 前值與修正資訊", "value": revisions, "inline": False})
     fields.append({"name": "🔗 官方原始資料", "value": source, "inline": False})
-    return {"author": {"name": "US MACRO WATCH｜美國總體經濟"},
+    return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
             "title": f"🔴 最新公布｜{item['rule']['name']}",
             "description": f"### 📊 官方摘要重點\n{numbers}\n\n> 數值由官方摘要擷取，請以原始公告內容為準。",
             "color": 0xE74C3C,

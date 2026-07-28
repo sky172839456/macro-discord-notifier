@@ -15,12 +15,14 @@ class NotificationPreviewTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 7, 29, 1, 0, tzinfo=timezone.utc)
 
-    def test_all_twelve_channels_have_unique_previews(self):
+    def test_all_twelve_notification_types_map_to_ten_channels(self):
         keys = [item["key"] for item in notification_preview.CHANNEL_PREVIEWS]
         channels = [item["channel"] for item in notification_preview.CHANNEL_PREVIEWS]
         self.assertEqual(len(keys), 12)
         self.assertEqual(len(keys), len(set(keys)))
-        self.assertEqual(len(channels), len(set(channels)))
+        self.assertEqual(len(set(channels)), 10)
+        self.assertEqual(channels.count("市場風險警報"), 2)
+        self.assertEqual(channels.count("市場摘要"), 2)
         self.assertIn("重大快訊", channels)
         self.assertIn("監管與etf", channels)
 
@@ -46,7 +48,7 @@ class NotificationPreviewTests(unittest.TestCase):
                 notification_preview.preview_embeds(self.now),
             )
         }
-        for channel in ("總經通知", "上幣通知", "重大快訊", "加密新聞", "交易所公告", "監管與etf"):
+        for channel in ("總經數據快訊", "上幣通知", "重大快訊", "加密新聞", "交易所公告", "監管與etf"):
             names = [field["name"] for field in previews[channel]["fields"]]
             self.assertIn("🌐 英文原標題", names)
 
