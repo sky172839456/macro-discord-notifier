@@ -71,6 +71,7 @@ class NotificationPreviewTests(unittest.TestCase):
         self.assertEqual(card["author"]["name"], "CRYPTO NEWS RADAR｜加密新聞")
         self.assertEqual(card["fields"][-1]["name"], "🩺 資料狀態")
         self.assertIn("✅ 正常取得", card["fields"][-1]["value"])
+        self.assertIn("機器人送出：", card["footer"]["text"])
         self.assertNotIn("author", original)
 
     def test_delivery_formatter_marks_visible_source_failure(self):
@@ -131,6 +132,7 @@ class NotificationPreviewTests(unittest.TestCase):
         self.assertIn("DISCORD_TEST_WEBHOOK_URL", workflow)
         self.assertNotIn("DISCORD_WEBHOOK_URL:", workflow)
         self.assertNotIn("DISCORD_BREAKING_NEWS_WEBHOOK_URL", workflow)
+        self.assertIn("realtime_health.py --test-preview", workflow)
 
 
 if __name__ == "__main__":

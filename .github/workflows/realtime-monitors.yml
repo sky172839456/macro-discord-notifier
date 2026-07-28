@@ -74,6 +74,12 @@ jobs:
           path: .state/channel-analysis.json
           key: channel-analysis-state-${{ github.run_id }}
           restore-keys: channel-analysis-state-
+      - name: Restore realtime heartbeat state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state/realtime-health.json
+          key: realtime-health-state-${{ github.run_id }}
+          restore-keys: realtime-health-state-
 
       - name: Run all realtime monitors independently
         env:
@@ -93,33 +99,58 @@ jobs:
         shell: bash
         run: |
           failures=0
+          results_file=".state/realtime-results.txt"
+          mkdir -p .state
+          : > "$results_file"
+          python realtime_health.py --begin
+
           run_if_configured() {
             name="$1"
             secret_value="$2"
             shift 2
             if [ -z "$secret_value" ]; then
               echo "::warning::$name production webhook is not configured; monitor skipped."
+              printf '%s|skipped|Webhook 未設定\n' "$name" >> "$results_file"
               return
             fi
-            "$@" || failures=$((failures + 1))
+            if "$@"; then
+              printf '%s|ok|本輪執行完成\n' "$name" >> "$results_file"
+            else
+              printf '%s|failed|程式執行失敗\n' "$name" >> "$results_file"
+              failures=$((failures + 1))
+            fi
           }
 
-          run_if_configured "Macro" "$DISCORD_WEBHOOK_URL" python notifier.py
-          run_if_configured "Exchange listing" "$DISCORD_EXCHANGE_LISTING_WEBHOOK_URL" python bybit_notifier.py
-          run_if_configured "Exchange announcement" "$DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL" python exchange_announcement_notifier.py
-          run_if_configured "Crypto news" "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" python crypto_news_notifier.py
-          run_if_configured "Risk" "$DISCORD_RISK_WEBHOOK_URL" python risk_notifier.py
-          run_if_configured "Derivatives" "$DISCORD_DERIVATIVES_WEBHOOK_URL" python derivatives_notifier.py
+          run_if_configured "總經數據" "$DISCORD_WEBHOOK_URL" python notifier.py
+          run_if_configured "上幣通知" "$DISCORD_EXCHANGE_LISTING_WEBHOOK_URL" python bybit_notifier.py
+          run_if_configured "交易所公告" "$DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL" python exchange_announcement_notifier.py
+          run_if_configured "加密新聞" "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" python crypto_news_notifier.py
+          run_if_configured "市場風險" "$DISCORD_RISK_WEBHOOK_URL" python risk_notifier.py
+          run_if_configured "衍生品" "$DISCORD_DERIVATIVES_WEBHOOK_URL" python derivatives_notifier.py
           if [ -n "$DISCORD_MACRO_ANALYSIS_WEBHOOK_URL" ] || [ -n "$DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL" ]; then
-            python analysis_notifier.py --scheduled || failures=$((failures + 1))
+            if python analysis_notifier.py --scheduled; then
+              printf '%s|ok|本輪執行完成\n' "市場分析" >> "$results_file"
+            else
+              printf '%s|failed|程式執行失敗\n' "市場分析" >> "$results_file"
+              failures=$((failures + 1))
+            fi
           else
             echo "::warning::Macro and technical analysis webhooks are not configured; analysis skipped."
+            printf '%s|skipped|Webhook 未設定\n' "市場分析" >> "$results_file"
           fi
           if [ -n "$DISCORD_DAILY_SUMMARY_WEBHOOK_URL" ] && [ -n "$DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL" ]; then
-            python summary_notifier.py --scheduled || failures=$((failures + 1))
+            if python summary_notifier.py --scheduled; then
+              printf '%s|ok|本輪執行完成\n' "市場摘要" >> "$results_file"
+            else
+              printf '%s|failed|程式執行失敗\n' "市場摘要" >> "$results_file"
+              failures=$((failures + 1))
+            fi
           else
             echo "::warning::Daily or weekly summary webhook is not configured; scheduled summaries skipped."
+            printf '%s|skipped|Webhook 未設定\n' "市場摘要" >> "$results_file"
           fi
+
+          python realtime_health.py --finish --results-file "$results_file"
 
           if [ "$failures" -gt 0 ]; then
             echo "::error::$failures realtime monitor(s) failed."
@@ -174,6 +205,12 @@ jobs:
         with:
           path: .state/market-summaries.json
           key: market-summary-state-${{ github.run_id }}
+      - name: Save realtime heartbeat state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state/realtime-health.json
+          key: realtime-health-state-${{ github.run_id }}
 
       - name: Report workflow failure
         if: failure()
