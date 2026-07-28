@@ -120,6 +120,13 @@ class ReliabilityMonitorTests(unittest.TestCase):
         source = Path(derivatives_notifier.__file__).read_text(encoding="utf-8")
         self.assertIn("DISCORD_DERIVATIVES_WEBHOOK_URL", source)
 
+    def test_macro_test_health_preview_stays_on_test_webhook(self):
+        source = Path(__file__).resolve().parents[1].joinpath("notifier.py").read_text(encoding="utf-8")
+        test_branch = source.split("if args.test_notification:", 1)[1]
+        self.assertIn('webhook = os.environ.get("DISCORD_TEST_WEBHOOK_URL")', test_branch)
+        self.assertIn("send_discord(webhook, health_embed(", test_branch)
+        self.assertNotIn("send_discord(log_webhook, health_embed(", test_branch)
+
     def test_only_one_high_frequency_schedule_remains(self):
         workflows = Path(__file__).resolve().parents[1] / ".github" / "workflows"
         realtime = (workflows / "realtime-monitors.yml").read_text(encoding="utf-8")
