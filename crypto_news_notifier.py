@@ -19,6 +19,8 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
+from notification_format import apply_delivery_format
+
 TAIPEI = ZoneInfo("Asia/Taipei")
 STATE_FILE = Path(os.getenv("CRYPTO_NEWS_STATE_FILE", ".state/crypto-news.json"))
 MAX_IMMEDIATE_PER_RUN = 4
@@ -344,7 +346,16 @@ def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
 
 
 def send_discord(webhook: str, embed: dict[str, Any], username: str = "加密新聞雷達") -> None:
-    payload = json.dumps({"username": username, "embeds": [embed]}).encode("utf-8")
+    channel_key = {
+        "加密重大快訊": "breaking_news",
+        "監管與 ETF 雷達": "regulation_etf",
+    }.get(username, "crypto_news")
+    card = apply_delivery_format(embed, channel_key)
+    payload = json.dumps({
+        "username": username,
+        "embeds": [card],
+        "allowed_mentions": {"parse": []},
+    }).encode("utf-8")
     url = webhook + ("&" if "?" in webhook else "?") + "wait=true"
     request = Request(
         url,

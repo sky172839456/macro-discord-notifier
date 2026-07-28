@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from config import BLS_CALENDAR_URL, TAIPEI_ZONE
 from notifier import NY, classify, http_text, parse_bls_calendar
 from market_brief_data import collect_dashboard, collect_weekly_dashboard
+from notification_format import apply_delivery_format
 
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
 SCHEDULE_STATE = Path(os.getenv("MARKET_SUMMARY_STATE_FILE", ".state/market-summaries.json"))
@@ -580,7 +581,9 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
 
 
 def send(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
-    payload = {"username": "市場摘要", "embeds": [embed], "allowed_mentions": {"parse": []}}
+    channel_key = "weekly_market" if "每週" in str(embed.get("title", "")) else "daily_market"
+    card = apply_delivery_format(embed, channel_key)
+    payload = {"username": "市場摘要", "embeds": [card], "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return

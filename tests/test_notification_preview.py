@@ -8,7 +8,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import notification_preview
-from notification_format import source_status_text
+from notification_format import apply_delivery_format, source_status_text
 
 
 class NotificationPreviewTests(unittest.TestCase):
@@ -56,6 +56,43 @@ class NotificationPreviewTests(unittest.TestCase):
         self.assertIn("🟡 使用備援來源", values[1])
         self.assertIn("⚠️ 部分資料缺少", values[2])
         self.assertIn("❌ 所有來源失敗", values[3])
+
+    def test_delivery_formatter_preserves_original_content(self):
+        original = {
+            "title": "繁中標題",
+            "description": "英文原標題：Original English Headline",
+            "fields": [{"name": "官方來源", "value": "https://example.com"}],
+        }
+        card = apply_delivery_format(original, "crypto_news")
+        self.assertEqual(card["title"], original["title"])
+        self.assertEqual(card["description"], original["description"])
+        self.assertEqual(card["author"]["name"], "CRYPTO NEWS RADAR｜加密新聞")
+        self.assertEqual(card["fields"][-1]["name"], "🩺 資料狀態")
+        self.assertIn("✅ 正常取得", card["fields"][-1]["value"])
+        self.assertNotIn("author", original)
+
+    def test_delivery_formatter_marks_visible_source_failure(self):
+        card = apply_delivery_format(
+            {"title": "資料更新", "description": "官方來源暫時無法確認"},
+            "macro_analysis",
+        )
+        self.assertIn("❌ 所有來源失敗", card["fields"][-1]["value"])
+
+    def test_all_production_delivery_wrappers_use_shared_formatter(self):
+        root = Path(__file__).resolve().parents[1]
+        files = (
+            "notifier.py",
+            "bybit_notifier.py",
+            "crypto_news_notifier.py",
+            "risk_notifier.py",
+            "derivatives_notifier.py",
+            "summary_notifier.py",
+            "analysis_notifier.py",
+        )
+        for name in files:
+            self.assertIn("apply_delivery_format", (root / name).read_text(encoding="utf-8"), name)
+        exchange_source = (root / "exchange_announcement_notifier.py").read_text(encoding="utf-8")
+        self.assertIn('channel_key="exchange_announcements"', exchange_source)
 
     def test_discord_limit_splits_twelve_cards_into_two_batches(self):
         batches = notification_preview.payload_batches(self.now)

@@ -16,6 +16,8 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+from notification_format import apply_delivery_format
+
 STATE = Path(".state/exchange-listings.json")
 PRODUCTION_WEBHOOK_ENV = "DISCORD_EXCHANGE_LISTING_WEBHOOK_URL"
 TEST_WEBHOOK_ENV = "DISCORD_TEST_WEBHOOK_URL"
@@ -370,8 +372,11 @@ def listing_summary_embed(exchange: str, items: list[dict[str, Any]], test: bool
     }
 
 
-def send(webhook: str, message: dict[str, Any], dry_run: bool = False) -> None:
-    payload = {"username": "交易所上幣通知", "embeds": [message], "allowed_mentions": {"parse": []}}
+def send(webhook: str, message: dict[str, Any], dry_run: bool = False,
+         channel_key: str = "exchange_listings") -> None:
+    card = apply_delivery_format(message, channel_key)
+    username = "交易所公告雷達" if channel_key == "exchange_announcements" else "交易所上幣通知"
+    payload = {"username": username, "embeds": [card], "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return

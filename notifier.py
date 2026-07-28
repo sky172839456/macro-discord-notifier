@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 from pypdf import PdfReader
 
 from config import BLS_CALENDAR_URL, DAY_BEFORE_MINUTES, EVENT_RULES, MARKET_INTERPRETATIONS, OFFICIAL_FEEDS, PRE_ALERT_MINUTES, PRE_ALERT_WINDOW_MINUTES, TAIPEI_ZONE
+from notification_format import apply_delivery_format
 
 STATE_FILE = Path(os.getenv("STATE_FILE", ".state/notified.json"))
 NY = ZoneInfo("America/New_York")
@@ -607,8 +608,11 @@ def revision_lines(summary: str) -> str | None:
     return "\n".join(f"• {sentence[:300]}" for sentence in revisions[:2])
 
 
-def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
-    payload = {"username": "美國總經通知", "embeds": [embed], "allowed_mentions": {"parse": []}}
+def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool,
+                 channel_key: str = "macro_alerts") -> None:
+    card = apply_delivery_format(embed, channel_key)
+    username = "總經系統監控" if channel_key == "bot_log" else "美國總經通知"
+    payload = {"username": username, "embeds": [card], "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -839,7 +843,8 @@ def legacy_run(now: datetime, dry_run: bool = False, force_digest: bool = False)
     log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
     if source_errors and log_webhook and health_key not in health_alerts:
         try:
-            send_discord(log_webhook, source_health_embed(source_errors, source_recoveries), dry_run)
+            send_discord(log_webhook, source_health_embed(source_errors, source_recoveries),
+                         dry_run, "bot_log")
             health_alerts[health_key] = local.date().isoformat()
         except Exception as exc:
             print(f"警告：健康監控通知無法送出：{exc}", file=sys.stderr)
@@ -949,11 +954,11 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
     log_webhook = os.environ.get("DISCORD_LOG_WEBHOOK_URL")
     health_key = f"sources:v3:{local:%Y-%m-%d}"
     if errors and log_webhook and health_key not in health_alerts:
-        send_discord(log_webhook, source_health_embed(errors, recoveries), dry_run)
+        send_discord(log_webhook, source_health_embed(errors, recoveries), dry_run, "bot_log")
         health_alerts[health_key] = local.date().isoformat()
     digest_key = local.strftime("%Y-%m-%d")
     if (force_digest or local.hour >= 7) and log_webhook and digest_key not in daily_health:
-        send_discord(log_webhook, full_source_health_embed(statuses), dry_run)
+        send_discord(log_webhook, full_source_health_embed(statuses), dry_run, "bot_log")
         daily_health.append(digest_key)
     week_key = f"{local:%G-W%V}"
     weekly_sent = False
@@ -1088,7 +1093,7 @@ def main() -> int:
                     "✅ 健康監控測試成功",
                     "測試通知已成功執行，GitHub Actions、Discord Webhook 與通知程式皆可正常運作。",
                     0x2ECC71,
-                ), False)
+                ), False, "bot_log")
             print("完成：已送出 Discord 測試通知")
             return 0
         calendar_count, release_count = run(

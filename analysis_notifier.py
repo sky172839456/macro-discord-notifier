@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from market_brief_data import collect_dashboard
+from notification_format import apply_delivery_format
 from summary_notifier import event_lines, upcoming_events
 
 TAIPEI = ZoneInfo("Asia/Taipei")
@@ -133,7 +134,9 @@ def macro_embed(dashboard, events, event_error, now):
 
 
 def send(webhook, username, embed):
-    payload = json.dumps({"username": username, "embeds": [embed], "allowed_mentions": {"parse": []}}).encode()
+    channel_key = "technical_analysis" if "技術" in username else "macro_analysis"
+    card = apply_delivery_format(embed, channel_key)
+    payload = json.dumps({"username": username, "embeds": [card], "allowed_mentions": {"parse": []}}).encode()
     request = Request(
         webhook + ("&" if "?" in webhook else "?") + "wait=true",
         data=payload,

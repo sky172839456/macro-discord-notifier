@@ -10,6 +10,8 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+from notification_format import apply_delivery_format
+
 STATE_FILE = Path(".state/risk-monitor.json")
 PAIRS = {"USDT": "USDT-USD", "USDC": "USDC-USD", "DAI": "DAI-USD"}
 STATUS_URL = "https://status.coinbase.com/api/v2/incidents.json"
@@ -51,9 +53,10 @@ def get_json(url):
 
 
 def send(webhook, embed):
+    card = apply_delivery_format(embed, "market_risk")
     body = json.dumps({
         "username": "加密市場風險監控",
-        "embeds": [embed],
+        "embeds": [card],
         "allowed_mentions": {"parse": []},
     }).encode()
     req = Request(
