@@ -11,7 +11,7 @@ from notifier import (HTTP_HEADERS, classify, daily_embed, extract_numbers,
                       claims_pdf_url, macro_overview_embed, overview_snapshot,
                       official_page_published_at, overview_update_embed,
                       parse_bls_calendar, parse_feed,
-                      pre_embed, revision_lines,
+                      pre_embed, release_embed, release_schedule_times, revision_lines,
                       source_health_embed, supplement_dynamic_bls_calendar)
 
 
@@ -111,8 +111,49 @@ class OfficialSourceTests(unittest.TestCase):
         now = datetime(2026, 7, 20, tzinfo=timezone.utc)
         value = (now + timedelta(days=2)).isoformat()
         message = overview_update_embed([(("cpi",), "🔴", "CPI", value)], now)
-        self.assertIn("總經監控總覽更新", message["title"])
+        self.assertIn("下次公布時間更新", message["title"])
         self.assertIn("07/22 08:00", message["description"])
+        self.assertIn("下次公布", message["description"])
+
+    def test_jobs_metrics_are_labeled_and_localized(self):
+        metrics = format_metrics(
+            "Payroll employment changed -23 thousand; previous payroll change was +147 thousand; "
+            "unemployment rate was 4.1 percent; previous unemployment rate was 4.0 percent.",
+            "jobs",
+        )
+        self.assertIn("實際 `-2.3 萬人`", metrics)
+        self.assertIn("前值 `+14.7 萬人`", metrics)
+        self.assertIn("實際 `4.1%`", metrics)
+        self.assertIn("前值 `4.0%`", metrics)
+
+    def test_release_card_distinguishes_current_and_next_release(self):
+        from datetime import datetime, timezone
+        rule = classify("Employment Situation")
+        official = datetime(2026, 8, 7, 12, 30, tzinfo=timezone.utc)
+        following = datetime(2026, 9, 4, 12, 30, tzinfo=timezone.utc)
+        item = {
+            "published": datetime(2026, 8, 7, 13, 33, tzinfo=timezone.utc),
+            "summary": "Payroll employment changed -23 thousand; unemployment rate was 4.1 percent.",
+            "url": rule["source"], "rule": rule,
+        }
+        card = release_embed(item, official, following)
+        values = {field["name"]: field["value"] for field in card["fields"]}
+        self.assertEqual(values["🕐 本次官方排定時間（台灣）"], "2026/08/07 20:30")
+        self.assertEqual(values["📅 下次公布（台灣）"], "2026/09/04 20:30")
+        self.assertNotIn("事件類型", " ".join(values))
+
+    def test_release_schedule_uses_calendar_instead_of_detection_time(self):
+        from datetime import datetime, timezone
+        rule = classify("Employment Situation")
+        now = datetime(2026, 8, 7, 13, 33, tzinfo=timezone.utc)
+        item = {"rule": rule, "published": now}
+        calendar = [
+            {"rule": rule, "time": datetime(2026, 8, 7, 12, 30, tzinfo=timezone.utc)},
+            {"rule": rule, "time": datetime(2026, 9, 4, 12, 30, tzinfo=timezone.utc)},
+        ]
+        current, following = release_schedule_times(item, calendar, now)
+        self.assertEqual(current, calendar[0]["time"])
+        self.assertEqual(following, calendar[1]["time"])
 
     def test_overview_distinguishes_unconfirmed_from_source_failure(self):
         from datetime import datetime, timezone

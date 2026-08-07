@@ -20,7 +20,8 @@ from zoneinfo import ZoneInfo
 
 from bybit_notifier import PAGE_RULES, announcement_kind, clean_title, send, text
 from crypto_news_notifier import normalize_zh_title, summary_points, translate_title
-from notification_format import bilingual_sections, clean_source_text, english_key_points
+from notification_format import (bilingual_sections, clean_source_text, english_key_points,
+                                 english_summary_excerpt)
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 STATE = Path(".state/exchange-announcements.json")
@@ -275,7 +276,7 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     category = item["category"]
     title_zh = item.get("title_zh", item["title"])
     points = item.get("points") or [ZH_FALLBACK[category["key"]]]
-    source_summary = clean_source_text(item.get("summary", ""), 700)
+    source_summary = english_summary_excerpt(item["title"], item.get("summary"), 700)
     bilingual = bilingual_sections(
         original_title=item["title"],
         english_summary=source_summary,
@@ -303,29 +304,16 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     }
 
 
-def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
-    lines = []
+def digest_embed(items: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+    """Render one exchange notice per card while keeping four cards per message."""
+    cards = []
     for item in items[:DIGEST_ITEMS_PER_CARD]:
-        point = (item.get("points") or [ZH_FALLBACK[item["category"]["key"]]])[0]
-        source_summary = clean_source_text(item.get("summary", ""), 160)
-        english_point = (english_key_points(source_summary, 1) or [
-            "Open the official announcement for complete details."
-        ])[0][:180]
-        lines.append(
-            f"{item['category']['icon']} **English Original Title**\n{clean_source_text(item['title'], 180)}\n"
-            f"**English Summary**\n{source_summary or 'No separate source summary was provided.'}\n"
-            f"**English Key Point**\n• {english_point}\n\n"
-            f"**繁中標題**\n{str(item.get('title_zh', item['title']))[:180]}\n"
-            f"**繁中重點**\n• {str(point)[:180]}\n"
-            f"└ [官方原文]({item['url']})"
-        )
-    return {
-        "author": {"name": "EXCHANGE NOTICE RADAR｜交易所公告"},
-        "title": "📢 交易所公告三小時摘要",
-        "description": "\n\n".join(lines), "color": 0x3498DB,
-        "footer": {"text": "維護、規則與服務變更彙整｜已排除上幣與行銷活動"},
-        "timestamp": now.isoformat(),
-    }
+        card = embed(item)
+        card["title"] = "📢 三小時摘要｜" + card["title"]
+        card["footer"]["text"] = "三小時一般公告摘要｜每則公告獨立顯示｜已排除上幣與行銷活動"
+        card["timestamp"] = now.isoformat()
+        cards.append(card)
+    return cards
 
 
 def fetch_all() -> tuple[list[dict[str, Any]], list[tuple[str, int, str | None]]]:
@@ -399,8 +387,8 @@ def run(now: datetime) -> tuple[int, int]:
         return len(items), 0
 
     candidates = [item for item in items if item["id"] not in seen]
-    immediate = [item for item in candidates if item["category"]["priority"] in {"critical", "high"}]
-    normal = [item for item in candidates if item["category"]["priority"] == "normal"]
+    immediate = [item for item in candidates if item["category"]["priority"] == "critical"]
+    normal = [item for item in candidates if item["category"]["priority"] != "critical"]
     sent_count = 0
     immediate_limit = 8
     for item in immediate[:immediate_limit]:

@@ -14,9 +14,25 @@ from exchange_announcement_notifier import (PAGE_SOURCES, STATUS_SOURCES, digest
 class ExchangeAnnouncementTests(unittest.TestCase):
     def test_digest_contains_direct_key_point(self):
         item = sample(datetime(2026, 7, 26, tzinfo=timezone.utc))
-        message = digest_embed([item], datetime(2026, 7, 26, tzinfo=timezone.utc))
-        self.assertIn("**繁中重點**", message["description"])
+        cards = digest_embed([item], datetime(2026, 7, 26, tzinfo=timezone.utc))
+        self.assertEqual(len(cards), 1)
+        message = cards[0]
+        self.assertIn("繁中重點", message["description"])
         self.assertIn("Bybit 將支援區塊鏈網路升級", message["description"])
+        self.assertIn("三小時摘要", message["title"])
+
+    def test_digest_keeps_each_notice_in_a_separate_card(self):
+        now = datetime(2026, 7, 26, tzinfo=timezone.utc)
+        items = []
+        for index in range(4):
+            item = sample(now)
+            item["id"] = str(index)
+            item["title"] = f"Bybit wallet maintenance notice {index}"
+            item["title_zh"] = f"Bybit 錢包維護公告 {index}"
+            items.append(item)
+        cards = digest_embed(items, now)
+        self.assertEqual(len(cards), 4)
+        self.assertTrue(all("三小時摘要" in card["title"] for card in cards))
 
     def test_discovery_time_is_not_mislabeled_as_official_time(self):
         item = sample(datetime(2026, 7, 26, tzinfo=timezone.utc))

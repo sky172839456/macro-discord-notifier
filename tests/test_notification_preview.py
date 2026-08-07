@@ -8,7 +8,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import notification_preview
-from notification_format import apply_delivery_format, source_status_text
+from notification_format import apply_delivery_format, english_summary_excerpt, source_status_text
 
 
 class NotificationPreviewTests(unittest.TestCase):
@@ -89,8 +89,8 @@ class NotificationPreviewTests(unittest.TestCase):
         self.assertEqual(card["title"], original["title"])
         self.assertEqual(card["description"], original["description"])
         self.assertEqual(card["author"]["name"], "CRYPTO NEWS RADAR｜加密新聞")
-        self.assertEqual(card["fields"][-1]["name"], "🩺 資料狀態")
-        self.assertIn("✅ 正常取得", card["fields"][-1]["value"])
+        self.assertNotIn("🩺 資料狀態", [field["name"] for field in card["fields"]])
+        self.assertIn("來源正常", card["footer"]["text"])
         self.assertIn("機器人送出：", card["footer"]["text"])
         self.assertNotIn("author", original)
 
@@ -115,6 +115,31 @@ class NotificationPreviewTests(unittest.TestCase):
         )
         self.assertIn("🟡 使用備援來源", card["fields"][-1]["value"])
         self.assertNotIn("❌ 所有來源失敗", card["fields"][-1]["value"])
+
+    def test_macro_alert_hides_normal_health_noise_but_keeps_errors(self):
+        normal = apply_delivery_format(
+            {"title": "總經數據", "description": "正常取得"}, "macro_alerts", source_status="ok"
+        )
+        failed = apply_delivery_format(
+            {"title": "總經數據", "description": "來源暫時無法取得"}, "macro_alerts"
+        )
+        self.assertNotIn("🩺 資料狀態", [field["name"] for field in normal["fields"]])
+        self.assertIn("🩺 資料狀態", [field["name"] for field in failed["fields"]])
+
+    def test_news_and_exchange_cards_compact_normal_health_to_footer(self):
+        for channel in ("crypto_news", "exchange_announcements"):
+            card = apply_delivery_format(
+                {"title": "通知", "description": "正常取得"}, channel, source_status="ok"
+            )
+            self.assertNotIn("🩺 資料狀態", [field["name"] for field in card["fields"]])
+            self.assertIn("來源正常", card["footer"]["text"])
+
+    def test_english_summary_omits_title_duplicates_and_stops_on_sentence(self):
+        title = "Bitget adjusts leverage"
+        self.assertEqual(english_summary_excerpt(title, title), "")
+        summary = "First complete sentence. Second complete sentence. Third sentence continues with extra words."
+        excerpt = english_summary_excerpt(title, summary, 50)
+        self.assertEqual(excerpt, "First complete sentence. Second complete sentence.")
 
     def test_all_production_delivery_wrappers_use_shared_formatter(self):
         root = Path(__file__).resolve().parents[1]

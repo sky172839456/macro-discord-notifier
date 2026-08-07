@@ -49,6 +49,22 @@ def clean_source_text(value: str, limit: int = 900) -> str:
     return cleaned[:limit].rstrip()
 
 
+def english_summary_excerpt(title: str, summary: str | None, limit: int = 700) -> str:
+    """Return a complete, non-duplicated English source excerpt."""
+    clean_title = clean_source_text(title, 1200)
+    clean_summary = clean_source_text(summary or "", 2400)
+    if not clean_summary or clean_summary.casefold().strip(" .") == clean_title.casefold().strip(" ."):
+        return ""
+    if len(clean_summary) <= limit:
+        return clean_summary
+    window = clean_summary[:limit + 1]
+    sentence_ends = [match.end() for match in re.finditer(r"[.!?](?:\s|$)", window)]
+    if sentence_ends:
+        return window[:sentence_ends[-1]].strip()
+    word_cut = window.rsplit(" ", 1)[0].rstrip(" ,;:")
+    return (word_cut or clean_summary[:limit]).rstrip() + "…"
+
+
 def english_key_points(value: str, limit: int = 3) -> list[str]:
     """Extract factual English bullets from source text without adding new claims."""
     cleaned = clean_source_text(value, 1800)
@@ -136,10 +152,13 @@ def apply_delivery_format(
     card["author"] = author
 
     fields = list(card.get("fields") or [])
-    if len(fields) < 25 and not any(field.get("name") == "🩺 資料狀態" for field in fields):
+    resolved_status = source_status or infer_source_status(card)
+    compact_ok_channels = {"macro_alerts", "crypto_news", "exchange_announcements"}
+    show_status = not (channel_key in compact_ok_channels and resolved_status == "ok")
+    if show_status and len(fields) < 25 and not any(field.get("name") == "🩺 資料狀態" for field in fields):
         fields.append({
             "name": "🩺 資料狀態",
-            "value": source_status_text(source_status or infer_source_status(card)),
+            "value": source_status_text(resolved_status),
             "inline": False,
         })
     card["fields"] = fields
@@ -154,6 +173,8 @@ def apply_delivery_format(
             additions.append("系統紀錄")
     elif "不構成投資建議" not in footer_text:
         additions.append("不構成投資建議")
+    if not show_status and "來源正常" not in footer_text:
+        additions.append("來源正常")
     sent_at = datetime.now(timezone.utc).astimezone(TAIPEI)
     if "機器人送出：" not in footer_text:
         additions.append(f"機器人送出：{sent_at:%Y/%m/%d %H:%M}")
