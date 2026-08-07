@@ -23,9 +23,12 @@ class CryptoNewsTests(unittest.TestCase):
             "official": True,
             "category": category_for("SEC approves crypto regulation"),
         }
-        description = digest_embed([item], now)["description"]
-        self.assertIn("**繁中重點**", description)
+        cards = digest_embed([item], now)
+        self.assertEqual(len(cards), 1)
+        description = cards[0]["description"]
+        self.assertIn("繁中重點", description)
         self.assertIn("SEC 已正式核准", description)
+        self.assertIn("每小時摘要", cards[0]["title"])
 
     def test_sources_include_media_and_official(self):
         self.assertGreaterEqual(sum(not source["official"] for source in SOURCES), 3)
@@ -130,6 +133,28 @@ class CryptoNewsTests(unittest.TestCase):
         request = mocked.call_args.args[0]
         self.assertTrue(request.full_url.endswith("?wait=true"))
         self.assertEqual(request.get_header("User-agent"), "macro-discord-notifier/2.0")
+
+    def test_digest_sends_four_articles_as_four_separate_cards(self):
+        now = datetime.now(timezone.utc)
+        category = category_for("Bitcoin network update")
+        items = [{
+            "id": str(index), "title": f"Bitcoin network update {index}",
+            "title_zh": f"Bitcoin 網路更新 {index}", "summary": "The network published a complete update.",
+            "summary_zh_points": ["官方發布完整更新。"], "url": f"https://example.com/{index}",
+            "published": now, "source": "Official", "official": True, "category": category,
+        } for index in range(4)]
+        cards = digest_embed(items, now)
+        self.assertEqual(len(cards), 4)
+        self.assertTrue(all("每小時摘要" in card["title"] for card in cards))
+
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+
+        with patch("crypto_news_notifier.urlopen", return_value=Response()) as mocked:
+            send_discord("https://discord.com/api/webhooks/test/token", cards)
+        payload = __import__("json").loads(mocked.call_args.args[0].data)
+        self.assertEqual(len(payload["embeds"]), 4)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,8 @@ from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
 
-from notification_format import apply_delivery_format, bilingual_sections, clean_source_text, english_key_points
+from notification_format import (apply_delivery_format, bilingual_sections, clean_source_text,
+                                 english_key_points, english_summary_excerpt)
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 STATE_FILE = Path(os.getenv("CRYPTO_NEWS_STATE_FILE", ".state/crypto-news.json"))
@@ -295,13 +296,11 @@ def deduplicate(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def news_embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     category = item["category"]
-    priority = "重大" if category["priority"] == "critical" else "重要"
+    priority = {"critical": "重大", "high": "重要", "normal": "一般"}[category["priority"]]
     status = "✅ 官方確認" if item["official"] else "📰 媒體報導"
     prefix = "🧪 測試｜" if test else ""
     local = item["published"].astimezone(TAIPEI)
-    excerpt = item["summary"][:360].rstrip()
-    if len(item["summary"]) > 360:
-        excerpt += "…"
+    excerpt = english_summary_excerpt(item["title"], item.get("summary"), 700)
     translated = item.get("title_zh", item["title"])
     points = item.get("summary_zh_points") or [ZH_SUMMARY[category["key"]]]
     bilingual = bilingual_sections(
@@ -327,43 +326,29 @@ def news_embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     }
 
 
-def digest_embed(items: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
-    lines = []
+def digest_embed(items: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+    """Render one readable card per article for the hourly digest."""
+    cards = []
     for item in items[:DIGEST_ITEMS_PER_CARD]:
-        category = item["category"]
-        translated = item.get("title_zh", item["title"])
-        point = (item.get("summary_zh_points") or [ZH_SUMMARY[category["key"]]])[0]
-        source_summary = clean_source_text(item.get("summary", ""), 160)
-        english_point = (english_key_points(source_summary, 1) or [
-            "Open the original article for complete details."
-        ])[0][:180]
-        lines.append(
-            f"{category['icon']} **English Original Title**\n{clean_source_text(item['title'], 180)}\n"
-            f"**English Summary**\n{source_summary or 'No separate source summary was provided.'}\n"
-            f"**English Key Point**\n• {english_point}\n\n"
-            f"**繁中標題**\n{str(translated)[:180]}\n"
-            f"**繁中重點**\n• {str(point)[:180]}\n"
-            f"└ {item['source']}｜[原文]({item['url']})"
-        )
-    return {
-        "author": {"name": "CRYPTO NEWS RADAR｜加密新聞"},
-        "title": "📰 加密新聞三小時摘要",
-        "description": "\n\n".join(lines) or "本時段沒有符合條件的重要新聞。",
-        "color": 0x3498DB,
-        "footer": {"text": "已排除價格預測、業配與重複報導｜僅供資訊參考"},
-        "timestamp": now.isoformat(),
-    }
+        card = news_embed(item)
+        card["title"] = "📰 每小時摘要｜" + card["title"]
+        card["footer"]["text"] = "每小時一般新聞摘要｜每則新聞獨立顯示｜僅供資訊參考"
+        card["timestamp"] = now.isoformat()
+        cards.append(card)
+    return cards
 
 
-def send_discord(webhook: str, embed: dict[str, Any], username: str = "加密新聞雷達") -> None:
+def send_discord(webhook: str, embed: dict[str, Any] | list[dict[str, Any]],
+                 username: str = "加密新聞雷達") -> None:
     channel_key = {
         "加密重大快訊": "breaking_news",
         "監管與 ETF 雷達": "regulation_etf",
     }.get(username, "crypto_news")
-    card = apply_delivery_format(embed, channel_key)
+    embeds = embed if isinstance(embed, list) else [embed]
+    cards = [apply_delivery_format(card, channel_key) for card in embeds]
     payload = json.dumps({
         "username": username,
-        "embeds": [card],
+        "embeds": cards,
         "allowed_mentions": {"parse": []},
     }).encode("utf-8")
     url = webhook + ("&" if "?" in webhook else "?") + "wait=true"
@@ -486,8 +471,8 @@ def run(now: datetime) -> tuple[int, int]:
             pending_ids.add(item["id"])
 
     local = now.astimezone(TAIPEI)
-    digest_slot = f"{local:%Y-%m-%d}-{local.hour // 3}"
-    if pending and state.get("last_digest_slot") != digest_slot and local.hour % 3 == 0:
+    digest_slot = f"{local:%Y-%m-%d}-{local.hour}"
+    if pending and state.get("last_digest_slot") != digest_slot:
         restored = []
         categories = {category["key"]: category for category in CATEGORIES}
         for item in pending[:MAX_DIGEST_ITEMS]:

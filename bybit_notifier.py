@@ -418,11 +418,12 @@ def listing_summary_embed(exchange: str, items: list[dict[str, Any]], test: bool
     }
 
 
-def send(webhook: str, message: dict[str, Any], dry_run: bool = False,
+def send(webhook: str, message: dict[str, Any] | list[dict[str, Any]], dry_run: bool = False,
          channel_key: str = "exchange_listings") -> None:
-    card = apply_delivery_format(message, channel_key)
+    messages = message if isinstance(message, list) else [message]
+    cards = [apply_delivery_format(card, channel_key) for card in messages]
     username = "交易所公告雷達" if channel_key == "exchange_announcements" else "交易所上幣通知"
-    payload = {"username": username, "embeds": [card], "allowed_mentions": {"parse": []}}
+    payload = {"username": username, "embeds": cards, "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return

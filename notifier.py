@@ -159,7 +159,17 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
             summary += "."
         elif event_key == "jobs":
             payroll_change = float(datasets[0][0]["value"]) - float(datasets[0][1]["value"])
-            summary = f"Payroll employment changed {payroll_change:+.0f} thousand; unemployment rate {latest[1]['value']} percent."
+            previous_payroll_change = (
+                float(datasets[0][1]["value"]) - float(datasets[0][2]["value"])
+                if len(datasets[0]) > 2 else None
+            )
+            summary = f"Payroll employment changed {payroll_change:+.0f} thousand"
+            if previous_payroll_change is not None:
+                summary += f"; previous payroll change was {previous_payroll_change:+.0f} thousand"
+            summary += f"; unemployment rate was {datasets[1][0]['value']} percent"
+            if len(datasets[1]) > 1:
+                summary += f"; previous unemployment rate was {datasets[1][1]['value']} percent"
+            summary += "."
         else:
             current = float(datasets[0][0]["value"])
             previous_value = float(datasets[0][1]["value"]) if len(datasets[0]) > 1 else current
@@ -558,6 +568,25 @@ def format_metrics(summary: str, event_key: str) -> str:
     if event_key == "pce" and values:
         labels = ("PCE 月增率", "核心 PCE 月增率", "PCE 年增率", "核心 PCE 年增率")
         return "\n".join(f"**{label}**　{value}" for label, value in zip(labels, values[:4]))
+    if event_key == "jobs":
+        payroll = re.search(r"payroll employment changed\s+([-+]?\d[\d,.]*)\s+thousand", clean, re.I)
+        previous_payroll = re.search(r"previous payroll change was\s+([-+]?\d[\d,.]*)\s+thousand", clean, re.I)
+        unemployment = re.search(r"unemployment rate(?: was)?\s+([-+]?\d[\d,.]*)\s+percent", clean, re.I)
+        previous_unemployment = re.search(r"previous unemployment rate was\s+([-+]?\d[\d,.]*)\s+percent", clean, re.I)
+
+        def people(match: re.Match[str] | None) -> str:
+            if not match:
+                return "未提供"
+            value = float(match.group(1).replace(",", "")) / 10
+            return f"{value:+.1f} 萬人"
+
+        return (
+            "**非農新增就業**\n"
+            f"實際 `{people(payroll)}`｜預期 `未提供`｜前值 `{people(previous_payroll)}`\n\n"
+            "**失業率**\n"
+            f"實際 `{unemployment.group(1)}%`｜預期 `未提供`｜"
+            f"前值 `{previous_unemployment.group(1) + '%' if previous_unemployment else '未提供'}`"
+        )
     if event_key == "jolts":
         amounts = re.findall(r"\d[\d,.]*\s*(?:million|thousand)", clean, flags=re.I)
         labels = ("職位空缺", "前值／聘僱", "離職／其他")
@@ -643,24 +672,37 @@ def pre_embed(event: dict[str, Any], day_before: bool = False, minutes_until: fl
             "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
-def release_embed(item: dict[str, Any]) -> dict[str, Any]:
-    local = item["published"].astimezone(TAIPEI)
+def release_schedule_times(item: dict[str, Any], calendar: list[dict[str, Any]], now: datetime) -> tuple[datetime | None, datetime | None]:
+    """Match a detected release to its official scheduled time and the next release."""
+    matching = sorted(
+        (event["time"] for event in calendar if event["rule"]["key"] == item["rule"]["key"]),
+    )
+    recent = [value for value in matching if value <= now and now - value <= timedelta(hours=12)]
+    future = [value for value in matching if value > now]
+    return (recent[-1] if recent else None, future[0] if future else None)
+
+
+def release_embed(item: dict[str, Any], official_time: datetime | None = None,
+                  next_time: datetime | None = None) -> dict[str, Any]:
+    local = (official_time or item["published"]).astimezone(TAIPEI)
     source = item["url"] or item["rule"]["source"]
     numbers = format_metrics(item["summary"], item["rule"]["key"])
-    fields = [{"name": "📌 事件類型", "value": item["rule"]["name"], "inline": True},
-              {"name": f"🕐 {item.get('time_label', '官方發布時間')}（台灣）",
-               "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
-              {"name": "🧭 市場解讀參考", "value": MARKET_INTERPRETATIONS.get(item["rule"]["key"], "請綜合市場預期與官方完整內容判讀。"), "inline": False}]
+    time_label = "官方排定時間" if official_time else item.get("time_label", "機器人發現時間")
+    fields = [
+        {"name": f"🕐 本次{time_label}（台灣）", "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
+        {"name": "📅 下次公布（台灣）", "value": next_time.astimezone(TAIPEI).strftime("%Y/%m/%d %H:%M") if next_time else "待官方確認", "inline": True},
+        {"name": "⚡ 快速判讀", "value": MARKET_INTERPRETATIONS.get(item["rule"]["key"], "請綜合市場預期與官方完整內容判讀。"), "inline": False},
+    ]
     revisions = revision_lines(item["summary"])
     if revisions:
         fields.append({"name": "🔄 前值與修正資訊", "value": revisions, "inline": False})
     fields.append({"name": "🔗 官方原始資料", "value": source, "inline": False})
     return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
-            "title": f"🔴 最新公布｜{item['rule']['name']}",
-            "description": f"### 📊 官方摘要重點\n{numbers}\n\n> 數值由官方摘要擷取，請以原始公告內容為準。",
+            "title": f"🔴 {item['rule']['name']}｜最新數據",
+            "description": f"### 📊 本次公布結果\n{numbers}\n\n> 市場預期值不屬於官方資料；官方未提供時會明確標示「未提供」。",
             "color": 0xE74C3C,
             "fields": fields,
-            "footer": {"text": "官方免費資料｜不含市場預期值｜僅供資訊參考，不構成投資建議"},
+            "footer": {"text": "官方免費資料｜先看結果，再看解讀｜僅供資訊參考，不構成投資建議"},
             "timestamp": item["published"].isoformat()}
 
 
@@ -726,10 +768,10 @@ def overview_update_embed(changes: list[tuple[tuple[str, ...], str, str, str | N
     for _, icon, label, value in changes:
         local = datetime.fromisoformat(value).astimezone(TAIPEI) if value else None
         display = local.strftime("%m/%d %H:%M") if local else "待官方確認"
-        lines.append(f"{icon} **{label}**｜已更新：{display}")
+        lines.append(f"{icon} **{label}**｜下次公布：{display}")
     return {
         "author": {"name": "US MACRO WATCH｜監控總覽"},
-        "title": "🔄 美國總經監控總覽更新",
+        "title": "📅 下次公布時間更新",
         "description": "\n".join(lines),
         "color": 0x3498DB,
         "fields": [{"name": "🌏 時區", "value": "Asia/Taipei（台灣時間）", "inline": True}],
@@ -853,6 +895,7 @@ def legacy_run(now: datetime, dry_run: bool = False, force_digest: bool = False)
     if (force_digest or local.hour >= 7) and digest_key not in digests:
         send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
         digests.append(digest_key)
+
     for event in calendar:
         minutes = (event["time"] - now).total_seconds() / 60
         key = f"pre:{event['id']}"
@@ -974,6 +1017,23 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
         digests.append(digest_key)
 
+    pending_release_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in releases:
+        age = (now - item["published"]).total_seconds() / 60
+        event_key = item["rule"]["key"]
+        official_time, _ = release_schedule_times(item, calendar, now)
+        release_day = (official_time or item["published"]).astimezone(TAIPEI).date().isoformat()
+        group_key = (event_key, release_day)
+        if 0 <= age <= RELEASE_BACKFILL_MINUTES:
+            pending_release_groups.setdefault(group_key, []).append(item)
+    pending_release_groups = {
+        group_key: group
+        for group_key, group in pending_release_groups.items()
+        if f"release-event:{group_key[0]}:{group_key[1]}" not in sent
+        and not any(f"release:{item['id']}" in sent for item in group)
+    }
+    released_event_keys = {event_key for event_key, _ in pending_release_groups}
+
     current_overview = overview_snapshot(calendar, now)
     if previous_overview:
         # A temporary source outage must not erase a previously confirmed time
@@ -985,7 +1045,8 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
     if previous_overview and not weekly_sent:
         rows_by_key = {"+".join(keys): (keys, icon, label) for keys, icon, label in OVERVIEW_ROWS}
         changes = [(*rows_by_key[key], value) for key, value in current_overview.items()
-                   if value is not None and value != previous_overview.get(key)]
+                   if value is not None and value != previous_overview.get(key)
+                   and not set(rows_by_key[key][0]).intersection(released_event_keys)]
         if changes:
             send_discord(webhook, overview_update_embed(changes, now), dry_run)
     state["overview_snapshot"] = current_overview
@@ -1004,12 +1065,16 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         if 0 <= minutes <= 180 and pre_key not in sent:
             send_discord(webhook, pre_embed(event, minutes_until=minutes), dry_run)
             sent[pre_key] = now.date().isoformat()
-    for item in releases:
-        age = (now - item["published"]).total_seconds() / 60
-        key = f"release:{item['id']}"
-        if 0 <= age <= RELEASE_BACKFILL_MINUTES and key not in sent:
-            send_discord(webhook, release_embed(item), dry_run)
-            sent[key] = now.date().isoformat()
+    for (event_key, release_day), group in pending_release_groups.items():
+        item = max(group, key=lambda candidate: (
+            not candidate["id"].startswith("bls-api-"),
+            len(candidate.get("summary") or ""),
+        ))
+        official_time, next_time = release_schedule_times(item, calendar, now)
+        send_discord(webhook, release_embed(item, official_time, next_time), dry_run)
+        sent[f"release-event:{event_key}:{release_day}"] = now.date().isoformat()
+        for candidate in group:
+            sent[f"release:{candidate['id']}"] = now.date().isoformat()
 
     cutoff = (now - timedelta(days=45)).date().isoformat()
     state["sent"] = {key: date for key, date in sent.items() if date >= cutoff}
@@ -1088,6 +1153,25 @@ def main() -> int:
             update_preview["title"] = "🧪 測試｜🔄 美國總經監控總覽更新"
             update_preview["footer"]["text"] = f"BLS 官方排程更新預覽｜核對日 {verified_at}"
             send_discord(webhook, update_preview, False)
+            jobs_rule = next(rule for rule in EVENT_RULES if rule["key"] == "jobs")
+            next_jobs = next(
+                (event["time"] for event in sample_events
+                 if event["rule"]["key"] == "jobs" and event["time"] > now),
+                now + timedelta(days=28),
+            )
+            release_preview = release_embed({
+                "id": "test-jobs-release",
+                "title": jobs_rule["name"],
+                "summary": (
+                    "Payroll employment changed -23 thousand; previous payroll change was +147 thousand; "
+                    "unemployment rate was 4.1 percent; previous unemployment rate was 4.0 percent."
+                ),
+                "url": jobs_rule["source"],
+                "published": now,
+                "rule": jobs_rule,
+            }, now - timedelta(minutes=3), next_jobs)
+            release_preview["title"] = "🧪 測試｜" + release_preview["title"]
+            send_discord(webhook, release_preview, False)
             if webhook:
                 send_discord(webhook, health_embed(
                     "✅ 健康監控測試成功",
