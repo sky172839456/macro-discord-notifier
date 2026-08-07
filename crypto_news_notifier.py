@@ -537,7 +537,24 @@ def main() -> int:
             if not webhook:
                 raise RuntimeError("缺少 DISCORD_TEST_WEBHOOK_URL；測試禁止發到正式頻道")
             send_discord(webhook, news_embed(sample_item(now), test=True))
-            print("完成：已送出加密新聞測試通知")
+            digest_samples = []
+            for index, (title, title_zh) in enumerate((
+                ("Bitcoin network publishes a scheduled protocol update", "Bitcoin 網路發布例行協議更新"),
+                ("Ethereum developers confirm the next client release", "Ethereum 開發團隊確認下一版客戶端更新"),
+            )):
+                item = sample_item(now)
+                item.update({
+                    "id": f"test-digest-{index}", "title": title, "title_zh": title_zh,
+                    "summary": "Developers published the update schedule and advised operators to review compatibility before deployment.",
+                    "summary_zh_points": ["官方已公布更新時程。", "節點營運者應先確認相容性。"],
+                    "category": next(category for category in CATEGORIES if category["key"] == "network"),
+                })
+                digest_samples.append(item)
+            digest_cards = digest_embed(digest_samples, now)
+            for card in digest_cards:
+                card["title"] = "🧪 測試｜" + card["title"]
+            send_discord(webhook, digest_cards)
+            print("完成：已送出加密新聞即時通知與每小時摘要測試")
             return 0
         if args.production_test:
             webhook = os.environ.get("DISCORD_CRYPTO_NEWS_WEBHOOK_URL")
