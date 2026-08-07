@@ -468,6 +468,21 @@ def main() -> int:
                 raise RuntimeError(f"缺少 {TEST_WEBHOOK_ENV}")
             send(webhook, embed(sample(now), test=True),
                  channel_key="exchange_announcements")
+            digest_samples = []
+            for index, exchange in enumerate(("Bybit", "Bitget")):
+                item = sample(now)
+                item.update({
+                    "id": f"test-digest-{index}", "exchange": exchange,
+                    "title": f"{exchange} scheduled wallet maintenance notice",
+                    "title_zh": f"{exchange} 錢包例行維護公告",
+                    "summary": "The exchange announced scheduled wallet maintenance and will publish a separate notice when service resumes.",
+                    "points": ["交易所將進行錢包例行維護。", "恢復時間會另行公告。"],
+                })
+                digest_samples.append(item)
+            digest_cards = digest_embed(digest_samples, now)
+            for card in digest_cards:
+                card["title"] = "🧪 測試｜" + card["title"]
+            send(webhook, digest_cards, channel_key="exchange_announcements")
             return 0
         if args.production_test:
             webhook = os.environ.get(PRODUCTION_WEBHOOK_ENV)
