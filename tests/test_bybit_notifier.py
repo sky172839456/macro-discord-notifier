@@ -6,7 +6,8 @@ from unittest.mock import patch
 import bybit_notifier
 from bybit_notifier import (TEST_WEBHOOK_ENV, PRODUCTION_WEBHOOK_ENV,
                             SOURCES, announcement_kind, clean_title, embed,
-                            listing_details, listing_summary_embed, pair_labels, page_items)
+                            format_time, listing_details, listing_summary_embed,
+                            normalize_datetime, pair_labels, page_items)
 
 
 class ExchangeListingTests(unittest.TestCase):
@@ -149,6 +150,21 @@ class ExchangeListingTests(unittest.TestCase):
         fields = {field["name"]: field["value"] for field in embed(item)["fields"]}
         self.assertEqual(fields["官方公告時間（台灣）"], "07/22 10:00")
         self.assertEqual(fields["機器人發現時間（台灣）"], "07/22 10:05")
+
+    def test_exchange_timestamps_accept_iso_text_and_unix_milliseconds(self):
+        expected = datetime(2026, 7, 22, 2, 0, tzinfo=timezone.utc)
+        self.assertEqual(normalize_datetime("2026-07-22T10:00:00+08:00"), expected)
+        self.assertEqual(normalize_datetime("1784685600000"), expected)
+        self.assertEqual(format_time("2026-07-22T10:00:00+08:00"), "07/22 10:00")
+
+    def test_invalid_exchange_timestamp_does_not_break_summary(self):
+        item = {
+            "title": "Bitget Will List ABC for Spot Trading",
+            "url": "https://example.com/spot",
+            "published": "not-a-date",
+        }
+        card = listing_summary_embed("Bitget", [item])
+        self.assertIn("官方頁面未提供", card["description"])
 
     def test_pair_labels_normalize_compact_and_slash_pairs(self):
         self.assertEqual(pair_labels("PENGUSDT and EVAA/USDT"), ["EVAA/USDT", "PENG/USDT"])

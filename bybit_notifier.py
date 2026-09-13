@@ -260,8 +260,39 @@ def coinbase_items() -> list[dict[str, str]]:
     return items
 
 
-def format_time(value: datetime | None) -> str:
-    return value.astimezone(TAIPEI).strftime("%m/%d %H:%M") if value else "官方頁面未提供"
+def normalize_datetime(value: Any) -> datetime | None:
+    """Normalize exchange timestamps before comparisons and display.
+
+    Some official APIs change the timestamp type between ISO text and Unix
+    milliseconds.  Keeping this conversion at the boundary prevents one
+    malformed item from stopping every exchange monitor.
+    """
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit()):
+        raw = float(value)
+        if raw > 10_000_000_000:
+            raw /= 1000
+        try:
+            parsed = datetime.fromtimestamp(raw, tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return None
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def format_time(value: Any) -> str:
+    parsed = normalize_datetime(value)
+    return parsed.astimezone(TAIPEI).strftime("%m/%d %H:%M") if parsed else "官方頁面未提供"
 
 
 def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
@@ -395,7 +426,11 @@ def listing_summary_embed(exchange: str, items: list[dict[str, Any]], test: bool
                 "value": "\n\n".join(current),
                 "inline": False,
             })
-    published = [item.get("published") for item in items if item.get("published")]
+    published = [
+        parsed
+        for item in items
+        if (parsed := normalize_datetime(item.get("published"))) is not None
+    ]
     official_range = "官方頁面未提供"
     if published:
         official_range = format_time(min(published))
@@ -516,7 +551,8 @@ def run(test: bool = False, production_test: bool = False, dry_run: bool = False
             unseen = [item for item in items if item["id"] not in old]
             recent = []
             for item in unseen[:10]:
-                published = item.get("published")
+                published = normalize_datetime(item.get("published"))
+                item["published"] = published
                 if (
                     published
                     and datetime.now(timezone.utc) - published
