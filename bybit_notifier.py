@@ -175,12 +175,8 @@ def bingx_announcement_items() -> list[dict[str, Any]]:
         link = str(article.get("link") or article.get("url") or "")
         if not title or not link or not announcement_kind(title):
             continue
-        published = None
         raw_time = str(article.get("time") or article.get("releaseTime") or "")
-        try:
-            published = datetime.fromisoformat(raw_time.replace("Z", "+00:00")).astimezone(timezone.utc)
-        except ValueError:
-            pass
+        published = normalize_datetime(raw_time)
         items.append({
             "id": hashlib.sha256(("BingX" + link).encode()).hexdigest()[:24],
             "exchange": "BingX", "title": title, "url": link,

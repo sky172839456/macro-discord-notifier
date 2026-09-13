@@ -236,7 +236,10 @@ jobs:
           request = Request(
               os.environ["DISCORD_LOG_WEBHOOK_URL"],
               data=json.dumps(payload).encode("utf-8"),
-              headers={"Content-Type": "application/json"},
+              headers={
+                  "Content-Type": "application/json",
+                  "User-Agent": "macro-discord-notifier/1.0",
+              },
               method="POST",
           )
           with urlopen(request, timeout=20):
