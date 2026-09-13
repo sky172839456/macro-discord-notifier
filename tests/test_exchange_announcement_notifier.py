@@ -41,6 +41,15 @@ class ExchangeAnnouncementTests(unittest.TestCase):
         self.assertIn("機器人發現時間", names)
         self.assertNotIn("官方公告時間", names)
 
+    def test_digest_accepts_discovery_time_restored_from_json_state(self):
+        item = sample(datetime(2026, 7, 26, tzinfo=timezone.utc))
+        item["published"] = "2026-07-26T00:00:00+00:00"
+        item["discovered"] = "2026-07-26T00:05:00+00:00"
+        item["published_is_official"] = True
+        fields = {field["name"]: field["value"] for field in embed(item)["fields"]}
+        self.assertEqual(fields["官方公告時間"], "07/26 08:00（台灣）")
+        self.assertEqual(fields["機器人發現時間"], "07/26 08:05（台灣）")
+
     def test_all_eight_exchanges_are_covered(self):
         self.assertEqual(set(PAGE_SOURCES) | set(STATUS_SOURCES),
                          {"Binance", "OKX", "Bybit", "Bitget", "Coinbase", "Kraken", "KuCoin", "BingX"})

@@ -272,6 +272,22 @@ def enrich(item: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def normalize_datetime(value: Any, fallback: datetime | None = None) -> datetime:
+    """Accept live datetime values and ISO timestamps restored from JSON state."""
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            parsed = fallback or datetime.now(timezone.utc)
+    else:
+        parsed = fallback or datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
     category = item["category"]
     title_zh = item.get("title_zh", item["title"])
@@ -284,8 +300,8 @@ def embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
         zh_title=title_zh,
         zh_points=points,
     )
-    local = item["published"].astimezone(TAIPEI)
-    discovered = item.get("discovered", datetime.now(timezone.utc)).astimezone(TAIPEI)
+    local = normalize_datetime(item.get("published")).astimezone(TAIPEI)
+    discovered = normalize_datetime(item.get("discovered")).astimezone(TAIPEI)
     time_name = "官方公告時間" if item.get("published_is_official") else "機器人發現時間"
     return {
         "author": {"name": "EXCHANGE NOTICE RADAR｜交易所公告"},
