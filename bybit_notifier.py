@@ -223,13 +223,15 @@ def bitget_announcement_items() -> list[dict[str, Any]]:
 def announcement_kind(title: str) -> str | None:
     """Classify only listing-related notices and keep the labels consistent."""
     lower = title.lower()
+    if any(word in lower for word in ("funding rate", "dual rewards", "earn more", "subscriptions", "prize pool", "trading competition")):
+        return None
     if any(word in lower for word in ("delist", "remove trading", "cease trading", "suspend trading permanently")):
         return "delist"
     if any(word in lower for word in ("migration", "token swap", "rebrand", "rename", "brand upgrade")):
         return "migration"
     if any(word in lower for word in ("pre-market", "pre market", "premarket", "pre-ipo", "pre ipo")):
         return "premarket"
-    if any(word in lower for word in ("perpetual", "futures", "future contract")):
+    if any(word in lower for word in ("perpetual", "futures", "future contract", "x-perp", " perps")):
         return "perpetual"
     if any(word in lower for word in (
         "spot trading", "spot market", "new listing", "initial listing", "will list", "to list",
@@ -351,8 +353,8 @@ def listing_details(item: dict[str, Any]) -> list[str]:
         body = clean_title(text(item["url"]))
     except Exception:
         return details
-    leverage = re.search(r"(?:up to\s*)?(\d{1,3})x\s+leverage", body, re.I)
-    if leverage:
+    leverage = re.search(r"\b(?:up to\s*)?([1-9]\d{0,2})x\s+leverage\b", body, re.I)
+    if leverage and announcement_kind(item["title"]) == "perpetual":
         details.append(f"最高槓桿：{leverage.group(1)}x")
     time_match = re.search(
         r"((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
@@ -381,23 +383,9 @@ def listing_summary_embed(exchange: str, items: list[dict[str, Any]], test: bool
         labels = pair_labels(item["title"])
         label = "、".join(labels) if labels else item["title"][:90]
         detail_lines = item.get("details") or listing_details(item)
-        english_kind = {
-            "spot": "spot listing", "margin": "spot margin listing", "perpetual": "perpetual contract listing",
-            "premarket": "pre-market listing", "delist": "delisting", "migration": "token migration or rename",
-        }[key]
-        english_point = (
-            f"Trading pair: {', '.join(labels)}."
-            if labels else "Open the official notice to confirm the affected asset."
-        )
-        zh_points = [f"交易對：{label}"]
-        zh_points.extend(detail_lines)
-        block = bilingual_sections(
-            original_title=item["title"],
-            english_summary=f"{exchange} published an official {english_kind} announcement.",
-            english_points=[english_point, "Confirm the schedule and eligibility in the official notice."],
-            zh_title=f"{exchange}｜{names[key]}",
-            zh_points=zh_points,
-        )
+        zh_points = [f"交易對：{label}" if labels else f"公告：{label}"]
+        zh_points = list(dict.fromkeys([*zh_points, *detail_lines]))
+        block = f"**{exchange}｜{names[key]}**\n" + "\n".join(f"• {point}" for point in zh_points[:3]) + f"\n原標題：{item['title'][:220]}"
         groups[key].append(f"{block}\n\n[🔗 官方原文]({item['url']})")
     fields = []
     for key, blocks in groups.items():

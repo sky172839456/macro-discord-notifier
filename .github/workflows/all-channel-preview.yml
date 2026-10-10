@@ -2,6 +2,11 @@ name: All Channel Notification Preview
 
 on:
   workflow_dispatch:
+    inputs:
+      audit_only:
+        description: Only inspect webhook destinations without sending messages
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -15,13 +20,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Audit webhook destinations without sending messages
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
+          DISCORD_EXCHANGE_LISTING_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_LISTING_WEBHOOK_URL }}
+          DISCORD_CRYPTO_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
+          DISCORD_BREAKING_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_BREAKING_NEWS_WEBHOOK_URL }}
+          DISCORD_REGULATION_ETF_WEBHOOK_URL: ${{ secrets.DISCORD_REGULATION_ETF_WEBHOOK_URL }}
+          DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL }}
+          DISCORD_RISK_WEBHOOK_URL: ${{ secrets.DISCORD_RISK_WEBHOOK_URL }}
+          DISCORD_DERIVATIVES_WEBHOOK_URL: ${{ secrets.DISCORD_DERIVATIVES_WEBHOOK_URL }}
+          DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
+          DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL }}
+          DISCORD_MACRO_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_MACRO_ANALYSIS_WEBHOOK_URL }}
+          DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL }}
+        run: python routing_audit.py
       - name: Validate all 12 preview cards
         run: python notification_preview.py --dry-run
       - name: Send all previews only to the test channel
+        if: inputs.audit_only != true
         env:
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
         run: python notification_preview.py
       - name: Send realtime health preview only to the test channel
+        if: inputs.audit_only != true
         env:
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
         run: python realtime_health.py --test-preview

@@ -616,6 +616,20 @@ def run(period: str, now: datetime, dry_run: bool = False) -> None:
     if os.environ.get("MARKET_SUMMARY_TEST") == "1":
         embed["title"] = f"🧪 測試｜{embed['title']}"
         embed["description"] = "這是測試頻道預覽，不是正式公告。\n" + embed["description"]
+    if period == "daily":
+        # 匯入延後到執行期，避免與分析模組互相匯入。
+        from analysis_notifier import technical_snapshot, technical_view
+        lines = []
+        for symbol in ("BTC", "ETH"):
+            try:
+                item = technical_snapshot(symbol)
+                trend, momentum = technical_view(item)
+                lines.append(f"**{symbol}** {trend}｜RSI(14) {item['rsi']:.1f}（{momentum}）\n"
+                             f"SMA20 ${item['sma20']:,.2f}｜SMA50 ${item['sma50']:,.2f}\n"
+                             f"20 日區間 ${item['low20']:,.2f}～${item['high20']:,.2f}")
+            except Exception:
+                lines.append(f"⚠️ {symbol} 技術資料暫缺，未使用推測值。")
+        embed["fields"].insert(1, {"name": "📐 BTC／ETH 技術狀態（已收盤日線）", "value": "\n\n".join(lines), "inline": False})
     send(webhook or "https://discord.invalid/webhook", embed, dry_run)
 
 
