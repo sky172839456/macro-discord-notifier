@@ -31,7 +31,7 @@ def candles(symbol):
     })
     if payload.get("code") != "0":
         raise RuntimeError(f"OKX candles: {payload.get('msg') or payload.get('code')}")
-    rows = sorted(payload.get("data", []), key=lambda row: int(row[0]))
+    rows = sorted([row for row in payload.get("data", []) if len(row) > 8 and row[8] == "1"], key=lambda row: int(row[0]))
     return [{"open": float(r[1]), "high": float(r[2]), "low": float(r[3]), "close": float(r[4])} for r in rows]
 
 
@@ -172,6 +172,8 @@ def run(now, test=False):
 
 
 def run_scheduled(now):
+    if os.environ.get("CONSOLIDATED_CHANNELS") == "1":
+        return []  # 總經及技術數字已合併至行情日報；手動測試模板仍保留。
     local = now.astimezone(TAIPEI)
     try:
         state = json.loads(STATE_FILE.read_text(encoding="utf-8"))

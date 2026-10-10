@@ -414,6 +414,10 @@ def fetch_extended_calendar(now: datetime) -> tuple[list[dict[str, Any]], list[t
 
 def classify(text: str) -> dict[str, Any] | None:
     value = text.lower()
+    # FOMC 官員發言不可被寬鬆的「fomc」關鍵字當成利率決議。
+    if re.search(r"\b(speaks?|speech|remarks|member)\b", value) and re.search(r"\b(fomc|governor|chair|fed)\b", value):
+        key = "powell" if "powell" in value else "fed_official"
+        return next(rule for rule in EVENT_RULES if rule["key"] == key)
     for rule in EVENT_RULES:
         if any(keyword in value for keyword in rule["keywords"]):
             return rule

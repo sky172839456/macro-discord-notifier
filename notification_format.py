@@ -147,6 +147,11 @@ def apply_delivery_format(
     if channel_key not in CHANNEL_AUTHORS:
         raise ValueError(f"unsupported notification channel: {channel_key}")
     card = copy.deepcopy(embed)
+    description = str(card.get("description", ""))
+    if channel_key != "bot_log" and "**📌 繁中標題**" in description and "**🌐 英文原標題**" in description:
+        original = description.split("**🌐 英文原標題**", 1)[1].split("\n\n", 1)[0].strip()
+        chinese = description.split("**📌 繁中標題**", 1)[1].strip()
+        card["description"] = "**📌 繁中標題**\n" + chinese + "\n\n**🌐 英文原標題**\n" + original
     author = dict(card.get("author") or {})
     author["name"] = CHANNEL_AUTHORS[channel_key]
     card["author"] = author

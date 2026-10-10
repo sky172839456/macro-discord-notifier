@@ -195,11 +195,11 @@ class ExchangeListingTests(unittest.TestCase):
         self.assertIn("MAGMA/USDT", fields["🟣 現貨槓桿"])
         self.assertIn("PENG/USDT", fields["🔵 永續合約"])
         for value in fields.values():
-            self.assertIn("🌐 英文原標題", value)
-            self.assertIn("📰 英文摘要", value)
-            self.assertIn("🔎 英文重點", value)
-            self.assertIn("📌 繁中標題", value)
-            self.assertLess(value.index("🌐 英文原標題"), value.index("📌 繁中標題"))
+            self.assertTrue(value.startswith("**Bitget｜"))
+            self.assertIn("原標題：", value)
+            self.assertIn("[🔗 官方原文](https://example.com/", value)
+            self.assertNotIn("英文摘要", value)
+            self.assertNotIn("英文重點", value)
 
 
 if __name__ == "__main__":

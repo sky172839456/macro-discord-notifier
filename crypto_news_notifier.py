@@ -231,6 +231,8 @@ def category_for(text: str) -> dict[str, Any] | None:
     lowered = f" {text.lower()} "
     for category in CATEGORIES:
         if any(keyword in lowered for keyword in category["keywords"]):
+            if category["key"] == "security" and any(term in lowered for term in ("jailed", "sentenced", "scanner", "have they solved", "one-year", "one year")):
+                return {**category, "priority": "normal"}
             return category
     return None
 
@@ -272,11 +274,20 @@ def parse_feed(source: str, source_config: dict[str, Any]) -> list[dict[str, Any
 
 
 def title_tokens(title: str) -> set[str]:
+    title = re.sub(r"\bu\.s\.", "us", title, flags=re.I)
+    title = re.sub(r"\$?(\d+(?:\.\d+)?)\s*billion\b", r"\1b", title, flags=re.I)
+    title = re.sub(r"\b(moves|moved|moving)\b", "move", title, flags=re.I)
+    title = re.sub(r"\b(hacker|hacked)\b", "hack", title, flags=re.I)
     stop = {"the", "and", "for", "with", "from", "that", "this", "into", "after", "amid", "over", "says"}
     return {word for word in re.findall(r"[a-z0-9]{3,}", title.lower()) if word not in stop}
 
 
 def similar_title(left: str, right: str) -> bool:
+    def amounts(value):
+        value = re.sub(r"\b(\d+(?:\.\d+)?)\s*billion\b", r"\1b", value.lower())
+        return set(re.findall(r"\b\d+(?:\.\d+)?[bmkt]?\b", value))
+    if amounts(left) != amounts(right):
+        return False  # 數字改變可能代表新進展，不能只因標題相似就吞掉。
     a, b = title_tokens(left), title_tokens(right)
     return bool(a and b) and len(a & b) / len(a | b) >= 0.55
 
@@ -365,6 +376,8 @@ def send_discord(webhook: str, embed: dict[str, Any] | list[dict[str, Any]],
 def destination_for(item: dict[str, Any], default_webhook: str) -> tuple[str, str]:
     """Route specialized categories once; fall back to the general news channel."""
     category = item["category"]
+    if os.environ.get("CONSOLIDATED_CHANNELS") == "1":
+        return default_webhook, "市場快訊"
     if category["priority"] == "critical":
         webhook = os.environ.get("DISCORD_BREAKING_NEWS_WEBHOOK_URL")
         if webhook:
@@ -442,6 +455,16 @@ def run(now: datetime) -> tuple[int, int]:
     seen = state.setdefault("seen", {})
     recent_cutoff = now - timedelta(hours=RECENT_HOURS)
     candidates = [item for item in items if item["published"] >= recent_cutoff and item["id"] not in seen]
+    # 跨輪次也保留已發送標題，避免同事件換媒體網址後再次即時推送。
+    history = [row for row in state.get("headline_history", []) if row.get("date", "") >= (now - timedelta(hours=24)).isoformat()]
+    unique = []
+    for item in candidates:
+        if any(similar_title(item["title"], row["title"]) for row in history):
+            seen[item["id"]] = now.date().isoformat()
+        else:
+            unique.append(item)
+    candidates = unique
+    state["headline_history"] = history
 
     if not state.get("initialized"):
         for item in items:
@@ -458,9 +481,11 @@ def run(now: datetime) -> tuple[int, int]:
         destination, username = destination_for(item, webhook)
         send_discord(destination, news_embed(item), username)
         seen[item["id"]] = now.date().isoformat()
+        history.append({"title": item["title"], "date": now.isoformat()})
         sent += 1
 
     pending = state.setdefault("pending", [])
+    pending[:] = [row for row in pending if row["id"] not in seen]
     pending_ids = {item["id"] for item in pending}
     for item in normal + immediate[MAX_IMMEDIATE_PER_RUN:]:
         if item["id"] not in pending_ids:
@@ -484,6 +509,7 @@ def run(now: datetime) -> tuple[int, int]:
             send_discord(webhook, digest_embed(restored[index:index + DIGEST_ITEMS_PER_CARD], now))
         for item in pending[:MAX_DIGEST_ITEMS]:
             seen[item["id"]] = now.date().isoformat()
+            history.append({"title": item["title"], "date": now.isoformat()})
         pending[:] = pending[MAX_DIGEST_ITEMS:]
         state["last_digest_slot"] = digest_slot
         sent += (len(restored) + DIGEST_ITEMS_PER_CARD - 1) // DIGEST_ITEMS_PER_CARD
