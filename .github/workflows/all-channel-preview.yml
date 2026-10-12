@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install locked runtime dependency
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
       - name: Audit webhook destinations without sending messages
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
