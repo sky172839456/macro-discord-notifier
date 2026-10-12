@@ -51,7 +51,7 @@ def run(dry_run=False):
         return
     for card in output:
         payload = {"username": "WM Viewture｜精簡版測試", "embeds": [card], "allowed_mentions": {"parse": []}}
-        req = Request(target + ("&" if "?" in target else "?") + "wait=true", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+        req = Request(target + ("&" if "?" in target else "?") + "wait=true", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", "User-Agent": "macro-discord-notifier/slim-preview-1.0"}, method="POST")
         with urlopen(req, timeout=30):
             pass
     print(f"已送出 {len(output)} 張私人預覽卡；未讀取正式推播 Webhook。")
