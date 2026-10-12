@@ -195,8 +195,10 @@ class NotificationPreviewTests(unittest.TestCase):
             / "all-channel-preview.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("DISCORD_TEST_WEBHOOK_URL", workflow)
-        self.assertNotIn("DISCORD_WEBHOOK_URL:", workflow)
-        self.assertNotIn("DISCORD_BREAKING_NEWS_WEBHOOK_URL", workflow)
+        # The read-only routing audit may receive production URLs; delivery steps may not.
+        delivery = workflow.split("Send all previews only to the test channel", 1)[1]
+        self.assertNotIn("DISCORD_WEBHOOK_URL:", delivery)
+        self.assertNotIn("DISCORD_BREAKING_NEWS_WEBHOOK_URL", delivery)
         self.assertIn("realtime_health.py --test-preview", workflow)
 
 

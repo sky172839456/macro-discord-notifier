@@ -12,7 +12,7 @@ EXPECTED = {
     "DISCORD_BREAKING_NEWS_WEBHOOK_URL": "1524973208745279660",
     "DISCORD_REGULATION_ETF_WEBHOOK_URL": "1524973208745279660",
     "DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL": "1524973229804880045",
-    "DISCORD_RISK_WEBHOOK_URL": "1524973229804880045",
+    "DISCORD_RISK_WEBHOOK_URL": "1524973208745279660",
     "DISCORD_DERIVATIVES_WEBHOOK_URL": "1524973229804880045",
     "DISCORD_DAILY_SUMMARY_WEBHOOK_URL": "1526037827115028622",
     "DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL": "1526037827115028622",
@@ -24,7 +24,11 @@ EXPECTED = {
 def audit(environ=None):
     environ = os.environ if environ is None else environ
     results = []
+    disabled = {"DISCORD_EXCHANGE_LISTING_WEBHOOK_URL", "DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL", "DISCORD_DERIVATIVES_WEBHOOK_URL"}
     for name, expected in EXPECTED.items():
+        if name in disabled:
+            results.append({"secret": name, "status": "disabled"})
+            continue
         webhook = environ.get(name)
         if not webhook:
             results.append({"secret": name, "status": "missing"})
@@ -43,4 +47,4 @@ def audit(environ=None):
 if __name__ == "__main__":
     results = audit()
     print(json.dumps(results, ensure_ascii=False, indent=2))
-    raise SystemExit(0 if all(row["status"] == "ok" for row in results if row["secret"] != "DISCORD_TEST_WEBHOOK_URL") else 1)
+    raise SystemExit(0 if all(row["status"] in {"ok", "disabled"} for row in results if row["secret"] != "DISCORD_TEST_WEBHOOK_URL") else 1)

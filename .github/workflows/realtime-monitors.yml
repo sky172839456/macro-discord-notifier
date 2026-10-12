@@ -84,13 +84,11 @@ jobs:
       - name: Run all realtime monitors independently
         env:
           CONSOLIDATED_CHANNELS: "1"
+          SLIM_NOTIFICATIONS: "1"
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
-          DISCORD_EXCHANGE_LISTING_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_LISTING_WEBHOOK_URL }}
-          DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL }}
           DISCORD_CRYPTO_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
-          DISCORD_RISK_WEBHOOK_URL: ${{ secrets.DISCORD_RISK_WEBHOOK_URL }}
-          DISCORD_DERIVATIVES_WEBHOOK_URL: ${{ secrets.DISCORD_DERIVATIVES_WEBHOOK_URL }}
+          DISCORD_RISK_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
           DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
           DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL }}
           DISCORD_BREAKING_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_BREAKING_NEWS_WEBHOOK_URL }}
@@ -123,11 +121,11 @@ jobs:
           }
 
           run_if_configured "總經數據" "$DISCORD_WEBHOOK_URL" python notifier.py
-          run_if_configured "上幣通知" "$DISCORD_EXCHANGE_LISTING_WEBHOOK_URL" python bybit_notifier.py
-          run_if_configured "交易所公告" "$DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL" python exchange_announcement_notifier.py
+          printf '%s|disabled|社群精簡版停用\n' "上幣通知" >> "$results_file"
+          printf '%s|disabled|社群精簡版停用\n' "交易所公告" >> "$results_file"
           run_if_configured "加密新聞" "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" python crypto_news_notifier.py
           run_if_configured "市場風險" "$DISCORD_RISK_WEBHOOK_URL" python risk_notifier.py
-          run_if_configured "衍生品" "$DISCORD_DERIVATIVES_WEBHOOK_URL" python derivatives_notifier.py
+          printf '%s|disabled|社群精簡版停用\n' "衍生品" >> "$results_file"
           if [ -n "$DISCORD_MACRO_ANALYSIS_WEBHOOK_URL" ] || [ -n "$DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL" ]; then
             if python analysis_notifier.py --scheduled; then
               printf '%s|ok|本輪執行完成\n' "市場分析" >> "$results_file"
