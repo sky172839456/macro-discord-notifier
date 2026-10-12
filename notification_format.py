@@ -139,6 +139,38 @@ def infer_source_status(embed: dict[str, Any]) -> str:
     return "ok"
 
 
+def classified_title(title: str, channel_key: str) -> str:
+    """Keep the notification type readable without relying on its accent color."""
+    title = str(title or "")
+    if re.match(r"^【(?:每日行情|每週行情|總經數據|風險警報|重大快訊|市場新聞|監管／ETF|總經觀察|技術分析|系統紀錄|市場資訊|數據提醒|今日行事曆|數據公布|恢復通知|新聞彙整)】", title):
+        return title[:256]
+    # Recognize our own preview wrappers while keeping the category first.
+    content = re.sub(r"^(?:🧪 (?:精簡版預覽|測試)｜\s*)+", "", title)
+    label = {
+        "daily_market": "每日行情", "weekly_market": "每週行情",
+        "macro_alerts": "總經數據", "market_risk": "風險警報",
+        "breaking_news": "重大快訊", "crypto_news": "市場新聞",
+        "regulation_etf": "監管／ETF", "macro_analysis": "總經觀察",
+        "technical_analysis": "技術分析", "bot_log": "系統紀錄",
+    }.get(channel_key, "市場資訊")
+    if channel_key == "macro_alerts":
+        if content.startswith("⏰ 公布前提醒"):
+            label = "數據提醒"
+        elif content.startswith("🗓️ 今日總經行事曆"):
+            label = "今日行事曆"
+        elif "｜最新數據" in content:
+            label = "數據公布"
+    elif channel_key == "market_risk" and content.startswith(("✅ 價格偏離已收斂", "✅ 服務已恢復")):
+        label = "恢復通知"
+    elif channel_key == "crypto_news":
+        if content.startswith("📰 今日新聞重點"):
+            label = "新聞彙整"
+        elif content.startswith("🚨 快訊｜"):
+            label = "重大快訊"
+    prefix = f"【{label}】"
+    return (prefix + " " + title)[:256]
+
+
 def apply_delivery_format(
     embed: dict[str, Any],
     channel_key: str,
@@ -148,6 +180,8 @@ def apply_delivery_format(
     if channel_key not in CHANNEL_AUTHORS:
         raise ValueError(f"unsupported notification channel: {channel_key}")
     card = copy.deepcopy(embed)
+    if slim_policy.enabled():
+        card["title"] = classified_title(card.get("title", ""), channel_key)
     if slim_policy.enabled() and channel_key != "bot_log":
         author = dict(card.get("author") or {})
         author["name"] = {"daily_market": "每日市場重點", "weekly_market": "本週市場重點", "macro_alerts": "總經事件", "market_risk": "市場風險"}.get(channel_key, "市場快訊")
