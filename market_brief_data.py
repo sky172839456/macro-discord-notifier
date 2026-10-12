@@ -1,6 +1,7 @@
 """Free public data collectors for the richer Discord market brief."""
 
 from __future__ import annotations
+import slim_policy
 
 import html
 import json
@@ -359,6 +360,11 @@ def collect_dashboard(now: datetime) -> dict[str, Any]:
     except Exception as exc:
         dashboard["crypto"] = dashboard["stablecoins"] = None
         dashboard["errors"]["crypto"] = error_label(exc)
+    if slim_policy.enabled():
+        collect("sentiment", fear_greed_snapshot)
+        collect("etf", etf_flow_snapshot)
+        collect("eth_etf", lambda: etf_flow_snapshot(FARSIDE_ETH))
+        return dashboard
     collect("global", global_snapshot)
     collect("derivatives", derivatives_snapshot)
     collect("sentiment", fear_greed_snapshot)
@@ -371,7 +377,7 @@ def collect_dashboard(now: datetime) -> dict[str, Any]:
 
 
 def collect_weekly_dashboard(now: datetime) -> dict[str, Any]:
-    dashboard = collect_dashboard(now)
+    dashboard = {"errors": {}} if slim_policy.enabled() else collect_dashboard(now)
 
     def collect(name: str, function: Any) -> None:
         try:
@@ -381,8 +387,9 @@ def collect_weekly_dashboard(now: datetime) -> dict[str, Any]:
             dashboard["errors"][name] = error_label(exc)
 
     collect("weekly_crypto", weekly_crypto_snapshot)
-    collect("weekly_sentiment", weekly_sentiment_snapshot)
-    collect("weekly_derivatives", weekly_funding_snapshot)
+    if not slim_policy.enabled():
+        collect("weekly_sentiment", weekly_sentiment_snapshot)
+        collect("weekly_derivatives", weekly_funding_snapshot)
     collect("weekly_btc_etf", lambda: weekly_etf_snapshot(FARSIDE_BTC))
     collect("weekly_eth_etf", lambda: weekly_etf_snapshot(FARSIDE_ETH))
     return dashboard

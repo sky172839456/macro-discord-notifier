@@ -1,5 +1,6 @@
 """Stablecoin and official exchange-risk monitor using free public sources."""
 from __future__ import annotations
+import slim_policy
 
 import argparse
 import json
@@ -236,6 +237,10 @@ def critical_official_notices():
 
 
 def monitor(webhook):
+    if slim_policy.enabled():
+        import sys
+        from slim_risk import monitor as slim_monitor
+        return slim_monitor(sys.modules[__name__], webhook)
     state = load()
     counts = state.setdefault("counts", {})
     active = state.setdefault("active", {})

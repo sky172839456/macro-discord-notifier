@@ -1,6 +1,7 @@
 """Daily and weekly Discord market summaries using free public data."""
 
 from __future__ import annotations
+import slim_policy
 
 import argparse
 import hashlib
@@ -524,6 +525,8 @@ def event_lines(events: list[dict[str, Any]], error: str | None, empty: str) -> 
 def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] | None,
                 market_error: str | None, events: list[dict[str, Any]], event_error: str | None,
                 dashboard: dict[str, Any] | None = None) -> dict[str, Any]:
+    if slim_policy.enabled():
+        return slim_policy.summary_card(period, now, market, market_error, events, event_error, dashboard)
     local = now.astimezone(TAIPEI)
     daily = period == "daily"
     fields = [
@@ -581,7 +584,7 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
 
 
 def send(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
-    channel_key = "weekly_market" if "每週" in str(embed.get("title", "")) else "daily_market"
+    channel_key = "weekly_market" if any(word in str(embed.get("title", "")) for word in ("每週", "本週")) else "daily_market"
     card = apply_delivery_format(embed, channel_key)
     payload = {"username": "市場摘要", "embeds": [card], "allowed_mentions": {"parse": []}}
     if dry_run:
@@ -616,7 +619,7 @@ def run(period: str, now: datetime, dry_run: bool = False) -> None:
     if os.environ.get("MARKET_SUMMARY_TEST") == "1":
         embed["title"] = f"🧪 測試｜{embed['title']}"
         embed["description"] = "這是測試頻道預覽，不是正式公告。\n" + embed["description"]
-    if period == "daily":
+    if period == "daily" and not slim_policy.enabled():
         # 匯入延後到執行期，避免與分析模組互相匯入。
         from analysis_notifier import technical_snapshot, technical_view
         lines = []
@@ -654,7 +657,7 @@ def run_scheduled(now: datetime) -> list[str]:
         return []
 
     sent: list[str] = []
-    if local.hour >= 7 and state.get("daily") != today:
+    if local.hour >= 7 and state.get("daily") != today and not (slim_policy.enabled() and local.weekday() == 0):
         run("daily", now)
         state["daily"] = today
         sent.append("daily")

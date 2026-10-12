@@ -1,6 +1,7 @@
 """High-signal crypto news radar for Discord (standard library only)."""
 
 from __future__ import annotations
+import slim_policy
 
 import argparse
 import hashlib
@@ -221,13 +222,15 @@ def add_translated_title(item: dict[str, Any], state: dict[str, Any], now: datet
         except Exception:
             points = []
     fallback = ZH_SUMMARY[item["category"]["key"]]
-    if len(points) < 2 and fallback not in points:
+    if not slim_policy.enabled() and len(points) < 2 and fallback not in points:
         points.append(fallback)
     enriched["summary_zh_points"] = points[:3]
     return enriched
 
 
 def category_for(text: str) -> dict[str, Any] | None:
+    if slim_policy.enabled():
+        return slim_policy.category(text, CATEGORIES)
     lowered = f" {text.lower()} "
     for category in CATEGORIES:
         if any(keyword in lowered for keyword in category["keywords"]):
@@ -283,6 +286,8 @@ def title_tokens(title: str) -> set[str]:
 
 
 def similar_title(left: str, right: str) -> bool:
+    if slim_policy.enabled() and slim_policy.same_event(left, right):
+        return True
     def amounts(value):
         value = re.sub(r"\b(\d+(?:\.\d+)?)\s*billion\b", r"\1b", value.lower())
         return set(re.findall(r"\b\d+(?:\.\d+)?[bmkt]?\b", value))
@@ -297,6 +302,8 @@ def deduplicate(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for item in sorted(items, key=lambda row: (row["published"], row["official"]), reverse=True):
         duplicate = next((row for row in kept if similar_title(item["title"], row["title"])), None)
         if duplicate:
+            if slim_policy.enabled():
+                duplicate.setdefault("related_sources", []).append({"source": item.get("source", "來源"), "url": item.get("url", "")})
             if item["official"] and not duplicate["official"]:
                 kept.remove(duplicate)
                 kept.append(item)
@@ -306,6 +313,8 @@ def deduplicate(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def news_embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
+    if slim_policy.enabled():
+        return slim_policy.news_card(item, test)
     category = item["category"]
     priority = {"critical": "重大", "high": "重要", "normal": "一般"}[category["priority"]]
     status = "✅ 官方確認" if item["official"] else "📰 媒體報導"
@@ -339,6 +348,8 @@ def news_embed(item: dict[str, Any], test: bool = False) -> dict[str, Any]:
 
 def digest_embed(items: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
     """Render one readable card per article for the hourly digest."""
+    if slim_policy.enabled():
+        return [slim_policy.digest_card(items, now)]
     cards = []
     for item in items[:DIGEST_ITEMS_PER_CARD]:
         card = news_embed(item)
@@ -473,8 +484,8 @@ def run(now: datetime) -> tuple[int, int]:
         save_state(state)
         return len(items), 0
 
-    immediate = [item for item in candidates if item["category"]["priority"] in {"critical", "high"}]
-    normal = [item for item in candidates if item["category"]["priority"] == "normal"]
+    immediate = [item for item in candidates if (slim_policy.material_news(item) if slim_policy.enabled() else item["category"]["priority"] in {"critical", "high"})]
+    normal = [item for item in candidates if item not in immediate]
     sent = 0
     for item in immediate[:MAX_IMMEDIATE_PER_RUN]:
         item = add_translated_title(item, state, now)
@@ -496,23 +507,33 @@ def run(now: datetime) -> tuple[int, int]:
             pending_ids.add(item["id"])
 
     local = now.astimezone(TAIPEI)
-    digest_slot = f"{local:%Y-%m-%d}-{local.hour}"
+    if slim_policy.enabled():
+        pending[:] = slim_policy.merge_pending(pending)
+        pending[:] = [row for row in pending if datetime.fromisoformat(row["published"]) >= now - timedelta(hours=24)]
+        digest_slot = f"daily:{local:%Y-%m-%d}"
+        if local.hour < 20:
+            save_state(state)
+            return len(candidates), sent
+    else:
+        digest_slot = f"{local:%Y-%m-%d}-{local.hour}"
     if pending and state.get("last_digest_slot") != digest_slot:
         restored = []
         categories = {category["key"]: category for category in CATEGORIES}
-        for item in pending[:MAX_DIGEST_ITEMS]:
+        digest_limit = 5 if slim_policy.enabled() else MAX_DIGEST_ITEMS
+        for item in pending[:digest_limit]:
             item = dict(item)
             item["published"] = datetime.fromisoformat(item["published"])
             item["category"] = categories[item["category"]]
             restored.append(item)
-        for index in range(0, len(restored), DIGEST_ITEMS_PER_CARD):
-            send_discord(webhook, digest_embed(restored[index:index + DIGEST_ITEMS_PER_CARD], now))
-        for item in pending[:MAX_DIGEST_ITEMS]:
+        batch_size = 5 if slim_policy.enabled() else DIGEST_ITEMS_PER_CARD
+        for index in range(0, len(restored), batch_size):
+            send_discord(webhook, digest_embed(restored[index:index + batch_size], now))
+        for item in pending if slim_policy.enabled() else pending[:MAX_DIGEST_ITEMS]:
             seen[item["id"]] = now.date().isoformat()
             history.append({"title": item["title"], "date": now.isoformat()})
-        pending[:] = pending[MAX_DIGEST_ITEMS:]
+        pending[:] = [] if slim_policy.enabled() else pending[MAX_DIGEST_ITEMS:]
         state["last_digest_slot"] = digest_slot
-        sent += (len(restored) + DIGEST_ITEMS_PER_CARD - 1) // DIGEST_ITEMS_PER_CARD
+        sent += (len(restored) + batch_size - 1) // batch_size
 
     cutoff = (now - timedelta(days=14)).date().isoformat()
     state["seen"] = {key: date for key, date in seen.items() if date >= cutoff}

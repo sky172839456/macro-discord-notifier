@@ -1,6 +1,7 @@
 """Free official-source US macro notifier for Discord (standard library only)."""
 
 from __future__ import annotations
+import slim_policy
 
 import argparse
 import hashlib
@@ -701,6 +702,8 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
     if revisions:
         fields.append({"name": "🔄 前值與修正資訊", "value": revisions, "inline": False})
     fields.append({"name": "🔗 官方原始資料", "value": source, "inline": False})
+    if slim_policy.enabled():
+        fields = [f for f in fields if f["name"] not in {"⚡ 快速判讀", "📅 下次公布（台灣）"}]
     return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
             "title": f"🔴 {item['rule']['name']}｜最新數據",
             "description": f"### 📊 本次公布結果\n{numbers}\n\n> 市場預期值不屬於官方資料；官方未提供時會明確標示「未提供」。",
@@ -785,6 +788,8 @@ def overview_update_embed(changes: list[tuple[tuple[str, ...], str, str, str | N
 
 
 def daily_embed(events: list[dict[str, Any]], now: datetime, calendar_error: str | None = None) -> dict[str, Any]:
+    if slim_policy.enabled():
+        return slim_policy.calendar_card(events, now, calendar_error)
     local = now.astimezone(TAIPEI)
     end = now + timedelta(days=3)
     upcoming = [event for event in events if now <= event["time"] < end]
@@ -897,7 +902,8 @@ def legacy_run(now: datetime, dry_run: bool = False, force_digest: bool = False)
             print(f"警告：健康監控通知無法送出：{exc}", file=sys.stderr)
     digest_key = local.strftime("%Y-%m-%d")
     if (force_digest or local.hour >= 7) and digest_key not in digests:
-        send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
+        if not slim_policy.enabled() or slim_policy.today_events(calendar, now):
+            send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
         digests.append(digest_key)
 
     for event in calendar:
@@ -1010,10 +1016,10 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         daily_health.append(digest_key)
     week_key = f"{local:%G-W%V}"
     weekly_sent = False
-    if force_overview or (
+    if not slim_policy.enabled() and (force_overview or (
         (force_digest or (local.weekday() == 0 and local.hour >= 7))
         and week_key not in weekly_overviews
-    ):
+    )):
         send_discord(webhook, macro_overview_embed(calendar, now, calendar_error), dry_run)
         weekly_overviews.append(week_key)
         weekly_sent = True
@@ -1028,7 +1034,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         official_time, _ = release_schedule_times(item, calendar, now)
         release_day = (official_time or item["published"]).astimezone(TAIPEI).date().isoformat()
         group_key = (event_key, release_day)
-        if 0 <= age <= RELEASE_BACKFILL_MINUTES:
+        if 0 <= age <= RELEASE_BACKFILL_MINUTES and (not slim_policy.enabled() or event_key in slim_policy.CORE_EVENTS):
             pending_release_groups.setdefault(group_key, []).append(item)
     pending_release_groups = {
         group_key: group
@@ -1046,7 +1052,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
             key: value if value is not None else previous_overview.get(key)
             for key, value in current_overview.items()
         }
-    if previous_overview and not weekly_sent:
+    if previous_overview and not weekly_sent and not slim_policy.enabled():
         rows_by_key = {"+".join(keys): (keys, icon, label) for keys, icon, label in OVERVIEW_ROWS}
         changes = [(*rows_by_key[key], value) for key, value in current_overview.items()
                    if value is not None and value != previous_overview.get(key)
@@ -1056,9 +1062,11 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
     state["overview_snapshot"] = current_overview
 
     for event in calendar:
+        if slim_policy.enabled() and event["rule"]["key"] not in slim_policy.CORE_EVENTS:
+            continue
         minutes = (event["time"] - now).total_seconds() / 60
         day_key = f"day-before:{event['id']}"
-        if (event["rule"].get("priority") == "highest"
+        if (not slim_policy.enabled() and event["rule"].get("priority") == "highest"
                 and 0 <= minutes <= DAY_BEFORE_MINUTES
                 and day_key not in sent):
             send_discord(webhook, pre_embed(event, day_before=True, minutes_until=minutes), dry_run)
@@ -1066,7 +1074,8 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         pre_key = f"pre:{event['id']}"
         # GitHub scheduled workflows can be delayed.  Send on the closest run
         # within three hours rather than silently missing the event.
-        if 0 <= minutes <= 180 and pre_key not in sent:
+        due = slim_policy.reminder_due(event, now) if slim_policy.enabled() else 0 <= minutes <= 180
+        if due and pre_key not in sent:
             send_discord(webhook, pre_embed(event, minutes_until=minutes), dry_run)
             sent[pre_key] = now.date().isoformat()
     for (event_key, release_day), group in pending_release_groups.items():

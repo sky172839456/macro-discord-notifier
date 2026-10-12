@@ -118,6 +118,8 @@ def daily_health_embed(
         status, detail = results.get(name, ("missing", "本輪沒有執行紀錄"))
         if status == "ok":
             icon, label = "✅", "執行成功"
+        elif status == "disabled":
+            icon, label = "⏸️", "已停用"
         elif status == "skipped":
             icon, label = "⚪", "未設定／已略過"
             skipped += 1
@@ -158,7 +160,7 @@ def daily_health_embed(
                     if failures
                     else f"**⚠️ {skipped} 個監控未設定**\n未執行項目不會被標示為正常。"
                     if skipped
-                    else "**✅ 執行正常**\n八個監控本輪皆已完成。"
+                    else "**✅ 執行正常**\n本輪啟用的監控皆已完成；停用項目已另外標示。"
                 ),
                 "inline": False,
             },

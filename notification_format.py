@@ -1,5 +1,6 @@
 """Shared presentation rules for Discord notification cards."""
 from __future__ import annotations
+import slim_policy
 
 import copy
 import html
@@ -147,6 +148,19 @@ def apply_delivery_format(
     if channel_key not in CHANNEL_AUTHORS:
         raise ValueError(f"unsupported notification channel: {channel_key}")
     card = copy.deepcopy(embed)
+    if slim_policy.enabled() and channel_key != "bot_log":
+        author = dict(card.get("author") or {})
+        author["name"] = {"daily_market": "每日市場重點", "weekly_market": "本週市場重點", "macro_alerts": "總經事件", "market_risk": "市場風險"}.get(channel_key, "市場快訊")
+        card["author"] = author
+        # Only abnormal data status deserves another field; facts retain their own source times.
+        status = source_status or infer_source_status(card)
+        fields = list(card.get("fields") or [])
+        if status != "ok" and not any(f.get("name") == "🩺 資料狀態" for f in fields):
+            fields.append({"name": "🩺 資料狀態", "value": source_status_text(status), "inline": False})
+        card["fields"] = fields
+        card["footer"] = {"text": "台灣時間｜不構成投資建議"}
+        card.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+        return card
     description = str(card.get("description", ""))
     if channel_key != "bot_log" and "**📌 繁中標題**" in description and "**🌐 英文原標題**" in description:
         original = description.split("**🌐 英文原標題**", 1)[1].split("\n\n", 1)[0].strip()
