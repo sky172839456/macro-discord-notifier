@@ -1024,8 +1024,13 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         weekly_overviews.append(week_key)
         weekly_sent = True
     if (force_digest or local.hour >= 7) and digest_key not in digests:
-        send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
-        digests.append(digest_key)
+        # In slim mode, no remaining tracked events means no member calendar.
+        # Source failures are still reported to the admin log above. Do not
+        # consume the daily key on a skip: a later source recovery or schedule
+        # update must still be able to publish today's newly available events.
+        if not slim_policy.enabled() or slim_policy.today_events(calendar, now):
+            send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
+            digests.append(digest_key)
 
     pending_release_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for item in releases:
