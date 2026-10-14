@@ -28,7 +28,7 @@ class QualityTests(unittest.TestCase):
 
     def article(self, title='Bitcoin market update', identifier='a', official=False):
         return {'id': identifier, 'title': title, 'title_zh': '比特幣市場消息', 'summary': title,
-                'summary_zh_points': ['消息仍需核對原始資料。'], 'source': 'Official' if official else 'Media',
+                'summary_zh_points': ['比特幣市場動態更新。'], 'source': 'Official' if official else 'Media',
                 'official': official, 'published': self.now - timedelta(minutes=20),
                 'url': 'https://example.invalid/' + identifier, 'category': {'key': 'market', 'priority': 'normal'}}
 

@@ -28,7 +28,42 @@ def checked_translation(source, translated):
         raise ValueError('translation changed numeric facts')
     if re.search(r'\bCHAD\b', source) and re.search(r'preferred|stock', source, re.I):
         translated = translated.replace('乍得', 'CHAD').replace('查德', 'CHAD')
+    return polish_chinese(source, translated)
+
+
+def polish_chinese(source, translated):
+    """Narrow source-led copy edits; never change figures or government entities."""
+    corporate = bool(re.search(r"\b(?:its|their|corporate|company'?s?|firm'?s?)\s+(?:(?:bitcoin|crypto|digital.asset)\s+)?treasur(?:y|ies)\b|\btreasury company\b", source, re.I))
+    government = bool(re.search(r'\b(?:(?:U\.?S\.?|United States)\s+Treasury|Treasury\s+(?:Department|Secretary))\b', source, re.I))
+    if corporate and '財政部' in translated:
+        if government:
+            raise ValueError('ambiguous treasury translation')
+        translated = translated.replace('財政部', '資產儲備')
+    if re.search(r'\bwarrant exercises?\b|\bexercis\w*\b.{0,30}\bwarrants?\b', source, re.I):
+        translated = translated.replace('認股權證活動', '認股權證行使金額')
+    translated = re.sub(r'\b([A-Z][A-Z0-9]{1,9})\s*[（(]\s*\1\s*[)）]', r'\1', translated)
+    if re.search(r'\$\s*\d|\bUSD\b|U\.S\. dollars?', source, re.I) and not re.search(r'(?:[CA]|HK|NZ|SG)\$|\b(?:CAD|AUD|HKD|NZD|SGD)\b', source, re.I):
+        translated = re.sub(r'(?<![A-Za-z$])\$\s*(\d[\d,]*(?:\.\d+)?)\s*(億|萬|千)?(?:\s*美元)?', lambda m: m[1]+(m[2] or '')+'美元', translated)
+    translated = re.sub(r'(\d)\s+%', r'\1%', translated)
+    translated = re.sub(r'(\d)\s+(億|萬|千)', r'\1\2', translated)
     return translated
+
+
+def digest_exclusion_reason(item):
+    try:
+        title = checked_translation(str(item.get('title') or ''), str(item.get('title_zh') or ''))
+    except ValueError:
+        return '中文標題未確認'
+    if re.search(r'待確認|尚未確認|請閱讀原文', title):
+        return '中文標題未確認'
+    if re.fullmatch(r'(?:your\s+)?day[- ]ahead look(?:\s+for\s+.+)?[.!]?', str(item.get('summary') or '').strip(), re.I):
+        return '摘要僅為導讀'
+    points = chinese_points(item)
+    if not points:
+        return '中文摘要未確認'
+    if all(re.search(r'待確認|尚未確認|請閱讀原文|仍需核對|來源已確認的事實', point) for point in points):
+        return '摘要僅為提示'
+    return None
 
 
 def headline(item):

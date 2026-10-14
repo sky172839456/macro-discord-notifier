@@ -137,6 +137,13 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
         if len(latest) != len(datasets):
             continue
         reference = f"{latest[0]['year']}-{latest[0]['period']}"
+        if event_key == 'cpi' and any(f"{row['year']}-{row['period']}" != reference for row in latest):
+            continue  # Never combine monthly/annual observations from different months.
+        if event_key == 'cpi':
+            month = int(latest[0]['period'][1:])
+            previous_year, previous_month = (int(latest[0]['year'])-1, 12) if month == 1 else (int(latest[0]['year']), month-1)
+            if not 1 <= month <= 12 or len(datasets[0]) < 2 or (int(datasets[0][1]['year']), datasets[0][1]['period']) != (previous_year, f'M{previous_month:02d}'):
+                continue
         signature = hashlib.sha256(
             "|".join(f"{item['year']}:{item['period']}:{item['value']}" for item in latest).encode()
         ).hexdigest()[:20]
@@ -179,8 +186,14 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
         releases.append({
             "id": f"bls-api-{event_key}-{reference}-{signature}",
             "title": rule["name"], "summary": summary, "url": rule["source"],
-            "published": now, "rule": rule,
+            "published": now, "rule": rule, 'reference_period': reference,
         })
+        if event_key == 'cpi':
+            year = int(latest[0]['year'])
+            urls = [f'{BLS_API_URL}{series_id}?startyear={year-1}&endyear={year}' for series_id in ids]
+            releases[-1].update(cpi_metrics={'monthly': monthly_change, 'annual': annual_change if prior_year else None,
+                                          'monthly_seasonally_adjusted': True, 'annual_unadjusted': True},
+                                url=urls[1], cpi_source_urls=urls)
     return releases
 
 
@@ -716,6 +729,18 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
     if slim_policy.enabled():
         fields = [f for f in fields if f["name"] not in {"⚡ 快速判讀", "📅 下次公布（台灣）"}]
         numbers = numbers.replace('（MoM）', '').replace('（YoY）', '')
+        if item['rule']['key'] == 'cpi':
+            from cpi_release import details, official_source
+            numbers, missing = details(item)
+            source = official_source(item)
+            urls = item.get('cpi_source_urls') or []
+            source_copy = (f'[BLS月資料｜季調]({urls[0]})\n[BLS月資料｜未季調]({urls[1]})'
+                           if len(urls) == 2 else source)
+            fields = [f for f in fields if f['name'] != '🔗 官方原始資料']
+            fields.append({'name': '🔗 官方原始資料', 'value': source_copy, 'inline': False})
+            state_copy = ('⚠️ 尚未確認：' + '、'.join(missing) + '\n已確認的數值照常列出。' if missing
+                          else '✅ 主數據與口徑完整\n市場預期未納入，與官方數據缺漏分開處理。')
+            fields.append({'name': '🩺 資料狀態', 'value': state_copy, 'inline': False})
     late = False
     if slim_policy.enabled() and detected_at:
         from notification_quality import time_copy
@@ -728,7 +753,7 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
         fields.insert(0, {'name': '🕒 發布與發現時間', 'value': timing, 'inline': False})
     return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
             "title": f"{'【數據公布】⏳ 補發｜' if late else '🔴 '}{item['rule']['name']}｜最新數據",
-            "description": f"### 📊 本次公布結果\n{numbers}\n\n> 市場預期值不屬於官方資料；官方未提供時會明確標示「未提供」。",
+            "description": f"### 📊 本次公布結果\n{numbers}\n\n> " + ('市場預期未納入。' if slim_policy.enabled() and item['rule']['key'] == 'cpi' else '市場預期值不屬於官方資料；官方未提供時會明確標示「未提供」。'),
             "color": 0xE74C3C,
             "fields": fields,
             "footer": {"text": "官方免費資料｜先看結果，再看解讀｜僅供資訊參考，不構成投資建議"},
