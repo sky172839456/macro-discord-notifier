@@ -252,6 +252,10 @@ def category_for(text: str) -> dict[str, Any] | None:
 
 def is_relevant(text: str, official: bool = False) -> bool:
     lowered = text.lower()
+    if slim_policy.enabled():
+        from news_editorial import safety_candidate
+        if safety_candidate({'title': text}):
+            return True
     if any(term in lowered for term in EXCLUDE):
         return False
     return (official and "ethereum" in lowered) or any(term in lowered for term in RELEVANCE)
@@ -274,6 +278,10 @@ def parse_feed(source: str, source_config: dict[str, Any]) -> list[dict[str, Any
         published = parse_date(date_value)
         combined = f"{title} {summary}"
         category = category_for(combined)
+        if slim_policy.enabled():
+            from news_editorial import safety_candidate
+            if safety_candidate({'title': title, 'summary': summary}):
+                category = dict(CATEGORIES[0])
         if not title or not link or not published or not category or not is_relevant(combined, source_config["official"]):
             continue
         url = canonical_url(link)
@@ -307,10 +315,17 @@ def similar_title(left: str, right: str) -> bool:
     return bool(a and b) and len(a & b) / len(a | b) >= 0.55
 
 
+def same_news_event(left, right):
+    if slim_policy.enabled():
+        from news_editorial import equivalent
+        return equivalent(left, right, similar_title)
+    return similar_title(left['title'], right['title'])
+
+
 def deduplicate(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     kept: list[dict[str, Any]] = []
     for item in sorted(items, key=lambda row: (row["published"], row["official"]), reverse=True):
-        duplicate = next((row for row in kept if similar_title(item["title"], row["title"])), None)
+        duplicate = next((row for row in kept if same_news_event(item, row)), None)
         if duplicate:
             if slim_policy.enabled():
                 merged = slim_policy.merge_pending([duplicate, item])
@@ -377,6 +392,7 @@ def send_discord(webhook: str, embed: dict[str, Any] | list[dict[str, Any]],
     channel_key = {
         "加密重大快訊": "breaking_news",
         "監管與 ETF 雷達": "regulation_etf",
+        "新聞核對｜管理員": "bot_log",
     }.get(username, "crypto_news")
     embeds = embed if isinstance(embed, list) else [embed]
     cards = [apply_delivery_format(card, channel_key) for card in embeds]
@@ -482,8 +498,10 @@ def run(now: datetime) -> tuple[int, int]:
     history = [row for row in state.get("headline_history", []) if row.get("date", "") >= (now - timedelta(hours=24)).isoformat()]
     unique = []
     for item in candidates:
-        if any(similar_title(item["title"], row["title"]) for row in history):
-            seen[item["id"]] = now.date().isoformat()
+        if any(same_news_event(item, {**row, 'published': row.get('published') or row['date']}) for row in history):
+            from news_editorial import member_ids
+            for identifier in member_ids(item):
+                seen[identifier] = now.date().isoformat()
         else:
             unique.append(item)
     candidates = unique
@@ -498,6 +516,20 @@ def run(now: datetime) -> tuple[int, int]:
 
     if slim_policy.enabled():
         from notification_quality import rank_news
+        # Recheck old pending items too: deployment must not leak legacy safety claims.
+        categories = {row['key']: row for row in CATEGORIES}
+        existing = []
+        for row in state.setdefault('pending', []):
+            restored = dict(row)
+            restored['published'] = datetime.fromisoformat(row['published'])
+            if isinstance(restored.get('category'), str):
+                restored['category'] = categories[restored['category']]
+            existing.append(restored)
+        from news_editorial import safety_candidate
+        safety_pending = [row for row in existing if safety_candidate(row)]
+        safety_ids = {row['id'] for row in safety_pending}
+        state['pending'][:] = [row for row in state['pending'] if row['id'] not in safety_ids]
+        candidates = route_safety_review(slim_policy.merge_pending(candidates + safety_pending), state, now)
         candidates = rank_news(candidates)
     immediate = [item for item in candidates if (slim_policy.material_news(item) if slim_policy.enabled() else item["category"]["priority"] in {"critical", "high"})]
     normal = [item for item in candidates if item not in immediate]
@@ -506,11 +538,15 @@ def run(now: datetime) -> tuple[int, int]:
         item = add_translated_title(item, state, now)
         destination, username = destination_for(item, webhook)
         send_discord(destination, news_embed(item, observed_at=now), username)
-        seen[item["id"]] = now.date().isoformat()
-        history.append({"title": item["title"], "date": now.isoformat()})
+        from news_editorial import member_ids, history_row
+        for identifier in member_ids(item):
+            seen[identifier] = now.date().isoformat()
+        history.append(history_row(item, now))
+        # Successful sends are persisted after weekly history is updated.
         if slim_policy.enabled():
             from market_brief_v2 import remember_news
             remember_news(state, item, now)
+        save_state(state)  # Persist before another urgent send can fail.
         sent += 1
 
     pending = state.setdefault("pending", [])
@@ -576,8 +612,10 @@ def run(now: datetime) -> tuple[int, int]:
                     send_discord(webhook, [card])
                     delivered = {row['id'] for row in group}
                     for row in group:
-                        seen[row['id']] = now.date().isoformat()
-                        history.append({'title': row['title'], 'date': now.isoformat()})
+                        from news_editorial import member_ids, history_row
+                        for identifier in member_ids(row):
+                            seen[identifier] = now.date().isoformat()
+                        history.append(history_row(row, now))
                         from market_brief_v2 import remember_news
                         remember_news(state, row, now)
                         progress['ids'].append(row['id'])
@@ -605,6 +643,59 @@ def run(now: datetime) -> tuple[int, int]:
     }
     save_state(state)
     return len(items), sent
+
+
+def route_safety_review(items, state, now):
+    """Persist unverified safety candidates separately; never consume member quota."""
+    from news_editorial import safety_candidate, review_reason, review_card, member_ids, published_time
+    queue = state.setdefault('safety_review', [])
+    queue[:] = [r for r in queue if published_time(r['published']) >= now - timedelta(days=14)]
+    ready = []
+    for item in items:
+        if not safety_candidate(item):
+            ready.append(item)
+            continue
+        if item.get('official'):
+            item = add_translated_title(item, state, now)
+        reason = review_reason(item)
+        if not reason:
+            ready.append(item)
+            for old in queue:
+                if same_news_event(item, old):
+                    old['status'] = 'official_counterpart_ready'
+            continue
+        stored = dict(item)
+        stored['published'] = published_time(item['published']).isoformat()
+        if isinstance(stored.get('category'), dict):
+            stored['category'] = stored['category']['key']
+        stored.update(review_reason=reason, status='pending_review')
+        old = next((r for r in queue if same_news_event(item, r)), None)
+        if old:
+            merged = slim_policy.merge_pending([old, stored])[0]
+            merged['notified_at'] = old.get('notified_at')
+            merged.update(review_reason=reason, status='pending_review')
+            queue[queue.index(old)] = merged
+        else:
+            queue.append(stored)
+    # Official candidates already prepared for release no longer need an admin ping.
+    waiting = [r for r in queue if r.get('status') == 'pending_review' and not r.get('notified_at')]
+    if waiting:
+        log = os.getenv('DISCORD_LOG_WEBHOOK_URL')
+        if log:
+            batch = waiting[:4]
+            while len(batch) > 1 and len(review_card(batch, now)['description']) > 3500:
+                batch.pop()
+            try:
+                send_discord(log, review_card(batch, now), '新聞核對｜管理員')
+            except Exception as exc:
+                print(f'警告：資安核對提示暫未送達（{type(exc).__name__}）；已保留佇列，稍後重試。')
+            else:
+                for row in batch:
+                    row['notified_at'] = now.isoformat()
+        else:
+            print(f'警告：有{len(waiting)}項資安候選待核對，管理員Webhook未配置；未改送成員。')
+    save_state(state)
+    return ready
 
 
 def sample_item(now: datetime) -> dict[str, Any]:
