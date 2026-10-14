@@ -90,7 +90,10 @@ class MacroCalendarDeliveryTests(unittest.TestCase):
     def test_empty_calendar_does_not_block_official_release(self):
         rule = next(r for r in notifier.EVENT_RULES if r["key"] == "cpi")
         self.releases = [{"id": "new-cpi", "published": self.now,
-                          "rule": rule, "summary": "", "url": rule["source"]}]
+                          "rule": rule, "summary": "", "url": rule["source"],
+                          "reference_period": "2026-M09", "cpi_metrics": {
+                              "monthly": .6, "annual": 3.7,
+                              "monthly_seasonally_adjusted": True, "annual_unadjusted": True}}]
         with patch.object(notifier, "release_embed", return_value={"title": "release"}):
             notifier.run(self.now)
             notifier.run(self.now + timedelta(minutes=5))

@@ -679,6 +679,64 @@ def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool,
         pass
 
 
+def release_critical_missing(item: dict[str, Any]) -> list[str]:
+    """Do not equate missing forecast/previous values with missing current data."""
+    if not slim_policy.enabled():
+        return []
+    if item['rule']['key'] == 'cpi' or item.get('price_metrics'):
+        from cpi_release import details
+        return details(item)[1]
+    summary = html_to_text(str(item.get('summary') or '')).strip()
+    if not summary:
+        return ['本次官方摘要與主數據']
+    numeric_keys = {'ppi', 'pce', 'gdp', 'retail', 'durable', 'jolts', 'jobs', 'claims'}
+    if item['rule']['key'] in numeric_keys and not re.search(
+        r'[-+]?\d[\d,.]*\s*(?:percent|%|thousand|million|billion)|initial claims was\s+[\d,]+',
+        summary, re.I,
+    ):
+        return ['本次主數據']
+    return []
+
+
+def retry_release_sources(state, baselines, event_key):
+    """A blocked result must not consume source-change detection on the next scan."""
+    for source in ('bls_api', 'official_pages'):
+        if event_key in baselines[source]:
+            state.setdefault(source, {})[event_key] = baselines[source][event_key]
+        else:
+            state.setdefault(source, {}).pop(event_key, None)
+
+
+def deliver_release(webhook: str, item: dict[str, Any], official_time,
+                    next_time, now: datetime, dry_run: bool,
+                    health_alerts: dict[str, str]) -> bool:
+    missing = release_critical_missing(item)
+    if missing:
+        local = now.astimezone(TAIPEI)
+        key = f"release-quality:{item['rule']['key']}:{item['published'].date()}:{local:%Y-%m-%d}"
+        log = os.environ.get('DISCORD_LOG_WEBHOOK_URL')
+        if log and key not in health_alerts:
+            try:
+                send_discord(log, {
+                    'title': '數據結果暫緩發布｜' + item['rule']['name'],
+                    'description': '未送成員公告；主數據確認後再於後續自然掃描嘗試。',
+                    'fields': [
+                        {'name': '🩺 資料狀態', 'value': '⚠️ 部分資料缺少\n本次主數據尚未確認，已擋下成員結果公告。', 'inline': False},
+                        {'name': '待確認項目', 'value': '、'.join(missing), 'inline': False},
+                        {'name': '官方來源', 'value': item.get('url') or item['rule']['source'], 'inline': False},
+                    ],
+                    'timestamp': now.isoformat(),
+                }, dry_run, 'bot_log')
+                health_alerts[key] = local.date().isoformat()
+            except Exception as exc:
+                # Never mark the release delivered if the private log fails.
+                print(f"警告：結果品質紀錄送出失敗：{type(exc).__name__}", file=sys.stderr)
+        print('暫緩數據結果：' + item['rule']['key'] + '｜' + '、'.join(missing))
+        return False
+    send_discord(webhook, release_embed(item, official_time, next_time, now), dry_run)
+    return True
+
+
 def pre_embed(event: dict[str, Any], day_before: bool = False, minutes_until: float | None = None) -> dict[str, Any]:
     local = event["time"].astimezone(TAIPEI)
     title = "📆 明日重要事件提醒" if day_before else "⏰ 公布前提醒"
@@ -923,6 +981,8 @@ def legacy_run(now: datetime, dry_run: bool = False, force_digest: bool = False)
         raise RuntimeError("缺少 DISCORD_WEBHOOK_URL")
     webhook = webhook or "https://discord.invalid/webhook"
     state = load_state()
+    source_baselines = {key: dict(state.get(key) or {})
+                        for key in ('bls_api', 'official_pages')}
     source_errors: list[str] = []
     source_recoveries: list[str] = []
     calendar_error: str | None = None
@@ -982,7 +1042,9 @@ def legacy_run(now: datetime, dry_run: bool = False, force_digest: bool = False)
         age = (now - item["published"]).total_seconds() / 60
         key = f"release:{item['id']}"
         if 0 <= age <= RELEASE_BACKFILL_MINUTES and key not in sent:
-            send_discord(webhook, release_embed(item), dry_run)
+            if not deliver_release(webhook, item, None, None, now, dry_run, health_alerts):
+                retry_release_sources(state, source_baselines, item['rule']['key'])
+                continue
             sent[key] = now.date().isoformat()
     cutoff = (now - timedelta(days=45)).date().isoformat()
     state["sent"] = {key: date for key, date in sent.items() if date >= cutoff}
@@ -1001,6 +1063,8 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         raise RuntimeError("缺少 DISCORD_WEBHOOK_URL")
     webhook = webhook or "https://discord.invalid/webhook"
     state = load_state()
+    source_baselines = {key: dict(state.get(key) or {})
+                        for key in ('bls_api', 'official_pages')}
     errors: list[str] = []
     recoveries: list[str] = []
     statuses: list[tuple[str, str, bool]] = []
@@ -1162,11 +1226,14 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
             sent[pre_key] = now.date().isoformat()
     for (event_key, release_day), group in pending_release_groups.items():
         item = max(group, key=lambda candidate: (
+            not bool(release_critical_missing(candidate)),
             not candidate["id"].startswith("bls-api-"),
             len(candidate.get("summary") or ""),
         ))
         official_time, next_time = release_schedule_times(item, calendar, now)
-        send_discord(webhook, release_embed(item, official_time, next_time, now), dry_run)
+        if not deliver_release(webhook, item, official_time, next_time, now, dry_run, health_alerts):
+            retry_release_sources(state, source_baselines, event_key)
+            continue
         sent[f"release-event:{event_key}:{release_day}"] = now.date().isoformat()
         for candidate in group:
             sent[f"release:{candidate['id']}"] = now.date().isoformat()

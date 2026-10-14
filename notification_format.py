@@ -159,7 +159,7 @@ def infer_source_status(embed: dict[str, Any]) -> str:
         "暫時無法取得", "httperror", "來源讀取異常",
     )):
         return "error"
-    if any(marker in text for marker in ("部分資料缺少", "部分來源", "缺少資料", "未提供")):
+    if any(marker in text for marker in ("部分資料缺少", "部分來源", "缺少資料")):
         return "partial"
     return "ok"
 
@@ -205,18 +205,18 @@ def apply_delivery_format(
     if channel_key not in CHANNEL_AUTHORS:
         raise ValueError(f"unsupported notification channel: {channel_key}")
     card = copy.deepcopy(embed)
+    resolved_status = source_status or infer_source_status(card)
+    # Operational health belongs in the private log. Keep inline caveats such
+    # as a missing previous value, source time and actual service disruptions.
+    if channel_key != "bot_log":
+        card["fields"] = [f for f in card.get("fields") or []
+                          if "資料狀態" not in str(f.get("name", ""))]
     if slim_policy.enabled():
         card["title"] = classified_title(card.get("title", ""), channel_key)
     if slim_policy.enabled() and channel_key != "bot_log":
         author = dict(card.get("author") or {})
         author["name"] = {"daily_market": "每日市場重點", "weekly_market": "本週市場重點", "macro_alerts": "總經事件", "market_risk": "市場風險"}.get(channel_key, "市場快訊")
         card["author"] = author
-        # Only abnormal data status deserves another field; facts retain their own source times.
-        status = source_status or infer_source_status(card)
-        fields = list(card.get("fields") or [])
-        if status != "ok" and not any(f.get("name") == "🩺 資料狀態" for f in fields):
-            fields.append({"name": "🩺 資料狀態", "value": source_status_text(status), "inline": False})
-        card["fields"] = fields
         if channel_key in {'daily_market', 'weekly_market'}:
             card['footer'] = dict(card.get('footer') or {'text': '台灣時間｜不構成投資建議'})
         else:
@@ -233,9 +233,7 @@ def apply_delivery_format(
     card["author"] = author
 
     fields = list(card.get("fields") or [])
-    resolved_status = source_status or infer_source_status(card)
-    compact_ok_channels = {"macro_alerts", "crypto_news", "exchange_announcements"}
-    show_status = not (channel_key in compact_ok_channels and resolved_status == "ok")
+    show_status = channel_key == "bot_log"
     if show_status and len(fields) < 25 and not any(field.get("name") == "🩺 資料狀態" for field in fields):
         fields.append({
             "name": "🩺 資料狀態",
@@ -254,7 +252,7 @@ def apply_delivery_format(
             additions.append("系統紀錄")
     elif "不構成投資建議" not in footer_text:
         additions.append("不構成投資建議")
-    if not show_status and "來源正常" not in footer_text:
+    if resolved_status == "ok" and not show_status and "來源正常" not in footer_text:
         additions.append("來源正常")
     sent_at = datetime.now(timezone.utc).astimezone(TAIPEI)
     if "機器人送出：" not in footer_text:

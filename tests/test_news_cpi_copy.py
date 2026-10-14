@@ -103,17 +103,18 @@ class NewsCpiCopyTests(unittest.TestCase):
         row=self.cpi();before=copy.deepcopy(row)
         card=apply_delivery_format(notifier.release_embed(row,self.now,detected_at=self.now+timedelta(minutes=4)),'macro_alerts')
         text=json.dumps(card,ensure_ascii=False)
-        for value in ('2026/09','月增率（季調）','年增率（未季調）','0.6%','3.7%','主數據與口徑完整','市場預期未納入'):
+        for value in ('2026/09','月增率（季調）','年增率（未季調）','0.6%','3.7%','市場預期未納入'):
             self.assertIn(value,text)
         self.assertNotIn('部分資料缺少',text)
         self.assertEqual(row,before)
-        self.assertEqual(sum(f['name']=='🩺 資料狀態' for f in card['fields']),1)
+        self.assertEqual(sum(f['name']=='🩺 資料狀態' for f in card['fields']),0)
 
     def test_cpi_missing_annual_value_is_explicit_without_inventing_zero(self):
         row=self.cpi();row['cpi_metrics']['annual']=None
         card=apply_delivery_format(notifier.release_embed(row),'macro_alerts')
         text=json.dumps(card,ensure_ascii=False)
-        self.assertIn('尚未確認：年增率',text)
+        self.assertIn('本次 暫缺',text)
+        self.assertIn('年增率',notifier.release_critical_missing(row))
         self.assertNotIn('0.0%',text)
         self.assertIn('0.6%',text)
 
