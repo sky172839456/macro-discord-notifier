@@ -71,9 +71,9 @@ class SlimNotificationsTests(unittest.TestCase):
                 self.assertEqual(summary.run_scheduled(monday+timedelta(minutes=5)), [])
                 self.assertEqual(send.call_args.args[0], "weekly")
 
-    def test_summary_is_short_and_does_not_add_technical_table(self):
+    def test_summary_has_six_readable_sections_without_technical_table(self):
         card = summary.build_embed("daily", self.now, {"BTC": {"price": 80000, "change": 2}}, None, [], None, {})
-        self.assertLessEqual(len(card["fields"]), 4)
+        self.assertEqual(len(card["fields"]), 6)
         self.assertNotIn("SMA", json.dumps(card))
 
     def test_calendar_excludes_routine_speeches_and_tomorrow(self):

@@ -238,12 +238,17 @@ def market_lines(market: dict[str, dict[str, float]] | None, error: str | None) 
     lines = []
     for symbol in ("BTC", "ETH"):
         item = market[symbol]
+        if item.get('change') is None:
+            lines.append(f"⚪ **{symbol}**　${item['price']:,.2f}　漲跌幅暫缺")
+            continue
         marker = "🟢" if item["change"] >= 0 else "🔴"
         lines.append(f"{marker} **{symbol}**　${item['price']:,.2f}　`{item['change']:+.2f}%`")
     return "\n".join(lines)
 
 
 def money(value: float) -> str:
+    if value is None:
+        return '暫缺'
     value = float(value)
     if abs(value) >= 1_000_000_000_000:
         return f"${value / 1_000_000_000_000:.2f}T"
@@ -266,6 +271,9 @@ def crypto_detail_lines(dashboard: dict[str, Any]) -> str:
     lines = []
     for symbol in ("BTC", "ETH"):
         item = coins[symbol]
+        if item.get('change_24h') is None:
+            lines.append(f"⚪ **{symbol}**　${item['price']:,.2f}　漲跌幅暫缺")
+            continue
         marker = "🟢" if item["change_24h"] >= 0 else "🔴"
         lines.append(
             f"{marker} **{symbol}**　${item['price']:,.2f}　`{item['change_24h']:+.2f}%`\n"
@@ -598,7 +606,7 @@ def send(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
         pass
 
 
-def run(period: str, now: datetime, dry_run: bool = False) -> None:
+def run(period: str, now: datetime, dry_run: bool = False, history=None):
     secret = "DISCORD_DAILY_SUMMARY_WEBHOOK_URL" if period == "daily" else "DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL"
     webhook = os.environ.get(secret)
     if not webhook and not dry_run:
@@ -615,6 +623,17 @@ def run(period: str, now: datetime, dry_run: bool = False) -> None:
         except Exception as exc:
             market, market_error = None, f"CoinGecko 暫時無法取得（{type(exc).__name__}）"
     events, event_error = upcoming_events(now, 3 if period == "daily" else 7)
+    if slim_policy.enabled():
+        from market_brief_v2 import add_context, news_review
+        add_context(dashboard, history, now)
+        if period == 'weekly':
+            dashboard['news_review'] = news_review(os.getenv('CRYPTO_NEWS_STATE_FILE', '.state/crypto-news.json'), now)
+        # Keep the same independently verified chair policy as the daily calendar.
+        import fed_speech_policy
+        calendar_state = {}
+        events, policy_status = fed_speech_policy.enrich(events, calendar_state, now, http_text)
+        if any(not row[2] for row in policy_status):
+            event_error = event_error or '主席政策談話尚未完整確認'
     embed = build_embed(period, now, market, market_error, events, event_error, dashboard)
     if os.environ.get("MARKET_SUMMARY_TEST") == "1":
         embed["title"] = f"🧪 測試｜{embed['title']}"
@@ -634,6 +653,10 @@ def run(period: str, now: datetime, dry_run: bool = False) -> None:
                 lines.append(f"⚠️ {symbol} 技術資料暫缺，未使用推測值。")
         embed["fields"].insert(1, {"name": "📐 BTC／ETH 技術狀態（已收盤日線）", "value": "\n\n".join(lines), "inline": False})
     send(webhook or "https://discord.invalid/webhook", embed, dry_run)
+    if slim_policy.enabled():
+        from market_brief_v2 import snapshot
+        return snapshot(dashboard, now)
+    return None
 
 
 def run_scheduled(now: datetime) -> list[str]:
@@ -657,12 +680,18 @@ def run_scheduled(now: datetime) -> list[str]:
         return []
 
     sent: list[str] = []
+    history = state.setdefault('brief_history', [])
+    def remember(result):
+        if isinstance(result, dict) and result.get('at'):
+            history.append(result)
+        cutoff = (now - timedelta(days=9)).isoformat()
+        history[:] = [r for r in history if r.get('at', '') >= cutoff]
     if local.hour >= 7 and state.get("daily") != today and not (slim_policy.enabled() and local.weekday() == 0):
-        run("daily", now)
+        remember(run("daily", now, history=history) if slim_policy.enabled() else run("daily", now))
         state["daily"] = today
         sent.append("daily")
     if local.weekday() == 0 and local.hour >= 7 and state.get("weekly") != week:
-        run("weekly", now)
+        remember(run("weekly", now, history=history) if slim_policy.enabled() else run("weekly", now))
         state["weekly"] = week
         sent.append("weekly")
     SCHEDULE_STATE.parent.mkdir(parents=True, exist_ok=True)

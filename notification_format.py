@@ -192,7 +192,10 @@ def apply_delivery_format(
         if status != "ok" and not any(f.get("name") == "🩺 資料狀態" for f in fields):
             fields.append({"name": "🩺 資料狀態", "value": source_status_text(status), "inline": False})
         card["fields"] = fields
-        card["footer"] = {"text": "台灣時間｜不構成投資建議"}
+        if channel_key in {'daily_market', 'weekly_market'}:
+            card['footer'] = dict(card.get('footer') or {'text': '台灣時間｜不構成投資建議'})
+        else:
+            card["footer"] = {"text": "台灣時間｜不構成投資建議"}
         card.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
         return card
     description = str(card.get("description", ""))
