@@ -8,6 +8,7 @@ from unittest.mock import patch, Mock
 import risk_notifier as risk
 import slim_risk
 import crypto_news_notifier as news
+import notifier
 from notification_format import apply_delivery_format, WM_COLORS
 
 
@@ -88,6 +89,9 @@ class CommunityPolishTests(unittest.TestCase):
             slim_risk.monitor(api, 'https://discord.invalid/member', self.now)
             slim_risk.monitor(api, 'https://discord.invalid/member', self.now+timedelta(minutes=5))
         log.assert_called_once()
+        card = apply_delivery_format(log.call_args.args[1], 'bot_log')
+        self.assertIn('部分來源暫缺', card['fields'][0]['value'])
+        self.assertNotIn('正常取得', json.dumps(card, ensure_ascii=False))
         api.send.assert_not_called()
         self.assertFalse(state['slim_service_sources']['Bybit']['ok'])
         self.assertTrue(state['slim_service_sources']['Coinbase']['ok'])
@@ -101,6 +105,23 @@ class CommunityPolishTests(unittest.TestCase):
             slim_risk.monitor(api, 'https://discord.invalid/member', self.now)
         self.assertTrue(state['slim_service_sources']['Bybit']['ok'])
         self.assertEqual(state['slim_service_sources']['Bybit']['count'], 0)
+
+    def test_daily_source_report_mixed_results_are_not_all_failed(self):
+        card = apply_delivery_format(notifier.full_source_health_embed([
+            ('BLS', 'HTTPError 403', False), ('BEA', '正常', True)]), 'bot_log')
+        self.assertIn('部分來源異常', card['fields'][0]['value'])
+        self.assertNotIn('❌ 所有來源失敗', json.dumps(card, ensure_ascii=False))
+        self.assertEqual(sum(f['name'] == '🩺 資料狀態' for f in card['fields']), 1)
+
+    def test_daily_source_report_all_failed_or_all_healthy_are_explicit(self):
+        for healthy, expected in [(False, '來源皆失敗'), (True, '來源回應正常')]:
+            card = apply_delivery_format(notifier.full_source_health_embed([('BLS', '狀態', healthy)]), 'bot_log')
+            self.assertIn(expected, card['fields'][0]['value'])
+
+    def test_daily_source_report_empty_checks_never_claims_healthy(self):
+        card = apply_delivery_format(notifier.full_source_health_embed([]), 'bot_log')
+        self.assertIn('尚無來源檢查結果', card['fields'][0]['value'])
+        self.assertNotIn('全部正常', card['title'])
 
 
 if __name__ == '__main__':
