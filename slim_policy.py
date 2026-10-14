@@ -190,46 +190,5 @@ def calendar_card(events, now, error=None):
 
 
 def summary_card(period, now, market, market_error, events, event_error, dashboard):
-    from notification_quality import money_musd
-    dashboard = dashboard or {}
-    weekly = period == "weekly"
-    coins = dashboard.get("weekly_crypto" if weekly else "crypto") or {}
-    lines = []
-    for symbol in ("BTC", "ETH"):
-        item = coins.get(symbol) or (market or {}).get(symbol)
-        if item:
-            change = item.get("change_7d" if weekly else "change_24h", item.get("change"))
-            suffix = f"　{change:+.2f}%" if change is not None else "　漲跌幅暫缺"
-            lines.append(f"**{symbol}**　${item['price']:,.2f}{suffix}")
-        else:
-            lines.append(f"⚠️ {symbol} 價格暫缺")
-    facts = []
-    if weekly:
-        for key, asset in (("weekly_btc_etf", "BTC"), ("weekly_eth_etf", "ETH")):
-            row = dashboard.get(key)
-            if row:
-                facts.append(f"美國現貨 {asset} ETF：{row['start_date']:%m/%d}～{row['end_date']:%m/%d} {money_musd(row['net_flow_musd'])}。")
-    else:
-        for key, asset in (("etf", "BTC"), ("eth_etf", "ETH")):
-            row = dashboard.get(key)
-            if row:
-                facts.append(f"美國現貨 {asset} ETF：{row['date']:%m/%d} {money_musd(row['net_flow_musd'])}。")
-        sentiment = dashboard.get("sentiment")
-        if sentiment and (sentiment["value"] <= 25 or sentiment["value"] >= 75):
-            facts.append(f"恐慌貪婪指數 {sentiment['value']}/100，位於極端區間；不等同價格方向訊號。")
-    errors = dashboard.get("errors") or {}
-    if errors or market_error:
-        facts = ["⚠️ 部分資料暫缺；下方僅列已取得的資料。"] + facts
-    selected = today_events(events, now, 7 if weekly else 1)
-    event_text = "\n".join(f"{e['time'].astimezone(TAIPEI):%m/%d %H:%M}｜{e['rule']['name']}" for e in selected[:3])
-    if event_error:
-        event_text += "\n⚠️ 行事曆尚未完整確認。"
-    fields = [{"name": "本週表現" if weekly else "24 小時表現", "value": "\n".join(lines), "inline": False}]
-    if facts:
-        fields.append({"name": "重點資料", "value": "\n".join(f"• {f}" for f in facts[:3]), "inline": False})
-    fields.append({"name": "未來七日重點" if weekly else "今日事件", "value": event_text.strip() or "目前未查到已排定的追蹤事件。", "inline": False})
-    fields.append({"name": "資料來源", "value": "[價格](https://www.coingecko.com/) · [BTC ETF](https://farside.co.uk/btc/) · [ETH ETF](https://farside.co.uk/eth/) · [行事曆](https://www.forexfactory.com/calendar)", "inline": False})
-    return {"title": f"{'🗓️ 本週市場重點' if weekly else '📊 每日市場重點'}｜{now.astimezone(TAIPEI):%m/%d}",
-            "description": "先看價格表現，再看資金資料與事件時間。", "fields": fields,
-            "color": 0x8E44AD if weekly else 0x3498DB,
-            "footer": {"text": "價格為查詢快照；ETF依標示日期｜不構成投資建議"}, "timestamp": now.isoformat()}
+    from market_brief_v2 import build_card
+    return build_card(period, now, market, market_error, events, event_error, dashboard)

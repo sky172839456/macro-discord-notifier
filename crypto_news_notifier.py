@@ -508,6 +508,9 @@ def run(now: datetime) -> tuple[int, int]:
         send_discord(destination, news_embed(item, observed_at=now), username)
         seen[item["id"]] = now.date().isoformat()
         history.append({"title": item["title"], "date": now.isoformat()})
+        if slim_policy.enabled():
+            from market_brief_v2 import remember_news
+            remember_news(state, item, now)
         sent += 1
 
     pending = state.setdefault("pending", [])
@@ -560,6 +563,8 @@ def run(now: datetime) -> tuple[int, int]:
                     for row in group:
                         seen[row['id']] = now.date().isoformat()
                         history.append({'title': row['title'], 'date': now.isoformat()})
+                        from market_brief_v2 import remember_news
+                        remember_news(state, row, now)
                         progress['ids'].append(row['id'])
                     pending[:] = [row for row in pending if row['id'] not in delivered]
                     save_state(state)

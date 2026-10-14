@@ -58,6 +58,15 @@ def get_json(url: str) -> Any:
     return json.loads(get_text(url))
 
 
+def finite_number(value: Any) -> float:
+    if value is None or value == "" or isinstance(value, bool):
+        raise ValueError("來源數值缺少")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("來源數值無效")
+    return number
+
+
 def crypto_snapshot() -> tuple[dict[str, dict[str, float]], dict[str, float]]:
     query = urlencode({
         "vs_currency": "usd",
@@ -72,8 +81,9 @@ def crypto_snapshot() -> tuple[dict[str, dict[str, float]], dict[str, float]]:
         row = by_id[coin_id]
         coins[symbol] = {
             "price": float(row["current_price"]),
-            "change_24h": float(row.get("price_change_percentage_24h") or 0),
-            "change_7d": float(row.get("price_change_percentage_7d_in_currency") or 0),
+            "change_24h": finite_number(row["price_change_percentage_24h"]) if row.get("price_change_percentage_24h") is not None else None,
+            "change_7d": finite_number(row["price_change_percentage_7d_in_currency"]) if row.get("price_change_percentage_7d_in_currency") is not None else None,
+            "source": "CoinGecko", "updated_at": row.get("last_updated"),
             "high_24h": float(row.get("high_24h") or 0),
             "low_24h": float(row.get("low_24h") or 0),
             "volume_24h": float(row.get("total_volume") or 0),
@@ -87,11 +97,17 @@ def crypto_snapshot() -> tuple[dict[str, dict[str, float]], dict[str, float]]:
 
 def global_snapshot() -> dict[str, float]:
     data = get_json(f"{COINGECKO}/global")["data"]
+    cap = finite_number(data["total_market_cap"]["usd"])
+    volume = finite_number(data["total_volume"]["usd"])
+    # A grossly implausible feed value must not become a prominent daily fact.
+    valid_volume = 0 <= volume <= cap * 10
     return {
-        "market_cap": float(data["total_market_cap"]["usd"]),
-        "volume_24h": float(data["total_volume"]["usd"]),
+        "market_cap": cap,
+        "volume_24h": volume if valid_volume else None,
+        "volume_note": "" if valid_volume else "來源數值異常，暫不顯示",
         "btc_dominance": float(data["market_cap_percentage"]["btc"]),
-        "market_cap_change_24h": float(data.get("market_cap_change_percentage_24h_usd") or 0),
+        "market_cap_change_24h": finite_number(data.get("market_cap_change_percentage_24h_usd")),
+        "timestamp": int(data["updated_at"]), "source": "CoinGecko",
     }
 
 
@@ -108,19 +124,31 @@ def derivatives_snapshot() -> dict[str, dict[str, float]]:
         oi = interest["data"][0]
         rate = funding["data"][0]
         result[coin] = {
-            "oi_usd": float(oi.get("oiUsd") or 0),
-            "funding_rate": float(rate.get("fundingRate") or 0) * 100,
-            "next_funding": float(rate.get("nextFundingTime") or rate.get("fundingTime") or 0),
+            "oi_usd": finite_number(oi.get("oiUsd")),
+            "oi_ccy": finite_number(oi.get("oiCcy")),
+            "funding_rate": finite_number(rate.get("fundingRate")) * 100,
+            "funding_time": int(rate["fundingTime"]),
+            "next_funding": int(rate.get("nextFundingTime") or rate["fundingTime"]),
+            "timestamp": int(oi["ts"]) / 1000,
+            "rate_timestamp": int(rate["ts"]) / 1000,
+            "scope": f"OKX {inst_id}",
         }
     return result
 
 
 def fear_greed_snapshot() -> dict[str, Any]:
-    row = get_json("https://api.alternative.me/fng/?limit=1")["data"][0]
+    rows = get_json("https://api.alternative.me/fng/?limit=2")["data"]
+    row = rows[0]
+    value = int(row["value"])
+    if not 0 <= value <= 100:
+        raise ValueError("情緒指數超出範圍")
+    previous = next((r for r in rows[1:] if int(row['timestamp']) - int(r['timestamp']) == 86400), None)
     return {
-        "value": int(row["value"]),
+        "value": value,
         "classification": str(row["value_classification"]),
         "timestamp": int(row["timestamp"]),
+        "previous_value": int(previous["value"]) if previous else None,
+        "previous_timestamp": int(previous["timestamp"]) if previous else None,
     }
 
 
@@ -141,6 +169,8 @@ def weekly_crypto_snapshot() -> dict[str, dict[str, float | str]]:
                 "low_7d": min(prices),
                 "volume_7d": sum(volumes[:7]),
                 "source": "CoinGecko",
+                "start_timestamp": float(data['prices'][0][0]) / 1000,
+                "end_timestamp": float(data['prices'][-1][0]) / 1000,
             }
             continue
         except Exception as primary_error:
@@ -176,6 +206,8 @@ def okx_weekly_crypto_snapshot(symbol: str) -> dict[str, float | str]:
         "low_7d": min(float(row[3]) for row in rows),
         "volume_7d": sum(float(row[7]) for row in rows),
         "source": "OKX",
+        "start_timestamp": int(rows[0][0]) / 1000,
+        "end_timestamp": int(rows[-1][0]) / 1000 + 86400,
     }
 
 
@@ -184,23 +216,37 @@ def weekly_sentiment_snapshot() -> dict[str, Any]:
     if len(rows) < 2:
         raise ValueError("恐慌貪婪歷史資料不足")
     current = rows[0]
-    previous = rows[-1]
+    previous = next((r for r in rows[1:] if int(current['timestamp']) - int(r['timestamp']) == 7 * 86400), None)
+    if previous is None:
+        raise ValueError("情緒指數缺少七日前同口徑資料")
+    if not all(0 <= int(r['value']) <= 100 for r in (current, previous)):
+        raise ValueError("情緒指數超出範圍")
     return {
         "value": int(current["value"]),
         "classification": str(current["value_classification"]),
         "previous_value": int(previous["value"]),
+        "timestamp": int(current["timestamp"]), "previous_timestamp": int(previous["timestamp"]),
     }
 
 
-def weekly_funding_snapshot() -> dict[str, dict[str, float]]:
+def weekly_funding_snapshot(now: datetime | None = None) -> dict[str, dict[str, float]]:
     result: dict[str, dict[str, float]] = {}
     current = derivatives_snapshot()
+    now = now or datetime.now(timezone.utc)
+    end = int(now.timestamp() * 1000)
+    start = end - 7 * 86400000
     for coin in ("BTC", "ETH"):
-        history = get_json(f"{OKX}/api/v5/public/funding-rate-history?instId={coin}-USDT-SWAP&limit=30")
-        rates = [float(row["fundingRate"]) * 100 for row in history.get("data", [])]
-        if history.get("code") != "0" or not rates:
+        history = get_json(f"{OKX}/api/v5/public/funding-rate-history?instId={coin}-USDT-SWAP&limit=400")
+        rows = {int(r['fundingTime']): r for r in history.get('data', []) if start <= int(r['fundingTime']) <= end}
+        rates = [finite_number(r.get("realizedRate") or r.get("fundingRate")) * 100 for r in rows.values()]
+        times = sorted(rows)
+        if (history.get("code") != "0" or not rates or min(rows) > start + 8 * 3600000
+                or max(rows) < end - 8 * 3600000
+                or any(b - a > 8 * 3600000 + 60000 for a, b in zip(times, times[1:]))):
             raise RuntimeError(f"OKX {coin} 資金費率歷史沒有資料")
-        result[coin] = {**current[coin], "funding_avg_7d": sum(rates) / len(rates)}
+        result[coin] = {**current[coin], "funding_avg_7d": sum(rates) / len(rates),
+                        "funding_sum_7d": sum(rates), "samples": len(rates),
+                        "start_timestamp": start / 1000, "end_timestamp": end / 1000}
     return result
 
 
@@ -364,6 +410,8 @@ def collect_dashboard(now: datetime) -> dict[str, Any]:
         dashboard["crypto"] = dashboard["stablecoins"] = None
         dashboard["errors"]["crypto"] = error_label(exc)
     if slim_policy.enabled():
+        collect("global", global_snapshot)
+        collect("derivatives", derivatives_snapshot)
         collect("sentiment", fear_greed_snapshot)
         collect("etf", etf_flow_snapshot)
         collect("eth_etf", lambda: etf_flow_snapshot(FARSIDE_ETH))
@@ -390,9 +438,8 @@ def collect_weekly_dashboard(now: datetime) -> dict[str, Any]:
             dashboard["errors"][name] = error_label(exc)
 
     collect("weekly_crypto", weekly_crypto_snapshot)
-    if not slim_policy.enabled():
-        collect("weekly_sentiment", weekly_sentiment_snapshot)
-        collect("weekly_derivatives", weekly_funding_snapshot)
+    collect("weekly_sentiment", weekly_sentiment_snapshot)
+    collect("weekly_derivatives", lambda: weekly_funding_snapshot(now))
     collect("weekly_btc_etf", lambda: weekly_etf_snapshot(FARSIDE_BTC))
     collect("weekly_eth_etf", lambda: weekly_etf_snapshot(FARSIDE_ETH))
     return dashboard
