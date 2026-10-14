@@ -54,7 +54,7 @@ class MarketBriefV2Tests(unittest.TestCase):
         self.assertIsNone(data['volume_24h'])
         text = brief.global_lines({'global': data}, self.now)
         self.assertIn('2.00兆美元', text)
-        self.assertIn('來源數值未確認', text)
+        self.assertNotIn('成交額', text)
 
     def test_stale_prices_do_not_leak_into_market_observation(self):
         for row in self.data['crypto'].values():

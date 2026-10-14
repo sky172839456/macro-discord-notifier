@@ -80,9 +80,8 @@ def global_lines(data, now):
     row = data.get('global') or {}
     if not fresh(row.get('timestamp'), now, 3) or not all(number(row.get(k)) for k in ('market_cap', 'market_cap_change_24h', 'btc_dominance')):
         return f'⚠️ 市場總覽暫缺或未更新。\n來源：[CoinGecko]({GLOBAL_URL})'
-    volume = money(row['volume_24h']) if number(row.get('volume_24h')) else '暫缺（來源數值未確認）'
     return (f'總市值 **{money(row["market_cap"])}**｜24h **{signed(row["market_cap_change_24h"])}**\n'
-            f'BTC市占 **{row["btc_dominance"]:.2f}%**｜24h成交額 {volume}\n'
+            f'BTC市占 **{row["btc_dominance"]:.2f}%**\n'
             f'資料：{stamp(row["timestamp"])}｜[CoinGecko]({GLOBAL_URL})\n市占是市值占比，並非資金流量。')
 
 
