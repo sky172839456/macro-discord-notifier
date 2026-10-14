@@ -94,12 +94,13 @@ class NotificationPreviewTests(unittest.TestCase):
         self.assertIn("機器人送出：", card["footer"]["text"])
         self.assertNotIn("author", original)
 
-    def test_delivery_formatter_marks_visible_source_failure(self):
+    def test_delivery_formatter_preserves_inline_failure_without_public_health_banner(self):
         card = apply_delivery_format(
             {"title": "資料更新", "description": "官方來源暫時無法確認"},
             "macro_analysis",
         )
-        self.assertIn("❌ 所有來源失敗", card["fields"][-1]["value"])
+        self.assertIn("官方來源暫時無法確認", card["description"])
+        self.assertEqual(card["fields"], [])
 
     def test_successful_fallback_overrides_primary_http_error(self):
         card = apply_delivery_format(
@@ -116,7 +117,7 @@ class NotificationPreviewTests(unittest.TestCase):
         self.assertIn("🟡 使用備援來源", card["fields"][-1]["value"])
         self.assertNotIn("❌ 所有來源失敗", card["fields"][-1]["value"])
 
-    def test_macro_alert_hides_normal_health_noise_but_keeps_errors(self):
+    def test_macro_alert_does_not_append_operational_health_banners(self):
         normal = apply_delivery_format(
             {"title": "總經數據", "description": "正常取得"}, "macro_alerts", source_status="ok"
         )
@@ -124,7 +125,7 @@ class NotificationPreviewTests(unittest.TestCase):
             {"title": "總經數據", "description": "來源暫時無法取得"}, "macro_alerts"
         )
         self.assertNotIn("🩺 資料狀態", [field["name"] for field in normal["fields"]])
-        self.assertIn("🩺 資料狀態", [field["name"] for field in failed["fields"]])
+        self.assertNotIn("🩺 資料狀態", [field["name"] for field in failed["fields"]])
 
     def test_news_and_exchange_cards_compact_normal_health_to_footer(self):
         for channel in ("crypto_news", "exchange_announcements"):
