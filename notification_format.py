@@ -35,6 +35,31 @@ SOURCE_STATUS = {
     "error": ("❌ 所有來源失敗", "本次無法確認資料，系統稍後自動重試"),
 }
 
+WM_COLORS = {'blue': 0x647FB5, 'purple': 0x8274B0, 'amber': 0xC39754,
+             'red': 0xB95A65, 'green': 0x598D7E}
+
+
+def wm_member_style(card, channel_key):
+    """One brand, clear categories, quiet colors; source copy stays intact."""
+    title = str(card.get('title') or '')
+    if '【恢復通知】' in title:
+        color = 'green'
+    elif channel_key in {'market_risk', 'breaking_news'} or '【重大快訊】' in title:
+        color = 'red'
+    elif '【數據提醒】' in title or '【官員談話】' in title:
+        color = 'amber'
+    elif channel_key == 'weekly_market' or '【數據公布】' in title:
+        color = 'purple'
+    else:
+        color = 'blue'
+    card['color'] = WM_COLORS[color]
+    card['author'] = {**(card.get('author') or {}), 'name': 'W先生｜WM Viewture'}
+    labels = {'官方狀態': '📌 官方狀態', '需要留意': '⚠️ 需要留意', '來源': '🔗 資料來源',
+              '查詢價格（美元）': '📊 查詢價格｜美元', '公布日期': '📅 公布日期', '台灣時間': '🕒 台灣時間'}
+    for field in card.get('fields') or []:
+        field['name'] = labels.get(field['name'], field['name'])
+    return card
+
 
 def source_status_text(status: str, detail: str | None = None) -> str:
     if status not in SOURCE_STATUS:
@@ -197,7 +222,7 @@ def apply_delivery_format(
         else:
             card["footer"] = {"text": "台灣時間｜不構成投資建議"}
         card.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
-        return card
+        return wm_member_style(card, channel_key)
     description = str(card.get("description", ""))
     if channel_key != "bot_log" and "**📌 繁中標題**" in description and "**🌐 英文原標題**" in description:
         original = description.split("**🌐 英文原標題**", 1)[1].split("\n\n", 1)[0].strip()

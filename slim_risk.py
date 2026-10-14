@@ -83,11 +83,15 @@ def price_card(coin, prices, transition, now):
 
 
 def incident_material(item):
+    if item.get('planned_maintenance'):
+        return False
     status = str(item.get("status") or item.get("state") or "").lower()
     text = str(item.get("name") or item.get("title") or "").lower()
     if status in {"scheduled", "in_progress", "completed"} or "maintenance" in text:
         return False
     impact = str(item.get("impact", "")).lower()
+    if item.get('production_incident'):
+        return True
     return impact in {"major", "critical"} or any(word in text for word in (
         "all withdrawals", "withdrawals unavailable", "withdrawals halted", "withdrawals suspended",
         "major outage", "hacked", "exploit", "security breach",
@@ -118,13 +122,17 @@ def incident_card(api, exchange, item, now):
     if excerpt:
         try:
             from crypto_news_notifier import translate_text
-            excerpt = translate_text(excerpt)
+            from notification_quality import checked_translation
+            excerpt = checked_translation(excerpt, translate_text(excerpt))
         except Exception:
             excerpt = "中文摘要暫缺，請閱讀官方原文核對影響範圍。"
     source = item.get("shortlink") or item.get("url") or "https://status.coinbase.com/"
     from notification_quality import has_chinese, time_copy
     translated_title = api.translate_title(title)
-    if not has_chinese(translated_title):
+    try:
+        from notification_quality import checked_translation
+        translated_title = checked_translation(title, translated_title)
+    except ValueError:
         translated_title = '服務事件更新'
     updated = item.get('updated_at') or item.get('endTime')
     try:
@@ -161,11 +169,23 @@ def monitor(api, webhook, now=None):
             send_discord(log, {"title": "⚠️ 風險監控部分來源暫缺", "description": "缺少兩個可比對價格來源：" + "、".join(incomplete) + "。未將來源缺失視為價格正常，亦未發布恢復通知。"}, False, "bot_log")
             state["slim_source_warning"] = day
     records = state.setdefault("slim_incidents", {})
+    health = state.setdefault('slim_service_sources', {})
+    warned = state.setdefault('slim_service_warning', {})
     for exchange, collector in (("Coinbase", lambda: api.get_json(api.STATUS_URL).get("incidents", [])[:20]), ("Bybit", api.bybit_incidents)):
         try:
             items = collector()
+            health[exchange] = {'ok': True, 'checked': now.isoformat(), 'count': len(items)}
         except Exception:
+            health[exchange] = {'ok': False, 'checked': now.isoformat()}
             print(f"警告：{exchange} 官方服務狀態暫缺。")
+            import os
+            day = now.astimezone(TAIPEI).date().isoformat()
+            log = os.getenv('DISCORD_LOG_WEBHOOK_URL')
+            if log and warned.get(exchange) != day:
+                from notifier import send_discord
+                send_discord(log, {'title': f'⚠️ {exchange}服務狀態來源暫缺',
+                                   'description': '本輪未取得官方狀態，不能據此認定服務正常。其他來源仍繼續檢查；此提示只送管理員，每日最多一次。'}, False, 'bot_log')
+                warned[exchange] = day
             continue
         for item in items:
             key = exchange + ":" + str(item.get("id") or item.get("title") or item.get("name"))

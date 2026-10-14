@@ -135,7 +135,7 @@ class ReliabilityMonitorTests(unittest.TestCase):
                 "id": "42",
                 "title": "System Maintenance",
                 "state": "scheduled",
-                "beginTime": "2026-07-28T01:00:00Z",
+                "begin": "1785200400000", "end": "1785204000000", "env": 1, "maintainType": 1,
             }]},
         }):
             items = risk_notifier.bybit_incidents()
