@@ -142,7 +142,7 @@ def infer_source_status(embed: dict[str, Any]) -> str:
 def classified_title(title: str, channel_key: str) -> str:
     """Keep the notification type readable without relying on its accent color."""
     title = str(title or "")
-    if re.match(r"^【(?:每日行情|每週行情|總經數據|風險警報|重大快訊|市場新聞|監管／ETF|總經觀察|技術分析|系統紀錄|市場資訊|數據提醒|今日行事曆|數據公布|恢復通知|新聞彙整)】", title):
+    if re.match(r"^【(?:每日行情|每週行情|總經數據|風險警報|重大快訊|市場新聞|監管／ETF|總經觀察|技術分析|系統紀錄|市場資訊|數據提醒|今日行事曆|數據公布|恢復通知|新聞彙整|官員談話)】", title):
         return title[:256]
     # Recognize our own preview wrappers while keeping the category first.
     content = re.sub(r"^(?:🧪 (?:精簡版預覽|測試)｜\s*)+", "", title)
