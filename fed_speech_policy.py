@@ -87,19 +87,25 @@ def enrich(events, state, now, fetch):
         if url == ROSTER_URL:
             match = re.search(r'<h4[^>]*>\s*\d{4} Committee Members.*?</ul>', source, re.S | re.I)
         else:
-            match = re.search(r'<h4[^>]*>Speeches</h4>(.*?)(?:<h4[^>]*>Beige Book</h4>|<h4[^>]*>Statistical Releases</h4>)', source, re.S | re.I)
+            match = re.search(r'<h4\b[^>]*>\s*Speeches\s*</h4>(.*?)(?=<h4\b[^>]*>)', source, re.S | re.I)
         if not match:
             raise ValueError('official policy section missing')
         cache[url] = {'checked': now.isoformat(), 'html': match[0]}
         return match[0]
 
+    stage = '主席名單'
     try:
         chair = parse_chair(read(ROSTER_URL), now.astimezone(NY).year)
         agendas = {}
         for year, month in sorted({(e['time'].astimezone(NY).year, e['time'].astimezone(NY).month) for e in candidates}):
             month_name = datetime(year, month, 1).strftime('%B').lower()
             url = f'https://www.federalreserve.gov/newsevents/{year}-{month_name}.htm'
-            agendas[(year, month)] = (url, parse_agenda(read(url), year, month, chair))
+            stage = f'{year}/{month:02d}談話議程'
+            section = read(url)
+            rows = parse_agenda(section, year, month, chair)
+            if not rows and re.search(r'col-xs-7', section):
+                raise ValueError('official agenda rows not recognized')
+            agendas[(year, month)] = (url, rows)
         result = []
         for event in events:
             if event not in candidates:
@@ -126,5 +132,5 @@ def enrich(events, state, now, fetch):
                 del cache[url]
         return result, statuses
     except Exception as exc:
-        statuses.append(('聯準會主席與談話議程', f'{type(exc).__name__}；未確認的官員活動不推播', False))
+        statuses.append(('聯準會主席與談話議程', f'{stage}讀取或解析失敗（{type(exc).__name__}）；未確認的官員活動不推播', False))
         return events, statuses
