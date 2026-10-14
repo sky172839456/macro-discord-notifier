@@ -57,13 +57,14 @@ class NewsCpiCopyTests(unittest.TestCase):
         self.assertNotIn('bad',state['seen'])
         self.run_news([bad,self.article('good')],state,self.now+timedelta(minutes=5)).assert_called_once()
 
-    def test_urgent_untranslated_incident_keeps_conservative_fast_path(self):
+    def test_unverified_untranslated_incident_is_retained_for_admin_review(self):
         row=self.article();row.update(title='Exchange confirms withdrawals halted after security breach',title_zh='',summary_zh_points=[])
         state={'initialized':True,'seen':{},'pending':[]}
-        send=self.run_news([row],state,self.now-timedelta(hours=1))
-        send.assert_called_once()
-        self.assertIn('a',state['seen'])
-        self.assertIn('中文標題待確認',json.dumps(send.call_args.args,ensure_ascii=False))
+        with patch.dict(os.environ, {'DISCORD_LOG_WEBHOOK_URL': ''}):
+            self.run_news([row],state,self.now-timedelta(hours=1)).assert_not_called()
+        self.assertNotIn('a',state['seen'])
+        self.assertEqual(state['safety_review'][0]['id'],'a')
+        self.assertEqual(state['pending'],[])
 
     def test_placeholder_and_day_ahead_teaser_not_qualified(self):
         row=self.article();row['summary_zh_points']=['中文摘要待確認，請閱讀原文。']

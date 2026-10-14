@@ -20,7 +20,12 @@ def enabled():
 def material_news(item):
     """A topic keyword alone never makes an article urgent."""
     text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
-    historical = ("jailed", "sentenced", "debate", "safer", "price prediction", "could", "opinion")
+    from news_editorial import safety_candidate, HISTORY, EXPLAINER, INCIDENT
+    if safety_candidate(item):
+        return True  # Candidate priority; run() applies the independent evidence gate.
+    if (re.search(HISTORY, str(item.get('title', '')), re.I) or re.search(EXPLAINER, str(item.get('title', '')), re.I)) and re.search(INCIDENT, text, re.I):
+        return False  # Explanations and historical incidents do not use the urgent path.
+    historical = ("jailed", "sentenced", "debate", "safer", "price prediction", "opinion")
     if any(term in text for term in historical):
         return False
     incident = any(term in text for term in (
@@ -76,6 +81,10 @@ def news_card(item, test=False, now=None):
     fact = "\n".join(f"• {p}" for p in points[:2])
     if not fact:
         fact = "來源未提供可確認的中文摘要，請閱讀原文；不以分類模板補寫事實。"
+    from news_editorial import short_context
+    context = short_context(item)
+    if context:
+        fact += f"\n\n**{context[0]}**\n{context[1]}"
     local = item["published"].astimezone(TAIPEI)
     timing, late = time_copy(item['published'], now or item['published'])
     return {
@@ -98,6 +107,10 @@ def digest_card(items, now):
         detail = f"\n{points[0]}" if points else "\n中文摘要尚未確認，請閱讀原文。"
         links = [(item["source"], item["url"])] + [(r["source"], r["url"]) for r in item.get("related_sources", [])]
         sources = " · ".join(f"[{name}]({url})" for name, url in links[:3])
+        from news_editorial import short_context
+        context = short_context(item)
+        if context:
+            detail += f"\n{context[0]}｜{context[1]}"
         lines.append(f"**{len(lines)+1:02d}｜{title}**{detail}\n🔗 {sources}\n📅 原文發布：{item['published'].astimezone(TAIPEI):%m/%d %H:%M}")
     return {"title": f"📰 今日新聞重點｜{now.astimezone(TAIPEI):%m/%d}",
             "description": "\n\n".join(lines), "color": 0x3498DB,
@@ -131,16 +144,24 @@ def digest_cards(items, now):
 def merge_pending(rows):
     """Keep one event, retaining multiple source links for transparency."""
     kept = []
-    from crypto_news_notifier import similar_title
+    from crypto_news_notifier import same_news_event
+    from news_editorial import member_ids, dated_terms
     for row in rows:
-        match = next((k for k in kept if similar_title(k["title"], row["title"])), None)
+        match = next((k for k in kept if same_news_event(k, row)), None)
         if match:
-            primary, secondary = (row, match) if row.get('official') and not match.get('official') else (match, row)
+            def completeness(value):
+                from notification_quality import digest_exclusion_reason
+                return (bool(value.get('official')), not bool(digest_exclusion_reason(value)),
+                        len(dated_terms(str(value.get('summary', '')))),
+                        'subject to' in str(value.get('summary', '')).lower())
+            primary, secondary = (row, match) if completeness(row) > completeness(match) else (match, row)
             if not material_news(row) and not material_news(match):
                 from notification_quality import digest_exclusion_reason
                 if digest_exclusion_reason(primary) and not digest_exclusion_reason(secondary):
                     primary, secondary = secondary, primary
             merged = dict(primary)
+            merged['merged_ids'] = [key for key in dict.fromkeys(member_ids(primary) + member_ids(secondary)) if key != primary['id']]
+            merged['event_context'] = list(dict.fromkeys([*primary.get('event_context', []), str(secondary.get('summary', '')), *secondary.get('event_context', [])]))[:12]
             refs, seen = [], {primary.get('url')}
             for ref in [*primary.get('related_sources', []), {'source': secondary['source'], 'url': secondary['url']}, *secondary.get('related_sources', [])]:
                 if ref.get('url') and ref['url'] not in seen:
