@@ -66,12 +66,12 @@ def sentiment_lines(data, now, weekly=False):
     row = data.get('weekly_sentiment' if weekly else 'sentiment') or {}
     if not fresh(row.get('timestamp'), now, 48) or not number(row.get('value')) or not 0 <= row['value'] <= 100:
         return f'⚠️ 恐慌貪婪指數暫缺或未更新。\n來源：[Alternative.me]({SENTIMENT_URL})'
-    label = {'Extreme Fear': '極度恐慌', 'Fear': '恐慌', 'Neutral': '中性', 'Greed': '貪婪', 'Extreme Greed': '極度貪婪'}.get(row.get('classification'), '分類暫缺')
+    label = {'extreme fear': '極度恐懼', 'fear': '恐懼', 'neutral': '中性', 'greed': '貪婪', 'extreme greed': '極度貪婪'}.get(' '.join(str(row.get('classification') or '').lower().split()), '分類暫缺')
     delta = row['value'] - row['previous_value'] if number(row.get('previous_value')) else None
     interval = 7 * 86400 if weekly else 86400
     if not instant(row.get('previous_timestamp')) or abs((instant(row['timestamp']) - instant(row['previous_timestamp'])).total_seconds() - interval) > 60:
         delta = None
-    return (f'**{row["value"]}/100｜{label}**　較{"七日前" if weekly else "前一日"} {signed(delta, "分")}\n'
+    return (f'恐慌貪婪指數 **{row["value"]}/100｜{label}**　較{"七日前" if weekly else "前一日"} {signed(delta, "分")}\n'
             f'資料：{stamp(row["timestamp"])}｜以比特幣情緒為主\n'
             f'來源：[Alternative.me]({SENTIMENT_URL})｜情緒不等同漲跌預測')
 

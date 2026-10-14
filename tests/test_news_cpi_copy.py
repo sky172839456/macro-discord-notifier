@@ -127,7 +127,7 @@ class NewsCpiCopyTests(unittest.TestCase):
         row['summary']='The Consumer Price Index for All Urban Consumers (CPI-U) increased 0.6 percent on a seasonally adjusted basis in September after rising 0.4 percent in August. Over the last 12 months, the all items index increased 3.7 percent before seasonal adjustment.'
         text,missing=cpi_release.details(row)
         self.assertEqual(missing,[])
-        self.assertIn('0.6%',text);self.assertIn('3.7%',text);self.assertNotIn('0.4%',text)
+        self.assertIn('0.6%',text);self.assertIn('3.7%',text);self.assertIn('前值 0.4%',text)
 
     def test_negative_cpi_change_and_unadjusted_basis_are_preserved(self):
         row=self.cpi();row.pop('cpi_metrics')

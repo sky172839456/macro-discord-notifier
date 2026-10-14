@@ -172,25 +172,29 @@ def reminder_due(event, now):
 
 def calendar_cards(events, now, error=None):
     selected = today_events(events, now)
+    if not selected:
+        return []  # Never construct an empty member calendar, even via direct callers.
     lines = [f"**{e['time'].astimezone(TAIPEI):%H:%M}｜{e['rule']['name']}**\n🔗 [官方來源]({e['rule']['source']})" for e in selected]
     if error:
         lines.append("⚠️ 部分行事曆尚未確認；未列出不代表今天沒有事件。")
+    intro = '台灣時間｜以下為今日尚未發生的追蹤事件。\n\n'
     pages, current = [], []
     for line in lines:
-        if current and len('\n\n'.join(current + [line])) > 3500:
+        if current and len(intro + '\n\n'.join(current + [line])) > 3500:
             pages.append(current)
             current = []
         current.append(line)
     if current or not pages:
         pages.append(current)
     return [{"title": f"🗓️ 今日總經行事曆｜{now.astimezone(TAIPEI):%m/%d}｜共{len(selected)}項" + (f"｜{i+1}/{len(pages)}" if len(pages) > 1 else ''),
-             "description": "\n\n".join(page), "fields": [], "color": 0x647FB5,
+             "description": intro + "\n\n".join(page), "fields": [], "color": 0x647FB5,
              "footer": {"text": "台灣時間｜核心數據與已核對主席政策談話另發一次提醒"}}
             for i, page in enumerate(pages)]
 
 
 def calendar_card(events, now, error=None):
-    return calendar_cards(events, now, error)[0]
+    cards = calendar_cards(events, now, error)
+    return cards[0] if cards else None
 
 
 def summary_card(period, now, market, market_error, events, event_error, dashboard):
