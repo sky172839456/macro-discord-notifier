@@ -184,7 +184,8 @@ def monitor(api, webhook, now=None):
             if log and warned.get(exchange) != day:
                 from notifier import send_discord
                 send_discord(log, {'title': f'⚠️ {exchange}服務狀態來源暫缺',
-                                   'description': '本輪未取得官方狀態，不能據此認定服務正常。其他來源仍繼續檢查；此提示只送管理員，每日最多一次。'}, False, 'bot_log')
+                                   'description': '本輪未取得官方狀態，不能據此認定服務正常。其他來源仍繼續檢查；此提示只送管理員，每日最多一次。',
+                                   'fields': [{'name': '🩺 資料狀態', 'value': '⚠️ 部分來源暫缺\n未取得此平台官方狀態，其他來源獨立檢查。', 'inline': False}]}, False, 'bot_log')
                 warned[exchange] = day
             continue
         for item in items:

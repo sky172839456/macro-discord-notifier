@@ -858,7 +858,19 @@ def full_source_health_embed(statuses: list[tuple[str, str, bool]]) -> dict[str,
     lines = [f"{'✅' if healthy else '❌'} **{name}**：{detail}" for name, detail, healthy in statuses]
     title = f"🟡 每日來源健康狀態｜{failures} 個來源異常" if failures else "🟢 每日來源健康狀態｜全部正常"
     lines.append("\n註：輔助行事曆只補足提醒時間；正式數據與原文連結仍以政府官方來源為準。")
-    return health_embed(title, "\n".join(lines), 0xF1C40F if failures else 0x2ECC71)
+    card = health_embed(title, "\n".join(lines), 0xF1C40F if failures else 0x2ECC71)
+    if not statuses:
+        card['title'] = '⚠️ 每日來源健康狀態｜尚無檢查結果'
+        card['color'] = 0xF1C40F
+        status_copy = '⚠️ 尚無來源檢查結果\n不能認定來源正常。'
+    elif failures == len(statuses):
+        status_copy = '❌ 本輪列出的來源皆失敗\n系統將於下次排程重試。'
+    elif failures:
+        status_copy = '⚠️ 部分來源異常\n正常與失敗項目如上列示，不等於所有來源失敗。'
+    else:
+        status_copy = '✅ 本輪列出的來源回應正常\n不代表涵蓋所有市場資料或事件。'
+    card['fields'] = [{'name': '🩺 資料狀態', 'value': status_copy, 'inline': False}]
+    return card
 
 
 def load_state() -> dict[str, Any]:
