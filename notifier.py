@@ -25,6 +25,7 @@ from pypdf import PdfReader
 
 from config import BLS_CALENDAR_URL, DAY_BEFORE_MINUTES, EVENT_RULES, MARKET_INTERPRETATIONS, OFFICIAL_FEEDS, PRE_ALERT_MINUTES, PRE_ALERT_WINDOW_MINUTES, TAIPEI_ZONE
 from notification_format import apply_delivery_format
+import fed_speech_policy
 
 STATE_FILE = Path(os.getenv("STATE_FILE", ".state/notified.json"))
 RELEASE_BACKFILL_MINUTES = 48 * 60
@@ -335,7 +336,9 @@ def fetch_public_calendar() -> tuple[list[dict[str, Any]], bool]:
 def merge_calendar_events(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     merged, seen = [], set()
     for event in sorted((item for group in groups for item in group), key=lambda item: item["time"]):
-        key = (event["rule"]["key"], event["time"].replace(second=0, microsecond=0))
+        speech = event['rule']['key'] in {'powell', 'fed_official', 'fed_chair_policy'}
+        key = (event["rule"]["key"], event["time"].replace(second=0, microsecond=0),
+               event.get('speaker') or event.get('title', '') if speech else '')
         if key not in seen:
             seen.add(key)
             merged.append(event)
@@ -416,7 +419,7 @@ def fetch_extended_calendar(now: datetime) -> tuple[list[dict[str, Any]], list[t
 def classify(text: str) -> dict[str, Any] | None:
     value = text.lower()
     # FOMC 官員發言不可被寬鬆的「fomc」關鍵字當成利率決議。
-    if re.search(r"\b(speaks?|speech|remarks|member)\b", value) and re.search(r"\b(fomc|governor|chair|fed)\b", value):
+    if re.search(r"\b(speaks?|speech|remarks|member|press conference|testimony|testifies)\b", value) and re.search(r"\b(fomc|governor|chair|fed)\b", value):
         key = "powell" if "powell" in value else "fed_official"
         return next(rule for rule in EVENT_RULES if rule["key"] == key)
     for rule in EVENT_RULES:
@@ -545,7 +548,7 @@ def parse_feed(source: str, base_url: str, provider: str) -> list[dict[str, Any]
             continue
         identifier = hashlib.sha256(f"{provider}|{title}|{link}|{date_text}".encode()).hexdigest()[:24]
         results.append({"id": identifier, "title": title, "summary": description, "url": urljoin(base_url, link),
-                        "published": published, "rule": rule})
+                        "published": published, "rule": rule, "time_label": "來源標示發布時間"})
     return results
 
 
@@ -666,6 +669,10 @@ def pre_embed(event: dict[str, Any], day_before: bool = False, minutes_until: fl
     else:
         remaining = max(1, round(minutes_until if minutes_until is not None else PRE_ALERT_MINUTES))
         description = f"距離公布約 {remaining} 分鐘\n請留意公布前後的價格波動、流動性與滑價風險。"
+    speech = event['rule'].get('key') == 'fed_chair_policy'
+    if speech:
+        title = '【官員談話】⏰ 政策談話前提醒'
+        description = description.replace('公布', '開始') + '\n這是活動提醒，不代表已經發表政策結論。'
     return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
             "title": f"{title}｜{event['rule']['name']}",
             "description": f"### {description}",
@@ -688,7 +695,7 @@ def release_schedule_times(item: dict[str, Any], calendar: list[dict[str, Any]],
 
 
 def release_embed(item: dict[str, Any], official_time: datetime | None = None,
-                  next_time: datetime | None = None) -> dict[str, Any]:
+                  next_time: datetime | None = None, detected_at: datetime | None = None) -> dict[str, Any]:
     local = (official_time or item["published"]).astimezone(TAIPEI)
     source = item["url"] or item["rule"]["source"]
     numbers = format_metrics(item["summary"], item["rule"]["key"])
@@ -699,18 +706,33 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
         {"name": "⚡ 快速判讀", "value": MARKET_INTERPRETATIONS.get(item["rule"]["key"], "請綜合市場預期與官方完整內容判讀。"), "inline": False},
     ]
     revisions = revision_lines(item["summary"])
+    if slim_policy.enabled() and revisions:
+        from notification_quality import has_chinese
+        if not has_chinese(revisions):
+            revisions = '官方含前值修正資訊；中文修正數值尚未確認，請閱讀原始資料。'
     if revisions:
         fields.append({"name": "🔄 前值與修正資訊", "value": revisions, "inline": False})
     fields.append({"name": "🔗 官方原始資料", "value": source, "inline": False})
     if slim_policy.enabled():
         fields = [f for f in fields if f["name"] not in {"⚡ 快速判讀", "📅 下次公布（台灣）"}]
+        numbers = numbers.replace('（MoM）', '').replace('（YoY）', '')
+    late = False
+    if slim_policy.enabled() and detected_at:
+        from notification_quality import time_copy
+        known_publication = official_time or (item['published'] if item.get('time_label') == '來源標示發布時間' else None)
+        if known_publication:
+            timing, late = time_copy(known_publication, detected_at, scheduled=bool(official_time))
+        else:
+            timing = f'🕒 機器人發現：{detected_at.astimezone(TAIPEI):%Y/%m/%d %H:%M}\n官方公布時間：未確認；不將發現時間當成公布時間。'
+        fields = [f for f in fields if not f['name'].startswith('🕐 本次')]
+        fields.insert(0, {'name': '🕒 發布與發現時間', 'value': timing, 'inline': False})
     return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
-            "title": f"🔴 {item['rule']['name']}｜最新數據",
+            "title": f"{'【數據公布】⏳ 補發｜' if late else '🔴 '}{item['rule']['name']}｜最新數據",
             "description": f"### 📊 本次公布結果\n{numbers}\n\n> 市場預期值不屬於官方資料；官方未提供時會明確標示「未提供」。",
             "color": 0xE74C3C,
             "fields": fields,
             "footer": {"text": "官方免費資料｜先看結果，再看解讀｜僅供資訊參考，不構成投資建議"},
-            "timestamp": item["published"].isoformat()}
+            "timestamp": (detected_at or item["published"]).isoformat()}
 
 
 OVERVIEW_ROWS = (
@@ -968,6 +990,10 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
     dynamic_calendar = merge_calendar_events(official_calendar, auxiliary_calendar)
     bls_calendar = supplement_dynamic_bls_calendar(dynamic_calendar, snapshot_calendar, now)
     calendar = merge_calendar_events(bls_calendar, extended_calendar)
+    if slim_policy.enabled():
+        calendar, speech_statuses = fed_speech_policy.enrich(calendar, state, now, http_text)
+        statuses.extend(speech_statuses)
+        errors.extend(f'{name}：{detail}' for name, detail, healthy in speech_statuses if not healthy)
     calendar_error = None if calendar else "官方與輔助行事曆皆無法讀取"
 
     releases: list[dict[str, Any]] = []
@@ -1029,7 +1055,14 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         # consume the daily key on a skip: a later source recovery or schedule
         # update must still be able to publish today's newly available events.
         if not slim_policy.enabled() or slim_policy.today_events(calendar, now):
-            send_discord(webhook, daily_embed(calendar, now, calendar_error), dry_run)
+            cards = slim_policy.calendar_cards(calendar, now, calendar_error) if slim_policy.enabled() else [daily_embed(calendar, now, calendar_error)]
+            for card in cards:
+                page_key = f'calendar-page:{digest_key}:' + hashlib.sha256(json.dumps(card, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:20]
+                if page_key not in sent:
+                    send_discord(webhook, card, dry_run)
+                    sent[page_key] = local.date().isoformat()
+                    if not dry_run:
+                        save_state(state)
             digests.append(digest_key)
 
     pending_release_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
@@ -1067,7 +1100,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
     state["overview_snapshot"] = current_overview
 
     for event in calendar:
-        if slim_policy.enabled() and event["rule"]["key"] not in slim_policy.CORE_EVENTS:
+        if slim_policy.enabled() and event["rule"]["key"] not in slim_policy.REMINDER_EVENTS:
             continue
         minutes = (event["time"] - now).total_seconds() / 60
         day_key = f"day-before:{event['id']}"
@@ -1089,7 +1122,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
             len(candidate.get("summary") or ""),
         ))
         official_time, next_time = release_schedule_times(item, calendar, now)
-        send_discord(webhook, release_embed(item, official_time, next_time), dry_run)
+        send_discord(webhook, release_embed(item, official_time, next_time, now), dry_run)
         sent[f"release-event:{event_key}:{release_day}"] = now.date().isoformat()
         for candidate in group:
             sent[f"release:{candidate['id']}"] = now.date().isoformat()

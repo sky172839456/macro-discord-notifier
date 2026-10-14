@@ -122,6 +122,26 @@ class MacroCalendarDeliveryTests(unittest.TestCase):
         self.assertEqual(self.member_calls(), [])
         self.assertEqual(self.state["digests"], [])
 
+    def test_paginated_delivery_retries_only_unsent_pages(self):
+        self.calendar = [self.event('cpi', 120)]
+        cards = [{'title': 'page1', 'description': 'first'}, {'title': 'page2', 'description': 'second'}]
+        failures = []
+
+        def send(webhook, card, *_):
+            if webhook == 'https://member.invalid' and card['title'] == 'page2' and not failures:
+                failures.append(True)
+                raise RuntimeError('temporary delivery failure')
+
+        self.send.side_effect = send
+        with patch.object(notifier.slim_policy, 'calendar_cards', return_value=cards):
+            with self.assertRaises(RuntimeError):
+                notifier.run(self.now)
+            self.assertEqual(self.state['digests'], [])
+            notifier.run(self.now + timedelta(minutes=5))
+        titles = [c.args[1]['title'] for c in self.member_calls()]
+        self.assertEqual(titles, ['page1', 'page2', 'page2'])
+        self.assertEqual(self.state['digests'], ['2026-10-14'])
+
 
 if __name__ == "__main__":
     unittest.main()

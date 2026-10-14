@@ -120,13 +120,23 @@ def incident_card(api, exchange, item, now):
             from crypto_news_notifier import translate_text
             excerpt = translate_text(excerpt)
         except Exception:
-            excerpt = "中文翻譯暫缺，以下保留官方原文：\n" + excerpt
+            excerpt = "中文摘要暫缺，請閱讀官方原文核對影響範圍。"
     source = item.get("shortlink") or item.get("url") or "https://status.coinbase.com/"
-    return {"title": f"{'✅ 服務已恢復' if resolved else '🚨 服務風險'}｜{exchange}｜{api.translate_title(title)}"[:240],
+    from notification_quality import has_chinese, time_copy
+    translated_title = api.translate_title(title)
+    if not has_chinese(translated_title):
+        translated_title = '服務事件更新'
+    updated = item.get('updated_at') or item.get('endTime')
+    try:
+        timing, late = time_copy(updated, now) if updated else ('官方更新時間：未提供', False)
+    except (TypeError, ValueError, AttributeError):
+        timing, late = '官方更新時間：未確認', False
+    timing = timing.replace('來源發布時間', '官方更新時間')
+    return {"title": f"{'✅ 服務已恢復' if resolved else '🚨 服務風險'}｜{'補發｜' if late else ''}{exchange}｜{translated_title}"[:240],
             "description": excerpt or "官方未提供詳細影響範圍，請閱讀原公告。",
             "fields": [{"name": "官方狀態", "value": api.translate_status(status), "inline": False},
                        {"name": "需要留意", "value": "恢復範圍以官方公告為準。" if resolved else "確認公告列出的平台與服務是否影響你的操作；不推測資產損失或恢復時間。", "inline": False},
-                       {"name": "官方來源與更新時間", "value": f"[閱讀公告]({source})\n{item.get('updated_at') or item.get('endTime') or '官方未提供時間'}", "inline": False}],
+                       {"name": "🔗 官方來源與更新時間", "value": f"[閱讀公告]({source})\n{timing}", "inline": False}],
             "color": 0x2ECC71 if resolved else 0xE74C3C,
             "footer": {"text": "官方原文摘錄｜不構成投資建議"}, "timestamp": now.isoformat()}
 

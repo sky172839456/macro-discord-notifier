@@ -5,6 +5,7 @@ import slim_policy
 
 import html
 import json
+import math
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -256,11 +257,13 @@ def treasury_10y_snapshot() -> dict[str, float]:
 
 def _number(value: str) -> float:
     clean = value.replace(",", "").replace("$", "").strip()
-    if not clean or clean in {"-", "—", "N/A"}:
-        return 0.0
+    if not clean or clean.upper() in {"-", "—", "N/A", "NAN", "INF"}:
+        raise ValueError('ETF total missing; not a zero flow')
     negative = clean.startswith("(") and clean.endswith(")")
     clean = clean.strip("()")
     number = float(clean)
+    if not math.isfinite(number):
+        raise ValueError('ETF total is not finite')
     return -number if negative else number
 
 
@@ -275,11 +278,11 @@ def parse_farside_latest(source: str) -> dict[str, Any]:
         if len(cells) < 2 or not re.fullmatch(r"\d{1,2}\s+[A-Za-z]{3}\s+\d{4}", cells[0]):
             continue
         date = datetime.strptime(cells[0], "%d %b %Y").replace(tzinfo=timezone.utc)
-        candidates.append((date, _number(cells[-1])))
+        candidates.append((date, cells[-1]))
     if not candidates:
         raise ValueError("Farside ETF 表格沒有可辨識的日期資料")
     date, flow = max(candidates, key=lambda item: item[0])
-    return {"date": date, "net_flow_musd": flow}
+    return {"date": date, "net_flow_musd": _number(flow)}
 
 
 def parse_farside_week(source: str, trading_days: int = 5) -> dict[str, Any]:
@@ -292,11 +295,11 @@ def parse_farside_week(source: str, trading_days: int = 5) -> dict[str, Any]:
         ]
         if len(cells) >= 2 and re.fullmatch(r"\d{1,2}\s+[A-Za-z]{3}\s+\d{4}", cells[0]):
             candidates.append((datetime.strptime(cells[0], "%d %b %Y").replace(tzinfo=timezone.utc),
-                               _number(cells[-1])))
+                               cells[-1]))
     selected = sorted(candidates, key=lambda item: item[0])[-trading_days:]
     if not selected:
         raise ValueError("Farside ETF 表格沒有可辨識的日期資料")
-    flows = [flow for _, flow in selected]
+    flows = [_number(flow) for _, flow in selected]
     return {
         "start_date": selected[0][0], "end_date": selected[-1][0],
         "net_flow_musd": sum(flows), "inflow_days": sum(flow > 0 for flow in flows),

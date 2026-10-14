@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 TAIPEI = ZoneInfo("Asia/Taipei")
 CORE_EVENTS = {"cpi", "jobs", "pce", "fomc"}
 CALENDAR_EVENTS = CORE_EVENTS | {"ppi", "gdp", "retail", "claims", "jolts", "durable"}
+REMINDER_EVENTS = CORE_EVENTS | {"fed_chair_policy"}
+CALENDAR_EVENTS |= {"fed_chair_policy"}
 
 
 def enabled():
@@ -66,39 +68,64 @@ def same_event(left, right):
     return not (a[2] and b[2] and not (a[2] & b[2]))
 
 
-def news_card(item, test=False):
+def news_card(item, test=False, now=None):
     from notification_format import clean_source_text
-    headline = clean_source_text(item.get("title_zh") or item["title"], 200)
-    points = [clean_source_text(p, 220) for p in item.get("summary_zh_points", [])
-              if not p.startswith("消息涉及")]
+    from notification_quality import headline as checked_headline, chinese_points, time_copy
+    headline = clean_source_text(checked_headline(item), 200)
+    points = [clean_source_text(p, 220) for p in chinese_points(item)]
     fact = "\n".join(f"• {p}" for p in points[:2])
     if not fact:
         fact = "來源未提供可確認的中文摘要，請閱讀原文；不以分類模板補寫事實。"
     local = item["published"].astimezone(TAIPEI)
+    timing, late = time_copy(item['published'], now or item['published'])
     return {
-        "title": ("🧪 測試｜" if test else "") + ("🚨 快訊｜" if material_news(item) else "📰 ") + headline,
+        "title": ("🧪 測試｜" if test else "") + ("🚨 快訊｜" if material_news(item) else "📰 ") + ("補發｜" if late else "") + headline,
         "description": fact,
         "url": item["url"],
         "color": 0xE74C3C if material_news(item) else 0x3498DB,
-        "fields": [{"name": "來源與發布時間", "value": f"{'官方公告' if item['official'] else '媒體報導'}｜[{item['source']}]({item['url']})｜{local:%m/%d %H:%M}（台灣）", "inline": False}],
+        "fields": [{"name": "🔗 原文與時間", "value": f"{'官方公告' if item['official'] else '媒體報導'}｜[{item['source']}]({item['url']})\n{timing}", "inline": False}],
         "footer": {"text": "不構成投資建議"},
         "timestamp": item["published"].isoformat(),
     }
 
 
 def digest_card(items, now):
+    from notification_quality import headline, chinese_points
     lines = []
     for item in items[:5]:
-        headline = str(item.get("title_zh") or item["title"])[:150].replace("\n", " ")
-        points = [str(p)[:160] for p in item.get("summary_zh_points", []) if not p.startswith("消息涉及")]
-        detail = f"\n{points[0]}" if points else ""
+        title = headline(item)[:150].replace("\n", " ")
+        points = [str(p)[:160] for p in chinese_points(item)]
+        detail = f"\n{points[0]}" if points else "\n中文摘要尚未確認，請閱讀原文。"
         links = [(item["source"], item["url"])] + [(r["source"], r["url"]) for r in item.get("related_sources", [])]
         sources = " · ".join(f"[{name}]({url})" for name, url in links[:3])
-        lines.append(f"**{len(lines)+1}｜{headline}**{detail}\n{sources}｜{item['published'].astimezone(TAIPEI):%m/%d %H:%M}")
+        lines.append(f"**{len(lines)+1:02d}｜{title}**{detail}\n🔗 {sources}\n📅 原文發布：{item['published'].astimezone(TAIPEI):%m/%d %H:%M}")
     return {"title": f"📰 今日新聞重點｜{now.astimezone(TAIPEI):%m/%d}",
             "description": "\n\n".join(lines), "color": 0x3498DB,
-            "footer": {"text": "最多五個獨立事件｜來源時間為台灣時間｜不構成投資建議"},
+            "footer": {"text": "依事件影響、來源與時效排序｜每日最多五件｜不構成投資建議"},
             "timestamp": now.isoformat()}
+
+
+def digest_groups(items, now):
+    groups, current = [], []
+    for item in items[:5]:
+        candidate = dict(item)
+        if len(digest_card([candidate], now)['description']) > 3500:
+            candidate['related_sources'] = []  # retain the primary article URL
+        if current and len(digest_card(current + [candidate], now)['description']) > 3500:
+            groups.append(current)
+            current = []
+        current.append(candidate)
+    if current:
+        groups.append(current)
+    return groups
+
+
+def digest_cards(items, now):
+    cards = [digest_card(group, now) for group in digest_groups(items, now)]
+    if len(cards) > 1:
+        for i, card in enumerate(cards):
+            card['title'] += f'｜{i+1}/{len(cards)}'
+    return cards
 
 
 def merge_pending(rows):
@@ -108,9 +135,15 @@ def merge_pending(rows):
     for row in rows:
         match = next((k for k in kept if similar_title(k["title"], row["title"])), None)
         if match:
-            refs = match.setdefault("related_sources", [])
-            if row.get("url") != match.get("url") and not any(r["url"] == row["url"] for r in refs):
-                refs.append({"source": row["source"], "url": row["url"]})
+            primary, secondary = (row, match) if row.get('official') and not match.get('official') else (match, row)
+            merged = dict(primary)
+            refs, seen = [], {primary.get('url')}
+            for ref in [*primary.get('related_sources', []), {'source': secondary['source'], 'url': secondary['url']}, *secondary.get('related_sources', [])]:
+                if ref.get('url') and ref['url'] not in seen:
+                    refs.append(ref)
+                    seen.add(ref['url'])
+            merged['related_sources'] = refs
+            kept[kept.index(match)] = merged
         else:
             kept.append(row)
     return kept
@@ -118,26 +151,46 @@ def merge_pending(rows):
 
 def today_events(events, now, days=1):
     today = now.astimezone(TAIPEI).date()
-    return [e for e in sorted(events, key=lambda e: e["time"])
-            if e["rule"]["key"] in CALENDAR_EVENTS and e["time"] >= now
-            and today <= e["time"].astimezone(TAIPEI).date() < today + timedelta(days=days)]
+    kept, seen = [], set()
+    for event in sorted(events, key=lambda e: e['time']):
+        identity = (event['rule']['key'], event['time'].replace(second=0, microsecond=0), event.get('speaker', ''))
+        if (event['rule']['key'] in CALENDAR_EVENTS and event['time'] >= now
+                and today <= event['time'].astimezone(TAIPEI).date() < today + timedelta(days=days)
+                and identity not in seen):
+            kept.append(event)
+            seen.add(identity)
+    return kept
 
 
 def reminder_due(event, now):
-    return event["rule"]["key"] in CORE_EVENTS and 0 < (event["time"]-now).total_seconds()/60 <= 27
+    return event["rule"]["key"] in REMINDER_EVENTS and 0 < (event["time"]-now).total_seconds()/60 <= 27
+
+
+def calendar_cards(events, now, error=None):
+    selected = today_events(events, now)
+    lines = [f"**{e['time'].astimezone(TAIPEI):%H:%M}｜{e['rule']['name']}**\n🔗 [官方來源]({e['rule']['source']})" for e in selected]
+    if error:
+        lines.append("⚠️ 部分行事曆尚未確認；未列出不代表今天沒有事件。")
+    pages, current = [], []
+    for line in lines:
+        if current and len('\n\n'.join(current + [line])) > 3500:
+            pages.append(current)
+            current = []
+        current.append(line)
+    if current or not pages:
+        pages.append(current)
+    return [{"title": f"🗓️ 今日總經行事曆｜{now.astimezone(TAIPEI):%m/%d}｜共{len(selected)}項" + (f"｜{i+1}/{len(pages)}" if len(pages) > 1 else ''),
+             "description": "\n\n".join(page), "fields": [], "color": 0x647FB5,
+             "footer": {"text": "台灣時間｜核心數據與已核對主席政策談話另發一次提醒"}}
+            for i, page in enumerate(pages)]
 
 
 def calendar_card(events, now, error=None):
-    selected = today_events(events, now)
-    lines = [f"**{e['time'].astimezone(TAIPEI):%H:%M}｜{e['rule']['name']}** · [來源]({e['rule']['source']})" for e in selected[:5]]
-    if error:
-        lines.append("⚠️ 部分行事曆尚未確認；未列出不代表今天沒有事件。")
-    return {"title": f"🗓️ 今日總經行事曆｜{now.astimezone(TAIPEI):%m/%d}",
-            "description": "\n".join(lines), "fields": [], "color": 0x3498DB,
-            "footer": {"text": "台灣時間｜CPI、非農、PCE、FOMC另發提醒與結果"}}
+    return calendar_cards(events, now, error)[0]
 
 
 def summary_card(period, now, market, market_error, events, event_error, dashboard):
+    from notification_quality import money_musd
     dashboard = dashboard or {}
     weekly = period == "weekly"
     coins = dashboard.get("weekly_crypto" if weekly else "crypto") or {}
@@ -155,12 +208,12 @@ def summary_card(period, now, market, market_error, events, event_error, dashboa
         for key, asset in (("weekly_btc_etf", "BTC"), ("weekly_eth_etf", "ETH")):
             row = dashboard.get(key)
             if row:
-                facts.append(f"美國現貨 {asset} ETF：{row['start_date']:%m/%d}～{row['end_date']:%m/%d} 淨{'流入' if row['net_flow_musd'] >= 0 else '流出'} {abs(row['net_flow_musd']):,.1f} 百萬美元。")
+                facts.append(f"美國現貨 {asset} ETF：{row['start_date']:%m/%d}～{row['end_date']:%m/%d} {money_musd(row['net_flow_musd'])}。")
     else:
         for key, asset in (("etf", "BTC"), ("eth_etf", "ETH")):
             row = dashboard.get(key)
             if row:
-                facts.append(f"美國現貨 {asset} ETF：{row['date']:%m/%d} 淨{'流入' if row['net_flow_musd'] >= 0 else '流出'} {abs(row['net_flow_musd']):,.1f} 百萬美元。")
+                facts.append(f"美國現貨 {asset} ETF：{row['date']:%m/%d} {money_musd(row['net_flow_musd'])}。")
         sentiment = dashboard.get("sentiment")
         if sentiment and (sentiment["value"] <= 25 or sentiment["value"] >= 75):
             facts.append(f"恐慌貪婪指數 {sentiment['value']}/100，位於極端區間；不等同價格方向訊號。")
