@@ -136,6 +136,10 @@ def merge_pending(rows):
         match = next((k for k in kept if similar_title(k["title"], row["title"])), None)
         if match:
             primary, secondary = (row, match) if row.get('official') and not match.get('official') else (match, row)
+            if not material_news(row) and not material_news(match):
+                from notification_quality import digest_exclusion_reason
+                if digest_exclusion_reason(primary) and not digest_exclusion_reason(secondary):
+                    primary, secondary = secondary, primary
             merged = dict(primary)
             refs, seen = [], {primary.get('url')}
             for ref in [*primary.get('related_sources', []), {'source': secondary['source'], 'url': secondary['url']}, *secondary.get('related_sources', [])]:

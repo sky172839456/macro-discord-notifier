@@ -23,7 +23,7 @@ class SlimNotificationsTests(unittest.TestCase):
 
     def article(self, title="Bitcoin holds steady ahead of CPI", identifier="1"):
         return {"id": identifier, "title": title, "title_zh": "比特幣在 CPI 公布前持平", "summary": title,
-                "summary_zh_points": ["來源已確認的事實。"], "source": "Media", "url": "https://example.invalid/"+identifier,
+                "summary_zh_points": ["比特幣市場動態更新。"], "source": "Media", "url": "https://example.invalid/"+identifier,
                 "published": self.now, "official": False, "category": news.category_for(title)}
 
     def test_generic_asset_name_does_not_imply_protocol_upgrade(self):

@@ -544,7 +544,22 @@ def run(now: datetime) -> tuple[int, int]:
                 progress = {'slot': digest_slot, 'ids': []}
                 state['digest_progress'] = progress
             digest_limit = max(0, 5 - len(progress['ids']))
-        for item in pending[:digest_limit]:
+        selected = pending
+        if slim_policy.enabled():
+            from notification_quality import digest_exclusion_reason
+            ready, excluded = [], []
+            for row in pending:
+                reason = digest_exclusion_reason(row)
+                # Urgent overflow keeps the existing conservative delivery path.
+                if reason and not slim_policy.material_news(row):
+                    excluded.append({'id': row['id'], 'reason': reason})
+                else:
+                    ready.append(row)
+            state['digest_quality'] = {'slot': digest_slot, 'excluded': excluded[:100]}
+            if excluded:
+                print(f'新聞品質篩選：暫緩{len(excluded)}則；原因：' + '、'.join(sorted({row['reason'] for row in excluded})))
+            selected = rank_news(ready)
+        for item in selected[:digest_limit]:
             item = dict(item)
             item["published"] = datetime.fromisoformat(item["published"])
             item["category"] = categories[item["category"]]
@@ -577,7 +592,8 @@ def run(now: datetime) -> tuple[int, int]:
                 seen[item["id"]] = now.date().isoformat()
                 history.append({"title": item["title"], "date": now.isoformat()})
             pending[:] = pending[digest_limit:]
-        state["last_digest_slot"] = digest_slot
+        if digest_messages or not slim_policy.enabled():
+            state["last_digest_slot"] = digest_slot
         sent += digest_messages
 
     cutoff = (now - timedelta(days=14)).date().isoformat()
