@@ -201,6 +201,7 @@ def apply_delivery_format(
     channel_key: str,
     *,
     source_status: str | None = None,
+    show_source_status: bool = True,
 ) -> dict[str, Any]:
     if channel_key not in CHANNEL_AUTHORS:
         raise ValueError(f"unsupported notification channel: {channel_key}")
@@ -233,7 +234,7 @@ def apply_delivery_format(
     card["author"] = author
 
     fields = list(card.get("fields") or [])
-    show_status = channel_key == "bot_log"
+    show_status = channel_key == "bot_log" and show_source_status
     if show_status and len(fields) < 25 and not any(field.get("name") == "🩺 資料狀態" for field in fields):
         fields.append({
             "name": "🩺 資料狀態",
@@ -252,7 +253,7 @@ def apply_delivery_format(
             additions.append("系統紀錄")
     elif "不構成投資建議" not in footer_text:
         additions.append("不構成投資建議")
-    if resolved_status == "ok" and not show_status and "來源正常" not in footer_text:
+    if channel_key != "bot_log" and resolved_status == "ok" and not show_status and "來源正常" not in footer_text:
         additions.append("來源正常")
     sent_at = datetime.now(timezone.utc).astimezone(TAIPEI)
     if "機器人送出：" not in footer_text:
