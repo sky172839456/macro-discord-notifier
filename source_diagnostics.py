@@ -21,8 +21,8 @@ def remember(health, key, ok, now, reason=None, **details):
     row = {'ok': ok, 'checked': now.isoformat(), **details}
     if ok:
         row['last_success'] = now.isoformat()
-    elif old.get('last_success'):
-        row['last_success'] = old['last_success']
+    elif old.get('last_success') or (old.get('ok') and old.get('checked')):
+        row['last_success'] = old.get('last_success') or old['checked']
     if reason:
         row['reason'] = reason
     health[key] = row

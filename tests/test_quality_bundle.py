@@ -194,6 +194,17 @@ class QualityBundleTests(unittest.TestCase):
         failed=remember(health,'Bybit',False,self.now+timedelta(minutes=5),'HTTP 403')
         self.assertEqual(failed['last_success'],self.now.isoformat());self.assertFalse(failed['ok']);self.assertEqual(failed['reason'],'HTTP 403')
 
+    def test_legacy_success_timestamp_migrates_on_first_failure(self):
+        health={'Bybit':{'ok':True,'checked':self.now.isoformat(),'count':0}}
+        failed=remember(health,'Bybit',False,self.now+timedelta(minutes=5),'HTTP 403')
+        self.assertEqual(failed['last_success'],self.now.isoformat())
+
+    def test_missing_coinbase_envelope_is_not_a_healthy_empty_feed(self):
+        state={};api=SimpleNamespace(load=lambda:state,save=Mock(),get_json=lambda *_:{'error':'unavailable'},STATUS_URL='https://example.invalid',bybit_incidents=lambda:[],critical_official_notices=lambda:[],send=Mock())
+        with patch.object(slim_risk,'price_sources',return_value={coin:{'CoinGecko':1,'Kraken':1} for coin in slim_risk.COINS}),patch('notifier.send_discord'):
+            slim_risk.monitor(api,'https://member.invalid',self.now)
+        self.assertFalse(state['slim_service_sources']['Coinbase']['ok']);api.send.assert_not_called()
+
     def test_price_stale_wide_spread_and_nan_not_used(self):
         def get(url):
             if 'coingecko' in url:return {'tether':{'usd':float('nan'),'last_updated_at':self.now.timestamp()},'usd-coin':{'usd':1,'last_updated_at':self.now.timestamp()-601},'dai':{'usd':1,'last_updated_at':self.now.timestamp()}}

@@ -214,7 +214,12 @@ def monitor(api, webhook, now=None):
     records = state.setdefault("slim_incidents", {})
     health = state.setdefault('slim_service_sources', {})
     warned = state.setdefault('slim_service_warning', {})
-    for exchange, collector in (("Coinbase", lambda: api.get_json(api.STATUS_URL).get("incidents", [])[:20]), ("Bybit", api.bybit_incidents)):
+    def coinbase_incidents():
+        payload = api.get_json(api.STATUS_URL)
+        if not isinstance(payload, dict) or not isinstance(payload.get('incidents'), list):
+            raise ValueError('Coinbase incidents list missing')
+        return payload['incidents'][:20]
+    for exchange, collector in (("Coinbase", coinbase_incidents), ("Bybit", api.bybit_incidents)):
         try:
             items = collector()
             if not isinstance(items, list):
