@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 from zoneinfo import ZoneInfo
 
 from notification_format import apply_delivery_format, bilingual_sections, clean_source_text, english_key_points
@@ -48,9 +49,19 @@ TITLE_TERMS = (
 
 
 def get_json(url):
-    req = Request(url, headers={"User-Agent": "crypto-risk-monitor/2.0"})
-    with urlopen(req, timeout=25) as response:
-        return json.loads(response.read().decode())
+    req = Request(url, headers={"User-Agent": "crypto-risk-monitor/2.0", 'Accept': 'application/json'})
+    # Retry transient public GET failures only. Do not work around HTTP403 or geo restrictions.
+    for attempt in range(2):
+        try:
+            with urlopen(req, timeout=12) as response:
+                return json.loads(response.read().decode())
+        except HTTPError as exc:
+            if attempt or exc.code not in {429, 500, 502, 503, 504}:
+                raise
+        except (TimeoutError, URLError):
+            if attempt:
+                raise
+        __import__('time').sleep(.25)
 
 
 def send(webhook, embed):
@@ -210,9 +221,15 @@ def official_notice_embed(item):
 def bybit_incidents():
     payload = get_json(BYBIT_STATUS_URL)
     if payload.get("retCode") != 0:
-        raise RuntimeError(f"Bybit status API: {payload.get('retMsg') or payload.get('retCode')}")
+        error = RuntimeError('Bybit public status unavailable')
+        error.public_code = payload.get('retCode', 'missing')
+        raise error
+    if not isinstance(payload.get('result'), dict) or not isinstance(payload['result'].get('list'), list):
+        raise ValueError('Bybit result.list missing')
     result = []
-    for item in payload.get("result", {}).get("list", []):
+    for item in payload['result']['list']:
+        if not isinstance(item, dict):
+            raise ValueError('Bybit incident schema invalid')
         normalized = dict(item)
         normalized["url"] = item.get('href') or "https://announcements.bybit.com/en/"
         state = item.get('state')

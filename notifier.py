@@ -364,7 +364,11 @@ def merge_calendar_events(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def _ny_schedule_time(month_day: str, clock: str, meridiem: str, year: int) -> datetime:
-    parsed = datetime.strptime(f"{month_day} {year} {clock} {meridiem}", "%B %d %Y %I:%M %p")
+    value = f"{month_day.replace('.', '')} {year} {clock} {meridiem}"
+    try:
+        parsed = datetime.strptime(value, "%B %d %Y %I:%M %p")
+    except ValueError:
+        parsed = datetime.strptime(value, "%b %d %Y %I:%M %p")
     return parsed.replace(tzinfo=NY).astimezone(timezone.utc)
 
 
@@ -490,11 +494,16 @@ def fetch_bls_html_calendar(now: datetime) -> list[dict[str, Any]]:
     for event_key, url in BLS_HTML_SCHEDULES.items():
         rule = next(rule for rule in EVENT_RULES if rule["key"] == event_key)
         source = html_to_text(http_text(url))
-        matches = list(pattern.finditer(source))
+        explicit = list(re.finditer(r'\b([A-Z][a-z]+\.? \d{1,2}),?\s+(20\d{2})\s+(\d{1,2}:\d{2})\s+(AM|PM)\b', source))
+        matches = explicit or list(pattern.finditer(source))
         if not matches:
             raise ValueError(f"missing schedule rows for {event_key}")
         for match in matches:
-            event_time = _ny_schedule_time(*match.groups(), year)
+            if explicit:
+                month_day, release_year, clock, meridiem = match.groups()
+                event_time = _ny_schedule_time(month_day, clock, meridiem, int(release_year))
+            else:
+                event_time = _ny_schedule_time(*match.groups(), year)
             events.append({
                 "id": f"bls-html-{event_key}-{event_time.isoformat()}",
                 "title": rule["name"],
@@ -535,6 +544,18 @@ def supplement_dynamic_bls_calendar(
     }
     fallback = [event for event in snapshot if event["rule"]["key"] not in confirmed]
     return merge_calendar_events(dynamic, fallback)
+
+
+def validated_bls_snapshot(now):
+    """An old bundled schedule is not current evidence; never silently renew its date."""
+    events, verified_at = load_bls_schedule_snapshot()
+    verified = datetime.strptime(verified_at, '%Y-%m-%d').date()
+    # Verification dates are recorded by the Taipei maintenance session;
+    # event times remain America/New_York, including DST.
+    age = (now.astimezone(TAIPEI).date() - verified).days
+    if not 0 <= age <= 31:
+        raise ValueError(f'年度排程快照核對日{verified_at}，距今{age}天，超過31天有效期；未採用過期排程')
+    return events, verified_at
 
 
 def element_text(node: ElementTree.Element | None) -> str:
@@ -1085,9 +1106,9 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
             errors.append(f"BLS HTML 排程：{type(html_exc).__name__} / {html_exc}")
             statuses.append(("BLS 官方 HTML 排程", f"{type(html_exc).__name__} / {html_exc}", False))
             try:
-                snapshot_calendar, verified_at = load_bls_schedule_snapshot()
+                snapshot_calendar, verified_at = validated_bls_snapshot(now)
                 recoveries.append(f"BLS 官方年度排程快照備援成功（核對日 {verified_at}）")
-                statuses.append(("BLS 官方年度排程快照", f"正常，{len(snapshot_calendar)} 個事件；核對日 {verified_at}", True))
+                statuses.append(("BLS 官方年度排程快照", f"限已核對的{len(snapshot_calendar)}項；核對日 {verified_at}；有效31天，非即時主來源或完整日程", True))
             except Exception as snapshot_exc:
                 errors.append(f"BLS 排程快照：{type(snapshot_exc).__name__} / {snapshot_exc}")
                 statuses.append(("BLS 官方年度排程快照", f"{type(snapshot_exc).__name__} / {snapshot_exc}", False))
@@ -1271,7 +1292,7 @@ def main() -> int:
                     counts["BLS_HTML_CALENDAR"] = len(fetch_bls_html_calendar(datetime.now(timezone.utc)))
                 except Exception:
                     counts["BLS_HTML_CALENDAR"] = -1
-                    snapshot, _ = load_bls_schedule_snapshot()
+                    snapshot, _ = validated_bls_snapshot(datetime.now(timezone.utc))
                     counts["BLS_SCHEDULE_SNAPSHOT"] = len(snapshot)
             for provider, url in OFFICIAL_FEEDS:
                 try:

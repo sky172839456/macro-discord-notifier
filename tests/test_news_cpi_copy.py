@@ -44,9 +44,11 @@ class NewsCpiCopyTests(unittest.TestCase):
         send=self.run_news(bad+[good],state)
         send.assert_called_once()
         self.assertEqual(set(state['seen']),{'good'})
-        self.assertEqual(len(state['pending']),5)
+        self.assertEqual(len(state['pending']),0)
+        self.assertEqual(len(state['safety_review']),5)
+        self.assertTrue(all(row['status']=='pending_review' for row in state['safety_review']))
         self.assertEqual(len(state['digest_progress']['ids']),1)
-        self.assertEqual(len(state['digest_quality']['excluded']),5)
+        self.assertEqual(len(state['digest_quality']['excluded']),0)
         self.assertNotIn('待確認',json.dumps(send.call_args.args[1],ensure_ascii=False))
 
     def test_no_qualified_news_keeps_slot_available_for_later_good_news(self):

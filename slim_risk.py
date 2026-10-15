@@ -6,29 +6,65 @@ from slim_policy import TAIPEI
 COINS = {"USDT": "tether", "USDC": "usd-coin", "DAI": "dai"}
 
 
-def price_sources(api, now):
+def price_sources(api, now, diagnostics=None):
+    from source_diagnostics import error_label
+    diagnostics = diagnostics if diagnostics is not None else {}
     result = {coin: {} for coin in COINS}
+    def record(coin, source, reason=None):
+        diagnostics[f'{coin}:{source}'] = {'ok': reason is None, 'reason': reason}
     try:
         data = api.get_json("https://api.coingecko.com/api/v3/simple/price?ids=tether,usd-coin,dai&vs_currencies=usd&include_last_updated_at=true")
         for coin, key in COINS.items():
             row = data.get(key, {})
             value, updated = row.get("usd"), row.get("last_updated_at", 0)
-            if value and 0 <= now.timestamp() - updated <= 600:
-                result[coin]["CoinGecko"] = float(value)
-    except Exception:
+            try:
+                value, age = float(value), now.timestamp() - float(updated)
+                if not math.isfinite(value) or value <= 0 or not math.isfinite(age):
+                    raise ValueError('invalid quote')
+                if not 0 <= age <= 600:
+                    record(coin, 'CoinGecko', '來源時間超過10分鐘或在未來')
+                    continue
+                result[coin]["CoinGecko"] = value
+                record(coin, 'CoinGecko')
+            except (ValueError, TypeError):
+                record(coin, 'CoinGecko', '缺少有效美元價格或來源時間')
+    except Exception as exc:
+        for coin in COINS:
+            record(coin, 'CoinGecko', error_label(exc))
         print("警告：穩定幣 CoinGecko 來源暫缺，未視為正常。")
+    def kraken_quotes(data, coins):
+        if not isinstance(data, dict) or data.get('error') or not isinstance(data.get('result'), dict):
+            raise ValueError('Kraken ticker invalid')
+        for coin in coins:
+            row = next((row for pair, row in data['result'].items()
+                        if pair.startswith(coin) and (pair.endswith('USD') or pair.endswith('ZUSD'))), None)
+            if row is None:
+                record(coin, 'Kraken', '官方回應未包含此美元交易對')
+                continue
+            try:
+                bid, ask = float(row['b'][0]), float(row['a'][0])
+                if not all(math.isfinite(v) for v in (bid, ask)) or not 0 < bid <= ask:
+                    raise ValueError('invalid bid ask')
+                if (ask-bid) / bid > .005:
+                    record(coin, 'Kraken', '買賣價差超過0.5%，不採用此報價')
+                    continue
+                result[coin]['Kraken'] = (bid + ask) / 2
+                record(coin, 'Kraken')
+            except (KeyError, ValueError, TypeError, IndexError):
+                record(coin, 'Kraken', '買賣報價格式或數值無效')
     try:
         data = api.get_json("https://api.kraken.com/0/public/Ticker?pair=USDTUSD,USDCUSD,DAIUSD")
-        if data.get("error"):
-            raise ValueError("Kraken ticker unavailable")
-        for pair, row in data.get("result", {}).items():
-            for coin in COINS:
-                if pair.startswith(coin) and (pair.endswith("USD") or pair.endswith("ZUSD")):
-                    bid, ask = float(row["b"][0]), float(row["a"][0])
-                    if 0 < bid <= ask and (ask-bid) / bid <= .005:
-                        result[coin]["Kraken"] = (bid + ask) / 2
-    except Exception:
+        kraken_quotes(data, COINS)
+    except Exception as exc:
+        for coin in COINS:
+            record(coin, 'Kraken', error_label(exc))
         print("警告：穩定幣 Kraken 來源暫缺，未視為正常。")
+        # Isolate an unavailable trading pair without counting the same venue twice.
+        for coin in COINS:
+            try:
+                kraken_quotes(api.get_json(f'https://api.kraken.com/0/public/Ticker?pair={coin}USD'), [coin])
+            except Exception as pair_exc:
+                record(coin, 'Kraken', error_label(pair_exc))
     return result
 
 
@@ -153,7 +189,12 @@ def monitor(api, webhook, now=None):
     now = now or datetime.now(timezone.utc)
     state = api.load()
     prices_state = state.setdefault("slim_prices", {})
-    sources = price_sources(api, now)
+    diagnostics = {}
+    sources = price_sources(api, now, diagnostics)
+    from source_diagnostics import remember, error_label
+    price_health = state.setdefault('slim_price_source_health', {})
+    for key, row in diagnostics.items():
+        remember(price_health, key, row['ok'], now, row['reason'])
     confirmed = [coin for coin, prices in sources.items() if len(prices) >= 2]
     for coin, prices in sources.items():
         transition = price_transition(prices_state.setdefault(coin, {}), prices, now)
@@ -166,7 +207,9 @@ def monitor(api, webhook, now=None):
         day = now.astimezone(TAIPEI).date().isoformat()
         if log and state.get("slim_source_warning") != day:
             from notifier import send_discord
-            send_discord(log, {"title": "⚠️ 風險監控部分來源暫缺", "description": "缺少兩個可比對價格來源：" + "、".join(incomplete) + "。未將來源缺失視為價格正常，亦未發布恢復通知。"}, False, "bot_log")
+            details = '\n'.join(f"• {coin}／{source}：{diagnostics.get(coin+':'+source, {}).get('reason') or '本輪未取得可採用報價'}" for coin in incomplete for source in ('CoinGecko', 'Kraken') if source not in sources[coin])
+            send_discord(log, {"title": "⚠️ 風險監控部分來源暫缺", "description": "缺少兩個可比對價格來源：" + "、".join(incomplete) + "。未將來源缺失視為價格正常，亦未發布恢復通知。\n\n"+details,
+                               'fields': [{'name': '核對時間', 'value': f'{now.astimezone(TAIPEI):%Y/%m/%d %H:%M}（台灣）｜價格與來源狀態分開判定。', 'inline': False}]}, False, "bot_log")
             state["slim_source_warning"] = day
     records = state.setdefault("slim_incidents", {})
     health = state.setdefault('slim_service_sources', {})
@@ -174,17 +217,22 @@ def monitor(api, webhook, now=None):
     for exchange, collector in (("Coinbase", lambda: api.get_json(api.STATUS_URL).get("incidents", [])[:20]), ("Bybit", api.bybit_incidents)):
         try:
             items = collector()
-            health[exchange] = {'ok': True, 'checked': now.isoformat(), 'count': len(items)}
-        except Exception:
-            health[exchange] = {'ok': False, 'checked': now.isoformat()}
-            print(f"警告：{exchange} 官方服務狀態暫缺。")
+            if not isinstance(items, list):
+                raise ValueError('official incidents list invalid')
+            remember(health, exchange, True, now, count=len(items))
+        except Exception as exc:
+            reason = error_label(exc)
+            source_status = remember(health, exchange, False, now, reason)
+            print(f"警告：{exchange} 官方服務狀態暫缺（{reason}）。")
             import os
             day = now.astimezone(TAIPEI).date().isoformat()
             log = os.getenv('DISCORD_LOG_WEBHOOK_URL')
             if log and warned.get(exchange) != day:
                 from notifier import send_discord
+                last_ok = source_status.get('last_success')
+                last_copy = datetime.fromisoformat(last_ok).astimezone(TAIPEI).strftime('%Y/%m/%d %H:%M（台灣）') if last_ok else '尚無成功紀錄'
                 send_discord(log, {'title': f'⚠️ {exchange}服務狀態來源暫缺',
-                                   'description': '本輪未取得官方狀態，不能據此認定服務正常。其他來源仍繼續檢查；此提示只送管理員，每日最多一次。',
+                                   'description': f'本輪原因：{reason}\n最後成功讀取：{last_copy}\n本輪未取得官方狀態，不能據此認定服務正常。其他來源仍繼續檢查；此提示只送管理員，每日最多一次。',
                                    'fields': [{'name': '🩺 資料狀態', 'value': '⚠️ 部分來源暫缺\n未取得此平台官方狀態，其他來源獨立檢查。', 'inline': False}]}, False, 'bot_log')
                 warned[exchange] = day
             continue

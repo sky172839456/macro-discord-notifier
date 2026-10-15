@@ -19,23 +19,8 @@ def enabled():
 
 def material_news(item):
     """A topic keyword alone never makes an article urgent."""
-    text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
-    from news_editorial import safety_candidate, HISTORY, EXPLAINER, INCIDENT
-    if safety_candidate(item):
-        return True  # Candidate priority; run() applies the independent evidence gate.
-    if (re.search(HISTORY, str(item.get('title', '')), re.I) or re.search(EXPLAINER, str(item.get('title', '')), re.I)) and re.search(INCIDENT, text, re.I):
-        return False  # Explanations and historical incidents do not use the urgent path.
-    historical = ("jailed", "sentenced", "debate", "safer", "price prediction", "opinion")
-    if any(term in text for term in historical):
-        return False
-    incident = any(term in text for term in (
-        "hacked", "exploit", "breach", "funds stolen", "withdrawals halted",
-        "withdrawals suspended", "withdrawals paused", "major outage", "depeg",
-    ))
-    decision = any(term in text for term in (
-        "approves", "approved", "rejects", "rejected", "enacted", "court orders", "files for bankruptcy",
-    )) and any(term in text for term in ("sec", "regulator", "court", "etf", "exchange"))
-    return incident or decision
+    from news_editorial import event_kind
+    return event_kind(item) in {'safety', 'decision'}
 
 
 def category(text, categories):
@@ -77,6 +62,8 @@ def news_card(item, test=False, now=None):
     from notification_format import clean_source_text
     from notification_quality import headline as checked_headline, chinese_points, time_copy
     headline = clean_source_text(checked_headline(item), 200)
+    if not item.get('official'):
+        headline = '媒體報導｜' + headline
     points = [clean_source_text(p, 220) for p in chinese_points(item)]
     fact = "\n".join(f"• {p}" for p in points[:2])
     if not fact:
@@ -104,7 +91,8 @@ def digest_card(items, now):
     for item in items[:5]:
         title = headline(item)[:150].replace("\n", " ")
         points = [str(p)[:160] for p in chinese_points(item)]
-        detail = f"\n{points[0]}" if points else "\n中文摘要尚未確認，請閱讀原文。"
+        attribution = '' if item.get('official') else '媒體報導｜'
+        detail = f"\n{attribution}{points[0]}" if points else "\n中文摘要尚未確認，請閱讀原文。"
         links = [(item["source"], item["url"])] + [(r["source"], r["url"]) for r in item.get("related_sources", [])]
         sources = " · ".join(f"[{name}]({url})" for name, url in links[:3])
         from news_editorial import short_context
