@@ -313,6 +313,11 @@ def _number(value: str) -> float:
     return -number if negative else number
 
 
+def unreported_components(cells):
+    # A dash is not proof of zero, pending reporting, or a failed request.
+    return sum(cell.strip().upper() in {'', '-', '—', 'N/A'} for cell in cells[1:-1])
+
+
 def parse_farside_latest(source: str) -> dict[str, Any]:
     rows = re.findall(r"<tr[^>]*>(.*?)</tr>", source, re.I | re.S)
     candidates = []
@@ -324,11 +329,11 @@ def parse_farside_latest(source: str) -> dict[str, Any]:
         if len(cells) < 2 or not re.fullmatch(r"\d{1,2}\s+[A-Za-z]{3}\s+\d{4}", cells[0]):
             continue
         date = datetime.strptime(cells[0], "%d %b %Y").replace(tzinfo=timezone.utc)
-        candidates.append((date, cells[-1]))
+        candidates.append((date, cells[-1], unreported_components(cells)))
     if not candidates:
         raise ValueError("Farside ETF 表格沒有可辨識的日期資料")
-    date, flow = max(candidates, key=lambda item: item[0])
-    return {"date": date, "net_flow_musd": _number(flow)}
+    date, flow, unreported = max(candidates, key=lambda item: item[0])
+    return {"date": date, "net_flow_musd": _number(flow), "unreported_components": unreported}
 
 
 def parse_farside_week(source: str, trading_days: int = 5) -> dict[str, Any]:
@@ -341,12 +346,13 @@ def parse_farside_week(source: str, trading_days: int = 5) -> dict[str, Any]:
         ]
         if len(cells) >= 2 and re.fullmatch(r"\d{1,2}\s+[A-Za-z]{3}\s+\d{4}", cells[0]):
             candidates.append((datetime.strptime(cells[0], "%d %b %Y").replace(tzinfo=timezone.utc),
-                               cells[-1]))
+                               cells[-1], unreported_components(cells)))
     selected = sorted(candidates, key=lambda item: item[0])[-trading_days:]
     if not selected:
         raise ValueError("Farside ETF 表格沒有可辨識的日期資料")
-    flows = [_number(flow) for _, flow in selected]
+    flows = [_number(flow) for _, flow, _ in selected]
     return {
+        "unreported_components": sum(count for _, _, count in selected),
         "start_date": selected[0][0], "end_date": selected[-1][0],
         "net_flow_musd": sum(flows), "inflow_days": sum(flow > 0 for flow in flows),
         "outflow_days": sum(flow < 0 for flow in flows), "trading_days": len(flows),
@@ -355,11 +361,15 @@ def parse_farside_week(source: str, trading_days: int = 5) -> dict[str, Any]:
 
 
 def etf_flow_snapshot(url: str = FARSIDE_BTC) -> dict[str, Any]:
-    return parse_farside_latest(get_text(url, referer="https://farside.co.uk/"))
+    result = parse_farside_latest(get_text(url, referer="https://farside.co.uk/"))
+    result["retrieved_at"] = datetime.now(timezone.utc).isoformat()
+    return result
 
 
 def weekly_etf_snapshot(url: str) -> dict[str, Any]:
-    return parse_farside_week(get_text(url, referer="https://farside.co.uk/"))
+    result = parse_farside_week(get_text(url, referer="https://farside.co.uk/"))
+    result["retrieved_at"] = datetime.now(timezone.utc).isoformat()
+    return result
 
 
 def liquidation_snapshot(now: datetime) -> dict[str, Any]:

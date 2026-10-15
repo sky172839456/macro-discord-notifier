@@ -114,10 +114,18 @@ def etf_lines(data, weekly):
         if number(row.get('net_flow_musd')):
             date = f'{row["start_date"]:%m/%d}～{row["end_date"]:%m/%d}' if weekly else f'{row["date"]:%m/%d}'
             count = f'｜{row.get("trading_days", "未確認")}個交易日' if weekly else ''
-            lines.append(f'**{symbol} ETF**｜{date}{count}\n{money_musd(row["net_flow_musd"])}｜[Farside]({url})')
+            flow = money_musd(row['net_flow_musd'])
+            if float(row['net_flow_musd']) == 0:
+                flow = '目前已列合計0美元'
+            context = ''
+            if instant(row.get('retrieved_at')):
+                context += f'\n查詢：{stamp(row["retrieved_at"])}'
+            if row.get('unreported_components', 0):
+                context += '\n分項含「—」；不將未列數值當作0。'
+            lines.append(f'**{symbol} ETF**｜{date}{count}\n{flow}｜[Farside]({url}){context}')
         else:
             lines.append(f'⚠️ {symbol} ETF資料暫缺｜[Farside]({url})')
-    return '\n\n'.join(lines) + '\n美國現貨ETF；依標示交易日，非今天即時流量。'
+    return '\n\n'.join(lines) + '\n美國現貨ETF；依標示交易日，非即時流量。\n來源持續更新，所列合計非最終結算。'
 
 
 def add_context(data, history, now):
@@ -237,11 +245,14 @@ def events_lines(events, now, error, weekly, budget=1000):
         selected.sort(key=lambda r: r['time'])
     else:
         selected = rows[:3]
-    source = '\n[官方行事曆](https://www.bls.gov/schedule/news_release/) · [聯準會](https://www.federalreserve.gov/newsevents/calendar.htm)'
+    source = ''
     parts = []
     for r in selected:
         part = (f'**{r["time"].astimezone(TZ):%m/%d %H:%M}｜{r["rule"]["name"]}**\n'
                 f'{EVENT_WATCH.get(r["rule"]["key"], "核對公布結果、前值與資料所屬期間。")}')
+        url = str(r['rule'].get('source') or '')
+        if url.startswith('https://'):
+            part += f'\n🔗 [官方來源]({url})'
         if len('\n\n'.join(parts + [part])) + len(source) + 100 > budget:
             break
         parts.append(part)
