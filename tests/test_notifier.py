@@ -41,18 +41,18 @@ class OfficialSourceTests(unittest.TestCase):
     def test_bls_snapshot_has_confirmed_next_cpi_and_ppi_times(self):
         events, verified_at = load_bls_schedule_snapshot()
         future = {event["rule"]["key"]: event for event in events if event["time"].isoformat() in {
-            "2026-08-12T12:30:00+00:00", "2026-08-13T12:30:00+00:00"
+            "2026-11-10T13:30:00+00:00", "2026-11-13T13:30:00+00:00"
         }}
-        self.assertEqual(verified_at, "2026-07-20")
-        self.assertEqual(future["cpi"]["time"].isoformat(), "2026-08-12T12:30:00+00:00")
-        self.assertEqual(future["ppi"]["time"].isoformat(), "2026-08-13T12:30:00+00:00")
+        self.assertEqual(verified_at, "2026-10-16")
+        self.assertEqual(future["cpi"]["time"].isoformat(), "2026-11-10T13:30:00+00:00")
+        self.assertEqual(future["ppi"]["time"].isoformat(), "2026-11-13T13:30:00+00:00")
 
     def test_bls_snapshot_overview_confirms_all_four_tracked_rows(self):
         from datetime import datetime, timezone
         events, _ = load_bls_schedule_snapshot()
-        message = macro_overview_embed(events, datetime(2026, 7, 20, tzinfo=timezone.utc))
-        self.assertIn("非農就業／失業率**｜下次公布：08/07 20:30", message["description"])
-        self.assertIn("JOLTS 職位空缺**｜下次公布：08/04 22:00", message["description"])
+        message = macro_overview_embed(events, datetime(2026, 10, 16, tzinfo=timezone.utc))
+        self.assertIn("非農就業／失業率**｜下次公布：11/06 21:30", message["description"])
+        self.assertIn("JOLTS 職位空缺**｜下次公布：12/01 23:00", message["description"])
         self.assertNotIn("非農就業／失業率**｜下次公布：待官方確認", message["description"])
         self.assertNotIn("JOLTS 職位空缺**｜下次公布：待官方確認", message["description"])
 

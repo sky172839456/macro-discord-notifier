@@ -525,11 +525,11 @@ def run(now: datetime) -> tuple[int, int]:
             if isinstance(restored.get('category'), str):
                 restored['category'] = categories[restored['category']]
             existing.append(restored)
-        from news_editorial import safety_candidate
-        safety_pending = [row for row in existing if safety_candidate(row)]
-        safety_ids = {row['id'] for row in safety_pending}
-        state['pending'][:] = [row for row in state['pending'] if row['id'] not in safety_ids]
-        candidates = route_safety_review(slim_policy.merge_pending(candidates + safety_pending), state, now)
+        # Revalidate every legacy pending item with the same gate as urgent news.
+        # Keep the existing storage until the review route has persisted its queue.
+        candidates = route_safety_review(slim_policy.merge_pending(candidates + [row for row in existing if row['id'] not in seen]), state, now)
+        ready_ids = {row['id'] for row in candidates}
+        state['pending'][:] = [row for row in state['pending'] if row['id'] in ready_ids]
         candidates = rank_news(candidates)
     immediate = [item for item in candidates if (slim_policy.material_news(item) if slim_policy.enabled() else item["category"]["priority"] in {"critical", "high"})]
     normal = [item for item in candidates if item not in immediate]
@@ -586,8 +586,7 @@ def run(now: datetime) -> tuple[int, int]:
             ready, excluded = [], []
             for row in pending:
                 reason = digest_exclusion_reason(row)
-                # Urgent overflow keeps the existing conservative delivery path.
-                if reason and not slim_policy.material_news(row):
+                if reason:
                     excluded.append({'id': row['id'], 'reason': reason})
                 else:
                     ready.append(row)
@@ -646,23 +645,20 @@ def run(now: datetime) -> tuple[int, int]:
 
 
 def route_safety_review(items, state, now):
-    """Persist unverified safety candidates separately; never consume member quota."""
+    """Shared safety/copy/date gate; preserve legacy inbox and retry semantics."""
     from news_editorial import safety_candidate, review_reason, review_card, member_ids, published_time
     queue = state.setdefault('safety_review', [])
     queue[:] = [r for r in queue if published_time(r['published']) >= now - timedelta(days=14)]
     ready = []
     for item in items:
-        if not safety_candidate(item):
-            ready.append(item)
-            continue
-        if item.get('official'):
-            item = add_translated_title(item, state, now)
-        reason = review_reason(item)
+        item = add_translated_title(item, state, now)
+        from notification_quality import digest_exclusion_reason
+        reason = review_reason(item) or digest_exclusion_reason(item)
         if not reason:
             ready.append(item)
             for old in queue:
                 if same_news_event(item, old):
-                    old['status'] = 'official_counterpart_ready'
+                    old['status'] = 'member_ready'
             continue
         stored = dict(item)
         stored['published'] = published_time(item['published']).isoformat()
@@ -679,6 +675,7 @@ def route_safety_review(items, state, now):
             queue.append(stored)
     # Official candidates already prepared for release no longer need an admin ping.
     waiting = [r for r in queue if r.get('status') == 'pending_review' and not r.get('notified_at')]
+    waiting.sort(key=lambda r: (safety_candidate(r), published_time(r['published'])), reverse=True)
     if waiting:
         log = os.getenv('DISCORD_LOG_WEBHOOK_URL')
         if log:
@@ -688,12 +685,12 @@ def route_safety_review(items, state, now):
             try:
                 send_discord(log, review_card(batch, now), '新聞核對｜管理員')
             except Exception as exc:
-                print(f'警告：資安核對提示暫未送達（{type(exc).__name__}）；已保留佇列，稍後重試。')
+                print(f'警告：新聞核對提示暫未送達（{type(exc).__name__}）；已保留佇列，稍後重試。')
             else:
                 for row in batch:
                     row['notified_at'] = now.isoformat()
         else:
-            print(f'警告：有{len(waiting)}項資安候選待核對，管理員Webhook未配置；未改送成員。')
+            print(f'警告：有{len(waiting)}項新聞候選待核對，管理員Webhook未配置；未改送成員。')
     save_state(state)
     return ready
 

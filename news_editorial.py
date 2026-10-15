@@ -15,20 +15,50 @@ ALIASES = {
     'standard_chartered': ('standard chartered',),
 }
 ASSET_CONTEXT = r'\b(?:crypto|bitcoin|btc|ether(?:eum)?|defi|token|wallet|stablecoin|usdt|usdc|tether|circle|exchange|ledger|trezor|metamask|coinbase|binance|bybit|bitget|kraken|okx)\b'
-INCIDENT = r'\b(?:hack(?:ed)?|exploit(?:ed)?|breach|drain(?:ed)?|phishing|stolen|stole|theft|wrench attacks?|knife assault|tamper(?:ed|ing)?|implants?|compromis(?:ed|e)|vulnerability|malicious firmware|supply.chain attack|withdrawals? (?:halted|suspended|paused)|major outage|depeg)\b'
+INCIDENT = r'\b(?:hack(?:s|ed|ing)?|exploit(?:s|ed|ation)?|breach(?:es)?|drain(?:s|ed)?|phishing|stolen|stole|thefts?|wrench attacks?|knife assault|tamper(?:ed|ing)?|implants?|compromis(?:ed|e)|vulnerabilit(?:y|ies)|malicious firmware|supply.chain attacks?|withdrawals? (?:halted|suspended|paused)|major outage|depeg(?:s|ged)?)\b'
 HISTORY = r'\b(?:jailed|sentenced|anniversary|last year|years? ago|historical|retrospective)\b'
 EXPLAINER = r'^(?:why|how|what|can|opinion[:：]|explained[:：])\b|\b(?:explainer|price prediction|could reach|will hit|safest wallets?)\b'
-ACTION = r'\b(?:pull|recall|halt(?:ed|s)?|suspend(?:ed|s)?|paus(?:e|ed|es)|warn(?:s|ed)?|confirm(?:s|ed)?|report(?:s|ed)?|discover(?:s|ed)?|detect(?:s|ed)?|investigat\w*|claimed|lost|steal|stole|stolen|drain(?:ed)?|hack(?:ed)?|exploit(?:ed)?|breach|implants?|tamper(?:ed|ing)?|major outage|depeg)\b'
+ACTION = r'\b(?:pull|recall|halt(?:ed|s)?|suspend(?:ed|s)?|paus(?:e|ed|es)|warn(?:s|ed)?|confirm(?:s|ed)?|report(?:s|ed)?|discover(?:s|ed)?|detect(?:s|ed)?|investigat\w*|claimed|lost|steal|stole|stolen|drain(?:s|ed)?|hack(?:s|ed|ing)?|exploit(?:s|ed)?|breach(?:es)?|implants?|tamper(?:ed|ing)?|major outage|depeg(?:s|ged)?)\b'
 
 
 def text(item):
     return f"{item.get('title', '')} {item.get('summary', '')}"
 
 
+def current_safety_evidence(item):
+    """A report containing an explicit new incident still enters the safety inbox."""
+    return any(re.search(r'\b(?:new|today|ongoing|active|currently)\b', sentence, re.I)
+               and re.search(INCIDENT, sentence, re.I)
+               and re.search(ACTION, sentence, re.I)
+               for sentence in re.split(r'[.;!?]', text(item)))
+
+
+def retrospective(item):
+    title = str(item.get('title', ''))
+    period = re.search(r'\b(?:q[1-4]|quarter(?:ly)?|annual|year.end|year.in.review)\b', title, re.I)
+    review = re.search(r'\b(?:reports?|reviews?|recaps?|losses|hacks|exploits|statistics|total|push)\b', title, re.I)
+    historical = bool(re.search(HISTORY, title, re.I) or (period and review))
+    return historical and not current_safety_evidence(item)
+
+
+def event_kind(item):
+    """One shared urgency decision; background keywords cannot bypass review."""
+    title = str(item.get('title', ''))
+    if retrospective(item):
+        return 'retrospective'
+    if safety_candidate(item):
+        return 'safety'
+    if re.search(EXPLAINER, title, re.I):
+        return 'ordinary'
+    decision = re.search(r'\b(?:approves?|approved|rejects?|rejected|enacted|court orders|files for bankruptcy)\b', title, re.I)
+    authority = re.search(r'\b(?:sec|regulator|court|etf|exchange|law|bill)\b', title, re.I)
+    return 'decision' if decision and authority else 'ordinary'
+
+
 def safety_candidate(item):
     """Protect current asset-safety candidates before generic relevance/exclusions."""
     title, body = str(item.get('title', '')), text(item)
-    if re.search(HISTORY, title, re.I) or re.search(EXPLAINER, title, re.I):
+    if retrospective(item) or (re.search(EXPLAINER, title, re.I) and not current_safety_evidence(item)):
         return False
     if not re.search(INCIDENT, title, re.I) and not re.search(r'\b(?:pull|recall|halt\w*|suspend\w*|paus\w*|resellers?)\b', title, re.I):
         return False  # A background attack mentioned in a tax story is not a new incident.
@@ -206,15 +236,22 @@ def review_card(rows, now):
         links = [(row['source'], row['url']), *[(r['source'], r['url']) for r in row.get('related_sources', [])]]
         refs = ' · '.join(f'[{re.sub(r"[\[\]]", "", name)}]({url})' for name, url in links[:3])
         lines.append(f"**{len(lines)+1:02d}｜{safe_title}**\n⚠️ {row['review_reason']}\n🔗 {refs}\n📅 原文：{published_time(row['published']).astimezone(TAIPEI):%Y/%m/%d %H:%M}（台灣）")
-    return {'title': '🛡️ 資安候選待核對｜僅管理員', 'description': '\n\n'.join(lines),
+    safety = all(safety_candidate(row) for row in rows)
+    return {'title': '🛡️ 資安候選待核對｜僅管理員' if safety else '🔎 新聞內容待核對｜僅管理員', 'description': '\n\n'.join(lines),
             'color': 0x7566A5, 'footer': {'text': '候選不等於已確認事件｜未送成員、不占每日五件名額'},
-            'fields': [{'name': '🩺 資料狀態', 'value': '待核對｜僅確認來源有此報導，未確認損失、範圍與處置。', 'inline': False}],
+            'fields': [{'name': '🩺 資料狀態', 'value': '🔎 待核對｜僅確認來源有此報導；各項日期、翻譯或事件證據仍須依上列原因核對。', 'inline': False}],
             'timestamp': now.isoformat()}
 
 
 def short_context(item):
     """Deterministic reading guidance, not generated investment conclusions."""
     body = text(item)
+    from news_policy_context import policy_context
+    policy = policy_context(item)
+    if policy:
+        return ('📅 政策時程', policy['copy'])
+    if retrospective(item):
+        return ('📌 回顧範圍', '這是原文所述期間的回顧統計，不能當作剛發生的新攻擊；損失口徑與範圍請對照原報告。')
     if re.search(r'\b(?:aum|assets under management|etf assets)\b', body, re.I):
         return ('📌 閱讀重點', '資產管理規模包含價格變動等因素，不能直接當作新增淨流入，也不等於公司自有資金買幣。')
     key = event_key(item)

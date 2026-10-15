@@ -17,8 +17,14 @@ def numeric_values(text):
               'million': 10**6, 'm': 10**6, 'thousand': 1000, 'k': 1000,
               '億': 10**8, '萬': 10000, '千': 1000}
     pattern = r'(?<![A-Za-z0-9_.])([-+]?\d[\d,]*(?:\.\d+)?)\s*(billion\b|million\b|thousand\b|bn\b|[bmk]\b|億|萬|千)?'
-    return {Decimal(n.replace(',', '')) * scales.get((scale or '').lower(), 1)
-            for n, scale in re.findall(pattern, str(text), re.I)}
+    values = {Decimal(n.replace(',', '')) * scales.get((scale or '').lower(), 1)
+              for n, scale in re.findall(pattern, str(text), re.I)}
+    # A spelled-out month in an explicit source date may legitimately become
+    # a Chinese numeric month. Never treat a bare month mention as a quantity.
+    from news_policy_context import MONTHS
+    for month in re.findall(r'\b('+'|'.join(MONTHS)+r')\s+\d{1,2},?\s+20\d{2}\b', str(text), re.I):
+        values.add(Decimal(MONTHS[month.lower()]))
+    return values
 
 
 def checked_translation(source, translated):
@@ -26,9 +32,28 @@ def checked_translation(source, translated):
         raise ValueError('Chinese translation unavailable')
     if not numeric_values(translated).issubset(numeric_values(source)):
         raise ValueError('translation changed numeric facts')
+    from news_policy_context import DATE, parse_date
+    source_dates = {parse_date(raw) for raw in re.findall(DATE, source, re.I)}
+    for year, month, day in re.findall(r'(20\d{2})年(\d{1,2})月(\d{1,2})日', translated):
+        from datetime import date
+        try:
+            translated_date = date(int(year), int(month), int(day))
+        except ValueError:
+            raise ValueError('invalid translated date')
+        if translated_date not in source_dates:
+            raise ValueError('translation changed date facts')
     if re.search(r'\bCHAD\b', source) and re.search(r'preferred|stock', source, re.I):
         translated = translated.replace('乍得', 'CHAD').replace('查德', 'CHAD')
-    return polish_chinese(source, translated)
+    result = polish_chinese(source, translated)
+    if numeric_values(result) != numeric_values(translated):
+        raise ValueError('copy edit changed numeric facts')
+    # Fail closed when the subject is a fund flow, but the copy calls it a price move.
+    if re.search(r'\b(?:etfs?|funds?)\b', source, re.I) and re.search(r'\b(?:outflows?|inflows?)\b|\bshed\s+\$', source, re.I):
+        if re.search(r'(?:ETF|基金|資金).{0,12}(?:下跌|上漲|跌幅|漲幅)', result) and not re.search(r'\b(?:price|shares?|stocks?|nav)\b', source, re.I):
+            raise ValueError('fund flows translated as price moves')
+    if re.search(r'\bexploits?\b', source, re.I) and re.search(r'\b(?:hacks?|breaches|crypto)\b', source, re.I) and '利用' in result and '漏洞利用' not in result:
+        raise ValueError('ambiguous security exploit translation')
+    return result
 
 
 def polish_chinese(source, translated):
@@ -44,6 +69,9 @@ def polish_chinese(source, translated):
     translated = re.sub(r'\b([A-Z][A-Z0-9]{1,9})\s*[（(]\s*\1\s*[)）]', r'\1', translated)
     if re.search(r'\$\s*\d|\bUSD\b|U\.S\. dollars?', source, re.I) and not re.search(r'(?:[CA]|HK|NZ|SG)\$|\b(?:CAD|AUD|HKD|NZD|SGD)\b', source, re.I):
         translated = re.sub(r'(?<![A-Za-z$])\$\s*(\d[\d,]*(?:\.\d+)?)\s*(億|萬|千)?(?:\s*美元)?', lambda m: m[1]+(m[2] or '')+'美元', translated)
+        translated = re.sub(r'(\d[\d,]*(?:\.\d+)?\s*(?:億|萬|千)?)\s*\$(?:\s*美元)?', r'\1美元', translated)
+    if re.search(r'(?:億|萬|千)\s*[$€£]|[$€£]\s*[$€£]', translated):
+        raise ValueError('ambiguous currency format')
     translated = re.sub(r'(\d)\s+%', r'\1%', translated)
     translated = re.sub(r'(\d)\s+(億|萬|千)', r'\1\2', translated)
     return translated
@@ -63,6 +91,10 @@ def digest_exclusion_reason(item):
         return '中文摘要未確認'
     if all(re.search(r'待確認|尚未確認|請閱讀原文|仍需核對|來源已確認的事實', point) for point in points):
         return '摘要僅為提示'
+    from news_policy_context import policy_context
+    context = policy_context(item)
+    if context and context['reason']:
+        return context['reason']
     return None
 
 
