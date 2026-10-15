@@ -75,6 +75,18 @@ class MemberStatusTests(unittest.TestCase):
             self.assertTrue(notifier.deliver_release('https://member.invalid',row,None,None,self.now,False,alerts))
             self.assertEqual(send.call_args.args[0],'https://member.invalid')
 
+    def test_blocked_admin_notice_names_exact_missing_metric_without_generic_banner(self):
+        row = complete(self.now); row['cpi_metrics']['annual'] = None
+        with patch.object(notifier, 'send_discord') as send:
+            self.assertFalse(notifier.deliver_release('https://member.invalid', row, None, None, self.now, False, {}))
+        call = send.call_args
+        card = apply_delivery_format(call.args[1], 'bot_log', **call.kwargs)
+        text = json.dumps(card, ensure_ascii=False)
+        self.assertIn('美國消費者物價指數（CPI）｜年增率', text)
+        self.assertIn('未送成員公告', text)
+        for generic in ('資料狀態', '資料缺少', '資料缺失', '來源正常'):
+            self.assertNotIn(generic, text)
+
     def test_unknown_period_and_basis_block_but_real_zero_is_valid(self):
         row = complete(self.now); row['cpi_metrics']['monthly'] = 0
         self.assertEqual(notifier.release_critical_missing(row),[])

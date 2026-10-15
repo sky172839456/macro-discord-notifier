@@ -665,8 +665,9 @@ def revision_lines(summary: str) -> str | None:
 
 
 def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool,
-                 channel_key: str = "macro_alerts") -> None:
-    card = apply_delivery_format(embed, channel_key)
+                 channel_key: str = "macro_alerts", *,
+                 show_source_status: bool = True) -> None:
+    card = apply_delivery_format(embed, channel_key, show_source_status=show_source_status)
     username = "總經系統監控" if channel_key == "bot_log" else "總經數據快訊"
     payload = {"username": username, "embeds": [card], "allowed_mentions": {"parse": []}}
     if dry_run:
@@ -721,12 +722,11 @@ def deliver_release(webhook: str, item: dict[str, Any], official_time,
                     'title': '數據結果暫緩發布｜' + item['rule']['name'],
                     'description': '未送成員公告；主數據確認後再於後續自然掃描嘗試。',
                     'fields': [
-                        {'name': '🩺 資料狀態', 'value': '⚠️ 部分資料缺少\n本次主數據尚未確認，已擋下成員結果公告。', 'inline': False},
-                        {'name': '待確認項目', 'value': '、'.join(missing), 'inline': False},
+                        {'name': '🔎 待核對項目', 'value': item['rule']['name'] + '｜' + '、'.join(missing), 'inline': False},
                         {'name': '官方來源', 'value': item.get('url') or item['rule']['source'], 'inline': False},
                     ],
                     'timestamp': now.isoformat(),
-                }, dry_run, 'bot_log')
+                }, dry_run, 'bot_log', show_source_status=False)
                 health_alerts[key] = local.date().isoformat()
             except Exception as exc:
                 # Never mark the release delivered if the private log fails.
