@@ -29,7 +29,11 @@ class EtfUpdateContextTests(unittest.TestCase):
     def test_partial_row_has_specific_quiet_context_without_generic_error_banner(self):
         row=source.parse_farside_latest(self.html);row['retrieved_at']=self.now.isoformat()
         text=brief.etf_lines({'etf':row,'eth_etf':row},False)
-        for expected in ('目前已列合計0美元','查詢：10/15 08:00','分項含「—」','來源持續更新','非最終結算','Farside'): self.assertIn(expected,text)
+        for expected in ('來源目前合計 **0美元**','交易日：10/14','查詢時間：10/15 08:00（台灣）','部分基金未列數值','非最終結果','https://farside.co.uk/btc/'): self.assertIn(expected,text)
+        self.assertEqual(text.count('交易日：'),1)
+        self.assertEqual(text.count('查詢時間：'),1)
+        self.assertEqual(text.count('部分基金未列數值'),1)
+        self.assertNotIn('分項含',text)
         self.assertNotIn('資料缺少',text)
         self.assertNotIn('資料狀態',text)
         self.assertNotIn('淨流入0',text)
@@ -39,7 +43,32 @@ class EtfUpdateContextTests(unittest.TestCase):
         self.assertEqual(row['unreported_components'],0)
         text=brief.etf_lines({'etf':row},False)
         self.assertNotIn('分項含',text)
-        self.assertIn('非最終結算',text)
+        self.assertNotIn('部分基金未列數值',text)
+        self.assertIn('非最終結果',text)
+
+    def test_different_trade_dates_and_query_times_stay_with_each_asset(self):
+        from datetime import date, timedelta
+        btc={'date':date(2026,10,14),'net_flow_musd':0,'retrieved_at':self.now.isoformat()}
+        eth={'date':date(2026,10,13),'net_flow_musd':-18.8,'retrieved_at':(self.now+timedelta(minutes=1)).isoformat()}
+        text=brief.etf_lines({'etf':btc,'eth_etf':eth},False)
+        self.assertIn('交易日：10/14',text);self.assertIn('交易日：10/13',text)
+        self.assertIn('查詢時間：10/15 08:00',text);self.assertIn('查詢時間：10/15 08:01',text)
+        self.assertIn('淨流出1,880萬美元',text)
+
+    def test_missing_asset_is_not_zero_and_missing_query_time_not_invented(self):
+        from datetime import date
+        text=brief.etf_lines({'etf':{'date':date(2026,10,14),'net_flow_musd':0}},False)
+        self.assertNotIn('查詢時間：',text)
+        self.assertIn('**ETH ETF**｜資料暫缺',text)
+        self.assertEqual(text.count('0美元'),1)
+
+    def test_weekly_period_counts_and_shared_notice_are_preserved(self):
+        row=source.parse_farside_week(self.html.replace('<td>0.0</td></tr>','<td>2.2</td></tr>'))
+        row['retrieved_at']=self.now.isoformat()
+        text=brief.etf_lines({'weekly_btc_etf':row,'weekly_eth_etf':row},True)
+        self.assertIn('統計期間：',text);self.assertIn('個交易日',text)
+        self.assertEqual(text.count('統計期間：'),1)
+        self.assertEqual(text.count('部分基金未列數值'),1)
 
     def test_weekly_counts_unreported_cells_and_preserves_total(self):
         row=source.parse_farside_week(self.html.replace('<td>0.0</td></tr>','<td>2.2</td></tr>'))
