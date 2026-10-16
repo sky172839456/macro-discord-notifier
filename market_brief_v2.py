@@ -107,25 +107,47 @@ def price_lines(data, market, now, weekly):
 
 
 def etf_lines(data, weekly):
-    lines = []
+    rows = []
     for key, symbol, url in (('weekly_btc_etf' if weekly else 'etf', 'BTC', 'https://farside.co.uk/btc/'),
                              ('weekly_eth_etf' if weekly else 'eth_etf', 'ETH', 'https://farside.co.uk/eth/')):
         row = data.get(key) or {}
         if number(row.get('net_flow_musd')):
-            date = f'{row["start_date"]:%m/%d}～{row["end_date"]:%m/%d}' if weekly else f'{row["date"]:%m/%d}'
-            count = f'｜{row.get("trading_days", "未確認")}個交易日' if weekly else ''
+            period = f'統計期間：{row["start_date"]:%m/%d}～{row["end_date"]:%m/%d}' if weekly else f'交易日：{row["date"]:%m/%d}'
+            count = f'｜{row["trading_days"]}個交易日' if weekly and row.get('trading_days') is not None else ''
             flow = money_musd(row['net_flow_musd'])
             if float(row['net_flow_musd']) == 0:
-                flow = '目前已列合計0美元'
-            context = ''
-            if instant(row.get('retrieved_at')):
-                context += f'\n查詢：{stamp(row["retrieved_at"])}'
-            if row.get('unreported_components', 0):
-                context += '\n分項含「—」；不將未列數值當作0。'
-            lines.append(f'**{symbol} ETF**｜{date}{count}\n{flow}｜[Farside]({url}){context}')
+                flow = '0美元'
+            import re
+            flow = re.sub(r'(\d)\.0+(?=(?:億|萬)?美元)', r'\1', flow)
+            query = f'查詢時間：{stamp(row["retrieved_at"])}（台灣）' if instant(row.get('retrieved_at')) else ''
+            rows.append({'symbol': symbol, 'url': url, 'period': period, 'query': query,
+                         'count': count, 'flow': flow, 'partial': bool(row.get('unreported_components', 0))})
         else:
-            lines.append(f'⚠️ {symbol} ETF資料暫缺｜[Farside]({url})')
-    return '\n\n'.join(lines) + '\n美國現貨ETF；依標示交易日，非即時流量。\n來源持續更新，所列合計非最終結算。'
+            rows.append({'symbol': symbol, 'url': url})
+    valid = [row for row in rows if 'flow' in row]
+    shared_period = len(valid) == 2 and valid[0]['period'] == valid[1]['period']
+    shared_query = len(valid) == 2 and valid[0]['query'] and valid[0]['query'] == valid[1]['query']
+    header = ['美國現貨ETF｜非即時流量']
+    if shared_period:
+        header.append(valid[0]['period'])
+    if shared_query:
+        header.append(valid[0]['query'])
+    lines = ['\n'.join(header)]
+    for row in rows:
+        if 'flow' not in row:
+            lines.append(f'⚠️ **{row["symbol"]} ETF**｜資料暫缺\n[查看來源]({row["url"]})')
+            continue
+        context = []
+        if not shared_period:
+            context.append(row['period'])
+        if not shared_query and row['query']:
+            context.append(row['query'])
+        lines.append(f'**{row["symbol"]} ETF**｜來源目前合計 **{row["flow"]}**{row["count"]}'
+                     + ('\n'+'\n'.join(context) if context else '') + f'\n[查看來源]({row["url"]})')
+    if valid:
+        partial = '部分基金未列數值，' if any(row['partial'] for row in valid) else ''
+        lines.append(f'📝 {partial}以上合計仍可能更新，非最終結果。')
+    return '\n\n'.join(lines)
 
 
 def add_context(data, history, now):
