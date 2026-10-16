@@ -19,6 +19,9 @@ def enabled():
 
 def material_news(item):
     """A topic keyword alone never makes an article urgent."""
+    import news_auto_recovery as auto
+    if auto.enabled():
+        return auto.material_news(item)
     from news_editorial import event_kind
     return event_kind(item) in {'safety', 'decision'}
 
@@ -68,6 +71,8 @@ def news_card(item, test=False, now=None):
     fact = "\n".join(f"• {p}" for p in points[:2])
     if not fact:
         fact = "來源未提供可確認的中文摘要，請閱讀原文；不以分類模板補寫事實。"
+    if item.get('summary_basis') == 'headline':
+        fact += '\n-# 本則依原文標題整理；完整背景請見來源。'
     from news_editorial import short_context
     context = short_context(item)
     if context:
@@ -75,7 +80,7 @@ def news_card(item, test=False, now=None):
     local = item["published"].astimezone(TAIPEI)
     timing, late = time_copy(item['published'], now or item['published'])
     return {
-        "title": ("🧪 測試｜" if test else "") + ("🚨 快訊｜" if material_news(item) else "📰 ") + ("補發｜" if late else "") + headline,
+        "title": ("🧪 測試｜" if test else "") + ("🚨 快訊｜" if material_news(item) else "📰 ") + (f"{item['category'].get('label', '市場動態')}｜" if item.get('auto_copy_version') else '') + ("補發｜" if late else "") + headline,
         "description": fact,
         "url": item["url"],
         "color": 0xE74C3C if material_news(item) else 0x3498DB,
@@ -93,6 +98,10 @@ def digest_card(items, now):
         points = [str(p)[:160] for p in chinese_points(item)]
         attribution = '' if item.get('official') else '媒體報導｜'
         detail = f"\n{attribution}{points[0]}" if points else "\n中文摘要尚未確認，請閱讀原文。"
+        if item.get('summary_basis') == 'headline':
+            detail += '\n-# 依原文標題整理；完整背景請見來源。'
+        if item.get('auto_copy_version'):
+            detail = f"\n{item['category'].get('label', '市場動態')}" + detail
         links = [(item["source"], item["url"])] + [(r["source"], r["url"]) for r in item.get("related_sources", [])]
         sources = " · ".join(f"[{name}]({url})" for name, url in links[:3])
         from news_editorial import short_context

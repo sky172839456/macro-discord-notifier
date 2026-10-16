@@ -45,6 +45,9 @@ jobs:
         run: python -m unittest discover -s tests -q
       - name: Validate slim production templates
         run: python slim_preview.py --dry-run
+      - name: Check free news translation providers without Discord sends
+        if: inputs.audit_only == true
+        run: python news_recovery_check.py
       - name: Check public source diagnostics and quality fixtures without sending
         if: inputs.audit_only == true
         run: |

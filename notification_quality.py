@@ -78,13 +78,15 @@ def polish_chinese(source, translated):
 
 
 def digest_exclusion_reason(item):
+    import news_auto_recovery as auto
     try:
-        title = checked_translation(str(item.get('title') or ''), str(item.get('title_zh') or ''))
+        checker = auto.checked_copy if auto.enabled() else checked_translation
+        title = checker(str(item.get('title') or ''), str(item.get('title_zh') or ''))
     except ValueError:
         return '中文標題未確認'
     if re.search(r'待確認|尚未確認|請閱讀原文', title):
         return '中文標題未確認'
-    if re.fullmatch(r'(?:your\s+)?day[- ]ahead look(?:\s+for\s+.+)?[.!]?', str(item.get('summary') or '').strip(), re.I):
+    if not auto.enabled() and re.fullmatch(r'(?:your\s+)?day[- ]ahead look(?:\s+for\s+.+)?[.!]?', str(item.get('summary') or '').strip(), re.I):
         return '摘要僅為導讀'
     points = chinese_points(item)
     if not points:
@@ -93,7 +95,7 @@ def digest_exclusion_reason(item):
         return '摘要僅為提示'
     from news_policy_context import policy_context
     context = policy_context(item)
-    if context and context['reason']:
+    if context and context['reason'] and not auto.enabled():
         return context['reason']
     return None
 
@@ -112,7 +114,7 @@ def headline(item):
 
 def chinese_points(item):
     points = []
-    source = str(item.get('summary') or item.get('title') or '')
+    source = str(item.get('summary_check_source') or item.get('summary') or item.get('title') or '')
     for point in item.get('summary_zh_points') or []:
         if str(point).startswith('消息涉及'):
             continue
