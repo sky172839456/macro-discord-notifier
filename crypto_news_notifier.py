@@ -98,7 +98,7 @@ def http_text(url: str, attempts: int = 3) -> str:
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            with urlopen(Request(url, headers=HTTP_HEADERS), timeout=25) as response:
+            with urlopen(Request(url, headers=HTTP_HEADERS), timeout=10 if 'api.mymemory.translated.net' in url else 25) as response:
                 return response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
         except Exception as exc:
             last_error = exc
@@ -171,8 +171,13 @@ def utf8_prefix(value: str, limit: int = 450) -> str:
 
 
 def translate_text(value: str) -> str:
+    import news_auto_recovery as auto
+    if auto.enabled() and len(clean_text(value).encode('utf-8')) > 450:
+        raise ValueError('translation sentence exceeds provider limit')
+    if auto.enabled():
+        return auto.translate(clean_text(value))
     query = urlencode({"q": utf8_prefix(clean_text(value)), "langpair": "en|zh-TW", "mt": "1"})
-    payload = json.loads(http_text(f"{TRANSLATION_URL}?{query}", attempts=2))
+    payload = json.loads(http_text(f"{TRANSLATION_URL}?{query}", attempts=1 if auto.enabled() else 2))
     translated = clean_text(str(payload.get("responseData", {}).get("translatedText", "")))
     if not translated or translated.lower() == value.lower():
         raise ValueError("translation result unavailable")
@@ -199,6 +204,13 @@ def summary_points(value: str) -> list[str]:
 
 
 def add_translated_title(item: dict[str, Any], state: dict[str, Any], now: datetime) -> dict[str, Any]:
+    import news_auto_recovery as auto
+    if auto.enabled():
+        if item.get('auto_copy_version') == 1:
+            from notification_quality import digest_exclusion_reason
+            if not digest_exclusion_reason(item):
+                return dict(item)
+        return auto.enrich(item, state, now)
     cache = state.setdefault("translation_cache", {})
     key = hashlib.sha256(item["title"].encode()).hexdigest()[:20]
     cached = cache.get(key)
@@ -317,6 +329,9 @@ def similar_title(left: str, right: str) -> bool:
 
 def same_news_event(left, right):
     if slim_policy.enabled():
+        import news_auto_recovery as auto
+        if auto.enabled() and auto.same_article(left, right):
+            return True
         from news_editorial import equivalent
         return equivalent(left, right, similar_title)
     return similar_title(left['title'], right['title'])
@@ -492,7 +507,8 @@ def run(now: datetime) -> tuple[int, int]:
     if not any(count >= 0 for _, count, _ in statuses):
         raise RuntimeError("所有加密新聞來源皆無法讀取")
     seen = state.setdefault("seen", {})
-    recent_cutoff = now - timedelta(hours=RECENT_HOURS)
+    import news_auto_recovery as auto
+    recent_cutoff = now - timedelta(hours=24 if auto.enabled() else RECENT_HOURS)
     candidates = [item for item in items if item["published"] >= recent_cutoff and item["id"] not in seen]
     # 跨輪次也保留已發送標題，避免同事件換媒體網址後再次即時推送。
     history = [row for row in state.get("headline_history", []) if row.get("date", "") >= (now - timedelta(hours=24)).isoformat()]
@@ -646,6 +662,9 @@ def run(now: datetime) -> tuple[int, int]:
 
 def route_safety_review(items, state, now):
     """Shared safety/copy/date gate; preserve legacy inbox and retry semantics."""
+    import news_auto_recovery as auto
+    if auto.enabled():
+        return auto.route(items, state, now)
     from news_editorial import safety_candidate, review_reason, review_card, member_ids, published_time
     queue = state.setdefault('safety_review', [])
     queue[:] = [r for r in queue if published_time(r['published']) >= now - timedelta(days=14)]
