@@ -222,5 +222,67 @@ class AutoNewsTests(unittest.TestCase):
         self.assertEqual(len(state['seen']), 5)
         self.run_news(rows, state, now+timedelta(minutes=5)).assert_not_called()
 
+    def retry_state(self, rows):
+        state = {'initialized':True, 'seen':{}, 'pending':[], 'news_auto_retry':{}}
+        for row in rows:
+            stored = dict(row)
+            stored['published'] = row['published'].isoformat()
+            state['news_auto_retry'][row['id']] = {'item':stored, 'attempts':1,
+                                                  'next_at':self.now.isoformat()}
+        # Match the real cross-workflow JSON cache, not just in-memory objects.
+        return json.loads(json.dumps(state))
+
+    def ordinary(self, n=1):
+        return self.ready(key=f'normal-{n}', title=f'BlackRock Bitcoin ETF assets rise {n}%',
+                          title_zh=f'BlackRock Bitcoin ETF 資產增加{n}%',
+                          summary=f'BlackRock Bitcoin ETF assets rise {n}%',
+                          summary_zh_points=[f'BlackRock Bitcoin ETF 資產增加{n}%'])
+
+    def test_json_retry_route_restores_datetime_without_mutating_source(self):
+        state = self.retry_state([self.ordinary()])
+        original = state['news_auto_retry']['normal-1']['item']
+        result, send = self.route([], state)
+        self.assertIsInstance(result[0]['published'], datetime)
+        self.assertIsNotNone(result[0]['published'].tzinfo)
+        self.assertIsInstance(original['published'], str)
+        send.assert_not_called()
+
+    def test_json_retry_enters_pending_before_digest_without_error(self):
+        state = self.retry_state([self.ordinary()])
+        self.run_news([], state).assert_not_called()
+        self.assertEqual(len(state['pending']), 1)
+        self.assertEqual(state['pending'][0]['published'], self.now.isoformat())
+        self.assertEqual(state['seen'], {})
+        json.dumps(state)  # Recovered runtime datetimes must not leak to storage.
+
+    def test_json_retry_mixed_pending_survives_next_round_and_daily_cap(self):
+        state = self.retry_state([self.ordinary(n) for n in range(2,7)])
+        pending = self.ordinary(1)
+        state['pending'] = [{**pending, 'published':self.now.isoformat(), 'category':'regulation'}]
+        self.run_news([], state).assert_not_called()
+        state = json.loads(json.dumps(state))
+        self.run_news([], state, self.now+timedelta(hours=1))
+        self.assertEqual(len(state['seen']), 5)
+        self.assertEqual(len(state['digest_progress']['ids']), 5)
+        self.assertEqual(len(state['pending']), 1)
+        state = json.loads(json.dumps(state))
+        self.run_news([], state, self.now+timedelta(hours=1, minutes=5)).assert_not_called()
+
+    def test_json_retry_urgent_send_uses_restored_date_and_only_marks_success(self):
+        state = self.retry_state([self.ready()])
+        send = self.run_news([], state)
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(send.call_args.args[0], 'https://member.invalid')
+        self.assertEqual(set(state['seen']), {'a'})
+        self.assertEqual(state['headline_history'][0]['published'], self.now.isoformat())
+        json.dumps(state)
+
+    def test_json_retry_urgent_failure_never_marks_delivery(self):
+        state = self.retry_state([self.ready()])
+        with self.assertRaisesRegex(RuntimeError, 'send failed'):
+            self.run_news([], state, error=RuntimeError('send failed'))
+        self.assertEqual(state['seen'], {})
+        self.assertEqual(state.get('headline_history', []), [])
+
 
 if __name__ == '__main__': unittest.main()

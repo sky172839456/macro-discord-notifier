@@ -257,6 +257,9 @@ def route(items, state, now):
     for key in ignored_keys:
         ignored.pop(key)
     rows = [*items, *legacy, *[r['item'] for r in retries.values()]]
+    # JSON caches restore dates as strings. Every processing path (including
+    # cached ready copy) must return datetimes; serialize only when storing.
+    rows = [{**row, 'published': published_time(row['published'])} for row in rows]
     rows = news.slim_policy.merge_pending(rows)
     ready, attempts, failed = [], 0, 0
     for item in rank_news(rows):
