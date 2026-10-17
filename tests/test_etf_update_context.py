@@ -29,10 +29,11 @@ class EtfUpdateContextTests(unittest.TestCase):
     def test_partial_row_has_specific_quiet_context_without_generic_error_banner(self):
         row=source.parse_farside_latest(self.html);row['retrieved_at']=self.now.isoformat()
         text=brief.etf_lines({'etf':row,'eth_etf':row},False)
-        for expected in ('來源目前合計 **0美元**','交易日：10/14','查詢時間：10/15 08:00（台灣）','部分基金未列數值','非最終結果','https://farside.co.uk/btc/'): self.assertIn(expected,text)
+        for expected in ('等候數據更新','交易日：10/14','查詢時間：10/15 08:00（台灣）','來源尚有基金未列數值','不代表資金沒有流入或流出','https://farside.co.uk/btc/'): self.assertIn(expected,text)
         self.assertEqual(text.count('交易日：'),1)
         self.assertEqual(text.count('查詢時間：'),1)
-        self.assertEqual(text.count('部分基金未列數值'),1)
+        self.assertEqual(text.count('來源尚有基金未列數值'),1)
+        self.assertNotIn('0美元',text)
         self.assertNotIn('分項含',text)
         self.assertNotIn('資料缺少',text)
         self.assertNotIn('資料狀態',text)
@@ -45,6 +46,28 @@ class EtfUpdateContextTests(unittest.TestCase):
         self.assertNotIn('分項含',text)
         self.assertNotIn('部分基金未列數值',text)
         self.assertIn('非最終結果',text)
+
+    def test_complete_explicit_zero_remains_a_number(self):
+        row=source.parse_farside_latest(self.html.replace('<td>-</td>','<td>0.0</td>'))
+        text=brief.etf_lines({'etf':row,'eth_etf':row},False)
+        self.assertEqual(text.count('來源目前合計 **0美元**'),2)
+        self.assertNotIn('等候數據更新',text)
+
+    def test_incomplete_zero_does_not_hide_other_asset_flow(self):
+        pending=source.parse_farside_latest(self.html)
+        ready=source.parse_farside_latest(self.html.replace('<td>-</td>','<td>(18.8)</td>').replace('<td>0.0</td></tr>','<td>(18.8)</td></tr>'))
+        text=brief.etf_lines({'etf':pending,'eth_etf':ready},False)
+        self.assertIn('**BTC ETF**｜**等候數據更新**',text)
+        self.assertIn('淨流出1,880萬美元',text)
+        self.assertNotIn('0美元',text)
+        self.assertEqual(text.count('交易日：'),1)
+
+    def test_weekly_incomplete_zero_does_not_claim_a_complete_flat_week(self):
+        row=source.parse_farside_week(self.html)
+        text=brief.etf_lines({'weekly_btc_etf':row,'weekly_eth_etf':row},True)
+        self.assertIn('統計期間：',text)
+        self.assertIn('等候數據更新',text)
+        self.assertNotIn('0美元',text)
 
     def test_different_trade_dates_and_query_times_stay_with_each_asset(self):
         from datetime import date, timedelta

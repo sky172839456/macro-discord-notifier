@@ -121,17 +121,23 @@ def etf_lines(data, weekly):
             flow = re.sub(r'(\d)\.0+(?=(?:億|萬)?美元)', r'\1', flow)
             query = f'查詢時間：{stamp(row["retrieved_at"])}（台灣）' if instant(row.get('retrieved_at')) else ''
             rows.append({'symbol': symbol, 'url': url, 'period': period, 'query': query,
-                         'count': count, 'flow': flow, 'partial': bool(row.get('unreported_components', 0))})
+                         'count': count, 'flow': flow, 'partial': bool(row.get('unreported_components', 0)),
+                         # A source total of zero with unlisted fund cells cannot
+                         # establish a complete zero net flow. Keep its date and
+                         # retrieval time, but do not present a numeric aggregate.
+                         'pending_zero': float(row['net_flow_musd']) == 0 and
+                                         bool(row.get('unreported_components', 0))})
         else:
             rows.append({'symbol': symbol, 'url': url})
-    valid = [row for row in rows if 'flow' in row]
-    shared_period = len(valid) == 2 and valid[0]['period'] == valid[1]['period']
-    shared_query = len(valid) == 2 and valid[0]['query'] and valid[0]['query'] == valid[1]['query']
+    available = [row for row in rows if 'flow' in row]
+    valid = [row for row in available if not row['pending_zero']]
+    shared_period = len(available) == 2 and available[0]['period'] == available[1]['period']
+    shared_query = len(available) == 2 and available[0]['query'] and available[0]['query'] == available[1]['query']
     header = ['美國現貨ETF｜非即時流量']
     if shared_period:
-        header.append(valid[0]['period'])
+        header.append(available[0]['period'])
     if shared_query:
-        header.append(valid[0]['query'])
+        header.append(available[0]['query'])
     lines = ['\n'.join(header)]
     for row in rows:
         if 'flow' not in row:
@@ -142,8 +148,12 @@ def etf_lines(data, weekly):
             context.append(row['period'])
         if not shared_query and row['query']:
             context.append(row['query'])
-        lines.append(f'**{row["symbol"]} ETF**｜來源目前合計 **{row["flow"]}**{row["count"]}'
+        status = ('**等候數據更新**' if row['pending_zero'] else
+                  f'來源目前合計 **{row["flow"]}**{row["count"]}')
+        lines.append(f'**{row["symbol"]} ETF**｜{status}'
                      + ('\n'+'\n'.join(context) if context else '') + f'\n[查看來源]({row["url"]})')
+    if any(row.get('pending_zero') for row in rows):
+        lines.append('📝 來源尚有基金未列數值，暫不列合計；不代表資金沒有流入或流出。')
     if valid:
         partial = '部分基金未列數值，' if any(row['partial'] for row in valid) else ''
         lines.append(f'📝 {partial}以上合計仍可能更新，非最終結果。')
