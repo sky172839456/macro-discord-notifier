@@ -26,7 +26,7 @@ CHANNEL_AUTHORS = {
     "technical_analysis": "MARKET ANALYSIS｜技術分析",
     "daily_market": "MARKET BRIEF｜市場摘要",
     "weekly_market": "MARKET BRIEF｜市場摘要",
-    "bot_log": "SYSTEM HEALTH｜機器人紀錄",
+    "bot_log": "管家工作簿｜系統紀錄",
 }
 
 SOURCE_STATUS = {

@@ -49,9 +49,9 @@ class ReliabilityMonitorTests(unittest.TestCase):
                 )
             send.assert_called_once()
             card = send.call_args.args[1]
-            self.assertIn("全部正常", card["title"])
+            self.assertIn("已啟用流程完成", card["title"])
             for name in realtime_health.MONITOR_LABELS:
-                self.assertIn(name, card["description"])
+                self.assertIn(realtime_health.MONITOR_DISPLAY[name], card["description"])
 
     def test_daily_health_never_labels_skipped_monitor_as_normal(self):
         results = {
