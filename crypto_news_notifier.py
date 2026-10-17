@@ -206,7 +206,7 @@ def summary_points(value: str) -> list[str]:
 def add_translated_title(item: dict[str, Any], state: dict[str, Any], now: datetime) -> dict[str, Any]:
     import news_auto_recovery as auto
     if auto.enabled():
-        if item.get('auto_copy_version') == 1:
+        if item.get('auto_copy_version') == 2:
             from notification_quality import digest_exclusion_reason
             if not digest_exclusion_reason(item):
                 return dict(item)
@@ -290,11 +290,18 @@ def parse_feed(source: str, source_config: dict[str, Any]) -> list[dict[str, Any
         published = parse_date(date_value)
         combined = f"{title} {summary}"
         category = category_for(combined)
+        financial = None
+        if source_config.get('stream') == 'finance':
+            from news_streams import finance_topic
+            financial = finance_topic({'title': title, 'summary': summary})
+            if not financial:
+                continue
+            category = financial['category']
         if slim_policy.enabled():
             from news_editorial import safety_candidate
             if safety_candidate({'title': title, 'summary': summary}):
                 category = dict(CATEGORIES[0])
-        if not title or not link or not published or not category or not is_relevant(combined, source_config["official"]):
+        if not title or not link or not published or not category or (not financial and not is_relevant(combined, source_config["official"])):
             continue
         url = canonical_url(link)
         identifier = hashlib.sha256(f"{source_config['name']}|{url}|{title}".encode()).hexdigest()[:24]
@@ -302,6 +309,7 @@ def parse_feed(source: str, source_config: dict[str, Any]) -> list[dict[str, Any
             "id": identifier, "title": title, "summary": summary[:700], "url": url,
             "published": published, "source": source_config["name"],
             "official": source_config["official"], "category": category,
+            **({'stream': 'finance', 'transmission': financial['copy']} if financial else {}),
         })
     return items
 
@@ -408,6 +416,8 @@ def send_discord(webhook: str, embed: dict[str, Any] | list[dict[str, Any]],
         "加密重大快訊": "breaking_news",
         "監管與 ETF 雷達": "regulation_etf",
         "新聞核對｜管理員": "bot_log",
+        "金融風向": "finance_news",
+        "新聞系統｜服務紀錄": "bot_log",
     }.get(username, "crypto_news")
     embeds = embed if isinstance(embed, list) else [embed]
     cards = [apply_delivery_format(card, channel_key) for card in embeds]
@@ -499,6 +509,9 @@ def connectivity_embed(count: int, statuses: list[tuple[str, int, str | None]], 
 
 
 def run(now: datetime) -> tuple[int, int]:
+    if os.getenv('NEWS_SPLIT_STREAMS') == '1':
+        from news_streams import run as run_streams
+        return run_streams(now)
     webhook = os.environ.get("DISCORD_CRYPTO_NEWS_WEBHOOK_URL")
     if not webhook:
         raise RuntimeError("缺少 DISCORD_CRYPTO_NEWS_WEBHOOK_URL")
@@ -545,7 +558,9 @@ def run(now: datetime) -> tuple[int, int]:
         # Keep the existing storage until the review route has persisted its queue.
         candidates = route_safety_review(slim_policy.merge_pending(candidates + [row for row in existing if row['id'] not in seen]), state, now)
         ready_ids = {row['id'] for row in candidates}
-        state['pending'][:] = [row for row in state['pending'] if row['id'] in ready_ids]
+        refreshed = {row['id']: row for row in candidates}
+        state['pending'][:] = [serialize_pending({**row, **refreshed[row['id']]})
+                               for row in state['pending'] if row['id'] in ready_ids]
         candidates = rank_news(candidates)
     immediate = [item for item in candidates if (slim_policy.material_news(item) if slim_policy.enabled() else item["category"]["priority"] in {"critical", "high"})]
     normal = [item for item in candidates if item not in immediate]
@@ -658,6 +673,15 @@ def run(now: datetime) -> tuple[int, int]:
     }
     save_state(state)
     return len(items), sent
+
+
+def serialize_pending(item):
+    from notification_quality import published_time
+    row = dict(item)
+    row['published'] = published_time(row['published']).isoformat()
+    if isinstance(row.get('category'), dict):
+        row['category'] = row['category']['key']
+    return row
 
 
 def route_safety_review(items, state, now):

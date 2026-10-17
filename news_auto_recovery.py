@@ -113,11 +113,21 @@ def translate(source):
 
 
 def material_news(item):
+    if item.get('stream') == 'finance':
+        from news_streams import CRYPTO
+        title = str(item.get('title', ''))
+        if not re.search(CRYPTO, title, re.I):
+            return bool(re.search(r'\b(?:imposes? tariffs?|enacts?|announces? emergency|bank collapse|capital controls?|halts? withdrawals?)\b', title, re.I))
     from news_editorial import event_kind
     kind = event_kind(item)
     if kind != 'safety':
         return kind == 'decision'
     title = str(item.get('title', ''))
+    body = title + ' ' + str(item.get('summary', ''))
+    progress = re.search(r'\b(?:new vulnerability|new exploit|active exploit|ongoing attack|additional (?:victims|users|wallets)|recall\w*|halt\w*|suspend\w*|resum\w*|restor\w*|loss(?:es)? (?:rise|rises|revised)|confirms? (?:a )?(?:new )?(?:breach|exploit))\b', body, re.I)
+    background = re.search(r'\b(?:scammer gets scammed|scammer (?:lost|loses)|victim profile|questioning (?:its|their) response|early .{0,25}warnings|months before|years ago|deserved more action)\b', body, re.I)
+    if background and not progress:
+        return False
     # Products referring to an older security incident do not become alerts.
     if re.search(r'\b(?:costs?|ships?|unveils?|introduces?|new (?:wallet|device))\b', title, re.I):
         return bool(re.search(r'\b(?:halt\w*|recall\w*|confirms? breach|confirms? exploit)\b', title, re.I))
@@ -131,6 +141,12 @@ def selection_reason(item, now):
     if published > now + timedelta(minutes=5):
         return '來源發布時間異常'
     title = str(item.get('title', ''))
+    from news_streams import finance_topic
+    if item.get('stream') == 'finance':
+        return None if finance_topic(item) else '缺少金融傳導事件'
+    if re.search(r'\b(?:recap|conference roundup|conference highlights)\b', title, re.I):
+        if not re.search(r'\b(?:approves?|enacts?|signs? (?:a |the )?(?:law|bill|deal)|halts?|recalls?|launches? (?:a |the )?(?:fund|mainnet)|announces? (?:a |the )?(?:ban|acquisition))\b', title, re.I):
+            return '活動回顧，未見重要新進展'
     if re.search(r'\b(?:asia express|finance redefined|weekly roundup|weekly recap|what happened in crypto today|daily roundup|news roundup)\b', title, re.I):
         return '多事件回顧彙整'
     from news_editorial import retrospective
@@ -184,9 +200,15 @@ def same_article(left, right):
 
 
 def source_sentences(value):
-    # Do not cut a sentence at the provider's byte boundary or at decimal points.
-    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z“"\d])|[\r\n]+', value.strip())
-    return [s.strip() for s in sentences if s.strip() and len(s.encode('utf-8')) <= 450][:2]
+    # Short RSS paragraphs need no English splitting at all. Preserve names.
+    value = value.strip()
+    if len(value.encode('utf-8')) <= 450:
+        return [value] if value else []
+    protected = re.sub(r'\b(?:Mt|Dr|Mr|Mrs|Ms|Prof|Inc|Corp|Ltd)\.|\b(?:[A-Z]\.){2,}|(?<=\d)\.(?=\d)',
+                       lambda m: m.group().replace('.', '\u2024'), value)
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z“"\d])|[\r\n]+', protected)
+    return [s.replace('\u2024', '.').strip() for s in sentences
+            if s.strip() and len(s.encode('utf-8')) <= 450][:2]
 
 
 def enrich(item, state, now):
@@ -194,7 +216,7 @@ def enrich(item, state, now):
     cache = state.setdefault('translation_cache', {})
 
     def translate(source):
-        key = 'auto-v1-' + hashlib.sha256(source.encode()).hexdigest()[:24]
+        key = 'auto-v2-' + hashlib.sha256(source.encode()).hexdigest()[:24]
         cached = cache.get(key) or {}
         if cached.get('source') == source:
             try:
@@ -214,6 +236,9 @@ def enrich(item, state, now):
         return enriched
     points = []
     summary = str(item.get('summary') or '')
+    # Reject an incomplete publisher clause rather than invent its missing verb.
+    if re.search(r'\b(?:as|while|because|although)\s+(?:banks?|companies|payment firms?|investors)(?:\s+and\s+(?:banks?|companies|payment firms?|investors))*\s*[.!]?$', summary, re.I):
+        summary = ''
     for sentence in source_sentences(summary):
         if re.fullmatch(r'(?:your )?day[- ]ahead look.*', sentence, re.I):
             continue
@@ -231,7 +256,7 @@ def enrich(item, state, now):
         enriched['summary_basis'] = 'rss'
         enriched['summary_check_source'] = summary
     enriched['summary_zh_points'] = points[:2]
-    enriched['auto_copy_version'] = 1
+    enriched['auto_copy_version'] = 2
     return enriched
 
 
@@ -277,7 +302,7 @@ def route(items, state, now):
         if retry.get('next_at') and published_time(retry['next_at']) > now:
             continue
         # Bound provider requests and runtime when the free service is offline.
-        reusable = item.get('auto_copy_version') == 1 and not digest_exclusion_reason(item)
+        reusable = item.get('auto_copy_version') == 2 and not digest_exclusion_reason(item)
         if attempts >= 4 and not reusable:
             stored = dict(item); stored['published'] = published_time(item['published']).isoformat()
             retries.setdefault(key, {'item': stored, 'attempts': 0, 'next_at': now.isoformat()})

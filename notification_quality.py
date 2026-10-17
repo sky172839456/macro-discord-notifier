@@ -58,12 +58,16 @@ def checked_translation(source, translated):
 
 def polish_chinese(source, translated):
     """Narrow source-led copy edits; never change figures or government entities."""
-    corporate = bool(re.search(r"\b(?:its|their|corporate|company'?s?|firm'?s?)\s+(?:(?:bitcoin|crypto|digital.asset)\s+)?treasur(?:y|ies)\b|\btreasury company\b", source, re.I))
+    corporate = bool(re.search(r"\b(?:its|their|corporate|company'?s?|firm'?s?)\s+(?:(?:bitcoin|crypto|digital.asset)\s+)?treasur(?:y|ies)\b|\btreasury company\b|\b(?:bitcoin|crypto|digital.asset)\s+treasur(?:y|ies)\b", source, re.I))
     government = bool(re.search(r'\b(?:(?:U\.?S\.?|United States)\s+Treasury|Treasury\s+(?:Department|Secretary))\b', source, re.I))
     if corporate and '財政部' in translated:
         if government:
             raise ValueError('ambiguous treasury translation')
         translated = translated.replace('財政部', '資產儲備')
+    if re.search(r'\bCapital B\b', source):
+        translated = translated.replace('資本 B', 'Capital B').replace('資本B', 'Capital B')
+    for old, new in (('芯片', '晶片'), ('硬件', '硬體'), ('在線', '線上')):
+        translated = translated.replace(old, new)
     if re.search(r'\bwarrant exercises?\b|\bexercis\w*\b.{0,30}\bwarrants?\b', source, re.I):
         translated = translated.replace('認股權證活動', '認股權證行使金額')
     translated = re.sub(r'\b([A-Z][A-Z0-9]{1,9})\s*[（(]\s*\1\s*[)）]', r'\1', translated)
