@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from notification_format import apply_delivery_format
+from community_channels import MONITOR_DISPLAY, channel_ref
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 STATE_FILE = Path(os.getenv("REALTIME_HEALTH_STATE_FILE", ".state/realtime-health.json"))
@@ -92,7 +93,7 @@ def delay_embed(previous: datetime, now: datetime, gap_minutes: int) -> dict[str
             },
             {
                 "name": "自動回補範圍",
-                "value": "總經 48 小時｜加密新聞 48 小時｜上幣公告 72 小時｜交易所公告依未讀 ID 回補",
+                "value": f"{channel_ref('macro')}及兩類新聞依各自掃描視窗重新檢查；仍套用時效與去重規則，不保證所有延遲內容都會補發。",
                 "inline": False,
             },
             {
@@ -114,33 +115,44 @@ def daily_health_embed(
     lines = []
     failures = 0
     skipped = 0
+    disabled = []
+    merged = []
     for name in MONITOR_LABELS:
         status, detail = results.get(name, ("missing", "本輪沒有執行紀錄"))
+        display = MONITOR_DISPLAY[name]
         if status == "ok":
-            icon, label = "✅", "執行成功"
+            icon, label = "✅", "流程完成"
         elif status == "disabled":
-            icon, label = "⏸️", "已停用"
+            disabled.append(display)
+            continue
+        elif status == "merged" and name == "市場分析":
+            merged.append(f"{display}：{detail}")
+            continue
         elif status == "skipped":
             icon, label = "⚪", "未設定／已略過"
             skipped += 1
         else:
             icon, label = "❌", "執行失敗或缺少紀錄"
             failures += 1
-        lines.append(f"{icon} **{name}**｜{label}｜{detail}")
+        lines.append(f"{icon} **{display}**\n{label}｜{detail}")
+    if merged:
+        lines.append("**↪️ 已整併**\n" + "\n".join(merged))
+    if disabled:
+        lines.append("**⏸️ 已停用的獨立通知**\n" + "、".join(disabled))
 
     gap = state.get("last_gap_minutes")
     gap_text = f"{gap} 分鐘" if isinstance(gap, int) else "首次建立基準"
     title = (
-        f"🟡 每日掃描健康報告｜{failures} 個監控異常"
+        f"🟡 每日執行巡檢｜{failures} 個流程異常"
         if failures
-        else f"🟡 每日掃描健康報告｜{skipped} 個監控未設定"
+        else f"🟡 每日執行巡檢｜{skipped} 個監控未設定"
         if skipped
-        else "🟢 每日掃描健康報告｜全部正常"
+        else "🟢 每日執行巡檢｜已啟用流程完成"
     )
     return {
         "title": title,
         "description": "\n".join(lines),
-        "color": 0xF1C40F if failures else 0x2ECC71,
+        "color": 0xF1C40F if failures or skipped else 0x2ECC71,
         "fields": [
             {"name": "最近排程間隔", "value": gap_text, "inline": True},
             {
@@ -149,31 +161,31 @@ def daily_health_embed(
                 "inline": True,
             },
             {
-                "name": "遺漏保障",
-                "value": "各監控保留去重狀態；延遲恢復後會重新掃描回補視窗內的未讀項目。",
+                "name": "補掃與去重",
+                "value": "延遲恢復後依原掃描視窗補查，仍受來源可用性、時效與去重規則限制。",
                 "inline": False,
             },
             {
-                "name": "🩺 資料狀態",
+                "name": "🛠️ 執行狀態",
                 "value": (
                     f"**⚠️ {failures} 個監控異常**\n請依上方逐項結果判讀。"
                     if failures
                     else f"**⚠️ {skipped} 個監控未設定**\n未執行項目不會被標示為正常。"
                     if skipped
-                    else "**✅ 執行正常**\n本輪啟用的監控皆已完成；停用項目已另外標示。"
+                    else "**✅ 本輪流程已完成**\n只代表排程程式完成；已整併及停用項目另列，不計為獨立執行成功。"
                 ),
                 "inline": False,
             },
         ],
-        "footer": {"text": "每日一次｜顯示程式執行狀態，不把未執行誤報為來源正常"},
+        "footer": {"text": "每日一次｜流程完成不代表來源全部正常或本輪有新公告；來源異常另見工作簿通知"},
         "timestamp": now.isoformat(),
     }
 
 
 def send_webhook(webhook: str, embed: dict[str, Any]) -> None:
-    card = apply_delivery_format(embed, "bot_log")
+    card = apply_delivery_format(embed, "bot_log", show_source_status=False)
     payload = {
-        "username": "通知系統｜健康監控",
+        "username": "管家巡檢｜執行紀錄",
         "embeds": [card],
         "allowed_mentions": {"parse": []},
     }
