@@ -17,6 +17,7 @@ EVENT_RULES = (
     {"key": "claims", "keywords": ("unemployment insurance weekly claims", "initial jobless claims", "unemployment claims"), "name": "美國初領失業救濟金人數", "source": "https://www.dol.gov/ui/data.pdf"},
     {"key": "pce", "keywords": ("personal income and outlays", "personal consumption expenditures"), "name": "美國 PCE／核心 PCE 物價指數", "source": "https://www.bea.gov/data/personal-consumption-expenditures-price-index", "priority": "highest"},
     {"key": "retail", "keywords": ("advance monthly retail", "advance retail and food services sales", "retail sales"), "name": "美國零售銷售", "source": "https://www.census.gov/retail/sales.html"},
+    {"key": "industrial", "keywords": ("industrial production", "capacity utilization"), "name": "美國工業生產與產能利用率", "source": "https://www.federalreserve.gov/releases/g17/current/default.htm"},
     {"key": "durable", "keywords": ("advance new orders for manufactured durable goods", "durable goods"), "name": "美國耐久財訂單", "source": "https://www.census.gov/manufacturing/m3/adv/current/index.html"},
     {"key": "gdp", "keywords": ("gross domestic product", "gdp (", "gdp:"), "name": "美國國內生產毛額（GDP）", "source": "https://www.bea.gov/data/gdp/gross-domestic-product", "priority": "highest"},
     {"key": "fomc", "keywords": ("federal open market committee", "fomc", "monetary policy statement"), "name": "美國聯準會 FOMC 公告", "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm", "priority": "highest"},
