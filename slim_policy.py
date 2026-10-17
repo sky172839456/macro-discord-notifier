@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 CORE_EVENTS = {"cpi", "jobs", "pce", "fomc"}
-CALENDAR_EVENTS = CORE_EVENTS | {"ppi", "gdp", "retail", "claims", "jolts", "durable"}
+RESULT_EVENTS = CORE_EVENTS | {"ppi", "retail", "claims"}
+CALENDAR_EVENTS = CORE_EVENTS | {"ppi", "gdp", "retail", "claims", "jolts", "durable", "industrial"}
 REMINDER_EVENTS = CORE_EVENTS | {"fed_chair_policy"}
 CALENDAR_EVENTS |= {"fed_chair_policy"}
 

@@ -221,6 +221,8 @@ def fetch_official_page_releases(now: datetime, state: dict[str, Any]) -> tuple[
             # lets us reject an old release when changing sources or restoring
             # state instead of treating it as newly published.
             excerpt = text[max(0, index - 100):index + 2200]
+            if slim_policy.enabled() and event_key == 'retail' and not re.search(r'[A-Z][a-z]+ \d{1,2}, \d{4}', excerpt):
+                raise ValueError('retail official publication date missing')
             signature = hashlib.sha256(excerpt.encode("utf-8")).hexdigest()[:20]
             previous = saved.get(event_key)
             saved[event_key] = signature
@@ -230,7 +232,7 @@ def fetch_official_page_releases(now: datetime, state: dict[str, Any]) -> tuple[
                 releases.append({"id": f"page-{event_key}-{signature}", "title": rule["name"],
                                  "summary": excerpt, "url": url,
                                  "published": official_page_published_at(excerpt, event_key, now),
-                                 "time_label": "官方公布時間", "rule": rule})
+                                 "time_label": "官方公布時間" if re.search(r"[A-Z][a-z]+ \d{1,2}, \d{4}", excerpt) else "機器人發現時間", "rule": rule})
         except Exception as exc:
             errors.append(f"{provider} {event_key}：{type(exc).__name__} / {exc}")
     try:
@@ -298,7 +300,7 @@ def fetch_claims_pdf_release(now: datetime, state: dict[str, Any]) -> dict[str, 
 
 def official_page_published_at(excerpt: str, event_key: str, now: datetime) -> datetime:
     """Recover an official release time from a dated listing page."""
-    if event_key != "claims":
+    if event_key not in {"claims", "retail"}:
         return now
     match = re.search(
         r"(January|February|March|April|May|June|July|August|September|October|November|December)"
@@ -400,21 +402,10 @@ def fetch_extended_calendar(now: datetime) -> tuple[list[dict[str, Any]], list[t
         statuses.append(("BEA 官方排程", False, f"{type(exc).__name__} / {exc}"))
 
     try:
-        source = html_to_text(http_text(EXTENDED_CALENDARS["CENSUS"]))
-        count = 0
-        census_pattern = re.compile(
-            r"(Advance Monthly Sales for Retail and Food Services|"
-            r"Advance Report on Durable Goods--Manufacturers' Shipments, Inventories, and Orders) "
-            r"([A-Z][a-z]+ \d{1,2}), (\d{4}) (\d{1,2}:\d{2}) (AM|PM)\b"
-        )
-        for match in census_pattern.finditer(source):
-            event_key = "retail" if match.group(1).startswith("Advance Monthly") else "durable"
-            rule = next(rule for rule in EVENT_RULES if rule["key"] == event_key)
-            event_time = _ny_schedule_time(match.group(2), match.group(4), match.group(5), int(match.group(3)))
-            events.append({"id": f"census-{rule['key']}-{event_time.isoformat()}", "title": match.group(1),
-                           "time": event_time, "rule": rule, "calendar_source": "Census 官方排程"})
-            count += 1
-        statuses.append(("Census 官方排程", True, f"{count} 個零售／耐久財事件"))
+        from macro_calendar import census_calendar
+        census_events, detail = census_calendar(now, http_text, html_to_text)
+        events.extend(census_events)
+        statuses.append(("Census 官方排程", True, detail))
     except Exception as exc:
         statuses.append(("Census 官方排程", False, f"{type(exc).__name__} / {exc}"))
 
@@ -435,6 +426,13 @@ def fetch_extended_calendar(now: datetime) -> tuple[list[dict[str, Any]], list[t
         statuses.append(("Federal Reserve FOMC 排程", True, f"{count} 場會議"))
     except Exception as exc:
         statuses.append(("Federal Reserve FOMC 排程", False, f"{type(exc).__name__} / {exc}"))
+    try:
+        from macro_calendar import industrial_calendar
+        industrial = industrial_calendar(now, http_text, html_to_text)
+        events.extend(industrial)
+        statuses.append(("Fed 工業生產排程", True, f"{len(industrial)}個月度事件；年度修訂另列不混用"))
+    except Exception as exc:
+        statuses.append(("Fed 工業生產排程", False, f"{type(exc).__name__} / {exc}"))
     return events, statuses
 
 
@@ -656,16 +654,16 @@ def format_metrics(summary: str, event_key: str) -> str:
         )
         four_week = re.search(r"4-week\s+moving\s+average\s+was\s+([\d,]+)", clean, re.I)
         number = lambda match, group=1: match.group(group).rstrip(",")  # noqa: E731
-        lines = [f"**實際值｜初領失業金**　{number(claims)}" if claims else ""]
+        lines = [f"**實際值｜初領失業金**　{number(claims)} 人" if claims else ""]
         if revision:
-            lines.append(f"**前值修正**　{number(revision)} → {number(revision, 2)}")
+            lines.append(f"**前值修正**　{number(revision)} → {number(revision, 2)} 人")
         elif previous_level:
-            lines.append(f"**前週值**　{previous_level.group(1)}")
+            lines.append(f"**前週值**　{previous_level.group(1)} 人")
         if change:
             direction = "增加" if change.group(1).lower() == "increase" else "減少"
-            lines.append(f"**較前週變化**　{direction} {number(change, 2)}")
+            lines.append(f"**較前週變化**　{direction} {number(change, 2)} 人")
         if four_week:
-            lines.append(f"**四週移動平均**　{number(four_week)}")
+            lines.append(f"**四週移動平均**　{number(four_week)} 人")
         return "\n".join(line for line in lines if line) or extract_numbers(summary)
     if event_key in {"retail", "durable"} and values:
         label = "零售銷售月增率" if event_key == "retail" else "耐久財訂單月增率"
@@ -705,9 +703,17 @@ def release_critical_missing(item: dict[str, Any]) -> list[str]:
     """Do not equate missing forecast/previous values with missing current data."""
     if not slim_policy.enabled():
         return []
-    if item['rule']['key'] == 'cpi' or item.get('price_metrics'):
+    if item['rule']['key'] in {'cpi', 'ppi'} or item.get('price_metrics'):
         from cpi_release import details
+        if item['rule']['key'] == 'ppi':
+            from macro_results import ppi_details
+            return ppi_details(item)[1]
         return details(item)[1]
+    if item['rule']['key'] == 'retail':
+        from macro_results import retail_details
+        return retail_details(item)[1]
+    if item['rule']['key'] == 'claims' and not re.search(r'initial claims was\s+[\d,]+', str(item.get('summary') or ''), re.I):
+        return ['本次初領失業金人數']
     summary = html_to_text(str(item.get('summary') or '')).strip()
     if not summary:
         return ['本次官方摘要與主數據']
@@ -813,9 +819,17 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
     if slim_policy.enabled():
         fields = [f for f in fields if f["name"] not in {"⚡ 快速判讀", "📅 下次公布（台灣）"}]
         numbers = numbers.replace('（MoM）', '').replace('（YoY）', '')
-        if item['rule']['key'] == 'cpi' or item.get('price_metrics'):
+        if item['rule']['key'] == 'retail':
+            from macro_results import retail_details
+            numbers, _ = retail_details(item)
+            fields = [f for f in fields if f['name'] != '🔄 前值與修正資訊']
+        if item['rule']['key'] in {'cpi', 'ppi'} or item.get('price_metrics'):
             from cpi_release import details, official_source
-            numbers, missing = details(item)
+            if item['rule']['key'] == 'ppi':
+                from macro_results import ppi_details
+                numbers, missing = ppi_details(item)
+            else:
+                numbers, missing = details(item)
             source = official_source(item) if item['rule']['key'] == 'cpi' else source
             urls = item.get('cpi_source_urls') or []
             source_copy = (f'[BLS月資料｜季調]({urls[0]})\n[BLS月資料｜未季調]({urls[1]})'
@@ -1201,7 +1215,7 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         official_time, _ = release_schedule_times(item, calendar, now)
         release_day = (official_time or item["published"]).astimezone(TAIPEI).date().isoformat()
         group_key = (event_key, release_day)
-        if 0 <= age <= RELEASE_BACKFILL_MINUTES and (not slim_policy.enabled() or event_key in slim_policy.CORE_EVENTS):
+        if 0 <= age <= RELEASE_BACKFILL_MINUTES and (not slim_policy.enabled() or event_key in slim_policy.RESULT_EVENTS):
             pending_release_groups.setdefault(group_key, []).append(item)
     pending_release_groups = {
         group_key: group

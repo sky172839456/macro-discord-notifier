@@ -183,9 +183,11 @@ class OfficialSourceTests(unittest.TestCase):
                 "September 15-16* 2025 FOMC Meetings"
             ),
         }
+        from macro_calendar import G17_URL
+        pages[G17_URL] = 'monthly releases are issued at 9:15 a.m. 2026: July 17, August 18. Historical Release Dates'
         with patch.object(notifier, "http_text", side_effect=lambda url: pages[url]):
             events, statuses = fetch_extended_calendar(datetime(2026, 7, 20, tzinfo=timezone.utc))
-        self.assertEqual({event["rule"]["key"] for event in events}, {"gdp", "pce", "retail", "durable", "fomc"})
+        self.assertEqual({event["rule"]["key"] for event in events}, {"gdp", "pce", "retail", "durable", "fomc", "industrial"})
         self.assertEqual(sum(event["rule"]["key"] == "fomc" for event in events), 2)
         self.assertTrue(all(healthy for _, healthy, _ in statuses))
 
