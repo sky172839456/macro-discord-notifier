@@ -29,6 +29,7 @@ jobs:
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
           DISCORD_EXCHANGE_LISTING_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_LISTING_WEBHOOK_URL }}
           DISCORD_CRYPTO_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
+          DISCORD_FINANCE_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_FINANCE_NEWS_WEBHOOK_URL }}
           DISCORD_BREAKING_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_BREAKING_NEWS_WEBHOOK_URL }}
           DISCORD_REGULATION_ETF_WEBHOOK_URL: ${{ secrets.DISCORD_REGULATION_ETF_WEBHOOK_URL }}
           DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL }}
@@ -47,7 +48,9 @@ jobs:
         run: python slim_preview.py --dry-run
       - name: Check free news translation providers without Discord sends
         if: inputs.audit_only == true
-        run: python news_recovery_check.py
+        run: |
+          python news_recovery_check.py
+          python finance_source_check.py
       - name: Check public source diagnostics and quality fixtures without sending
         if: inputs.audit_only == true
         run: |

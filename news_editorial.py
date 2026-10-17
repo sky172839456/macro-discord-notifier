@@ -177,6 +177,8 @@ def equivalent(left, right, fallback=None):
         if abs(published_time(left['published']) - published_time(right['published'])) > timedelta(hours=24):
             return False
     a, b = str(left.get('title', '')), str(right.get('title', ''))
+    if same_victim_episode(left, right):
+        return True
     key_a, key_b = event_key(left), event_key(right)
     # A known mismatch must not be overridden by a bag-of-words fallback.
     if (key_a or key_b) and key_a != key_b:
@@ -221,6 +223,37 @@ def equivalent(left, right, fallback=None):
 
 def member_ids(item):
     return list(dict.fromkeys([item['id'], *item.get('merged_ids', [])]))
+
+
+def same_victim_episode(left, right):
+    """One source-qualified scammer profile, never global amount tolerance."""
+    bodies = [text(left), text(right)]
+    if any(not re.search(r'\bChainalysis\b', b, re.I) or
+           not re.search(r'\b(?:scammer|fraudster)\b', b, re.I) or
+           not re.search(r'\bLedger\w*\b', b, re.I) or
+           not re.search(r'\b(?:fake online jobs|task scam|fake product sales)\b', b, re.I) or
+           re.search(r'\b(?:another|second|additional|different) (?:scammer|fraudster|victim)\b', b, re.I)
+           for b in bodies):
+        return False
+    if left.get('published') and right.get('published') and abs(
+        published_time(left['published']) - published_time(right['published'])) > timedelta(hours=24):
+        return False
+    if any(extract(bodies[0]) != extract(bodies[1]) for extract in (stage, progress_terms, dated_terms)):
+        return False
+    # Actual service actions and changed incident scope always remain visible.
+    if any(re.search(r'\b(?:recall\w*|halt\w*|resum\w*|additional users|new vulnerability|losses? (?:rise|rises|revised))\b', b, re.I) for b in bodies):
+        return False
+    amounts = [{n for u, n in measures(b) if u == '$'} for b in bodies]
+    if any(len(a) != 1 for a in amounts):
+        return False
+    x, y = next(iter(amounts[0])), next(iter(amounts[1]))
+    if x == y:
+        return True
+    for rounded, precise, body in ((x, y, bodies[0]), (y, x, bodies[1])):
+        if re.search(r'\b(?:almost|nearly|close to)\s+\$?\s*5\s*(?:million|m)\b', body, re.I):
+            if rounded == 5_000_000 and 4_500_000 <= precise < 5_000_000:
+                return True
+    return False
 
 
 def history_row(item, now):

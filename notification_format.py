@@ -19,6 +19,7 @@ CHANNEL_AUTHORS = {
     "market_risk": "CRYPTO RISK WATCH｜市場風險警報",
     "derivatives": "DERIVATIVES WATCH｜市場風險警報",
     "crypto_news": "CRYPTO NEWS RADAR｜加密新聞",
+    "finance_news": "金融風向",
     "exchange_announcements": "EXCHANGE NOTICE RADAR｜交易所公告",
     "regulation_etf": "REGULATION & ETF｜監管與 ETF",
     "macro_analysis": "MACRO LENS｜每日總經觀察",
@@ -167,7 +168,7 @@ def infer_source_status(embed: dict[str, Any]) -> str:
 def classified_title(title: str, channel_key: str) -> str:
     """Keep the notification type readable without relying on its accent color."""
     title = str(title or "")
-    if re.match(r"^【(?:每日行情|每週行情|總經數據|風險警報|重大快訊|市場新聞|監管／ETF|總經觀察|技術分析|系統紀錄|市場資訊|數據提醒|今日行事曆|數據公布|恢復通知|新聞彙整|官員談話)】", title):
+    if re.match(r"^【(?:每日行情|每週行情|金融新聞|金融快訊|加密新聞|總經數據|風險警報|重大快訊|市場新聞|監管／ETF|總經觀察|技術分析|系統紀錄|市場資訊|數據提醒|今日行事曆|數據公布|恢復通知|新聞彙整|官員談話)】", title):
         return title[:256]
     # Recognize our own preview wrappers while keeping the category first.
     content = re.sub(r"^(?:🧪 (?:精簡版預覽|測試)｜\s*)+", "", title)
@@ -175,6 +176,7 @@ def classified_title(title: str, channel_key: str) -> str:
         "daily_market": "每日行情", "weekly_market": "每週行情",
         "macro_alerts": "總經數據", "market_risk": "風險警報",
         "breaking_news": "重大快訊", "crypto_news": "市場新聞",
+        "finance_news": "金融新聞",
         "regulation_etf": "監管／ETF", "macro_analysis": "總經觀察",
         "technical_analysis": "技術分析", "bot_log": "系統紀錄",
     }.get(channel_key, "市場資訊")

@@ -25,7 +25,7 @@ class AutoNewsTests(unittest.TestCase):
                 'source': '媒體', 'official': False, 'category': news.CATEGORIES[1], **kwargs}
 
     def ready(self, **kwargs):
-        values = dict(title_zh='SEC 核准 Bitcoin ETF', summary_zh_points=['SEC 核准 Bitcoin ETF。'], auto_copy_version=1)
+        values = dict(title_zh='SEC 核准 Bitcoin ETF', summary_zh_points=['SEC 核准 Bitcoin ETF。'], auto_copy_version=2)
         values.update(kwargs)
         return self.row(**values)
 
@@ -114,7 +114,7 @@ class AutoNewsTests(unittest.TestCase):
     def test_bad_cached_copy_refreshes_and_reuses_success(self):
         source = 'SEC approves Bitcoin ETF'
         import hashlib
-        key = 'auto-v1-'+hashlib.sha256(source.encode()).hexdigest()[:24]
+        key = 'auto-v2-'+hashlib.sha256(source.encode()).hexdigest()[:24]
         state = {'translation_cache': {key:{'source':source,'translated':'bad'}}}
         with patch.object(news, 'translate_text', return_value='SEC 核准 Bitcoin ETF') as translate:
             item = auto.enrich(self.row(summary=''), state, self.now)
