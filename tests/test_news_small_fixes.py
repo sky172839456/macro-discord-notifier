@@ -127,8 +127,10 @@ class NewsSmallFixTests(unittest.TestCase):
         return self.row(title, 'Circle plans to enter 40 emerging and developing markets. ' + regions)
 
     def test_same_circle_plan_across_sources_merges(self):
-        a = self.expansion('Circle’s Allaire says stablecoin issuer looking to enter 40 developing markets: report')
-        b = self.expansion('Circle plans push into 40 emerging markets as stablecoins go mainstream, CEO says')
+        a = self.row('Circle’s Allaire says stablecoin issuer looking to enter 40 developing markets: Report',
+                     'Markets in Southeast Asia, Latin America, Africa and the Middle East see increasing demand for stablecoins.')
+        b = self.row('Circle Plans Push Into 40 Emerging Markets as Stablecoins Go Mainstream, CEO Says',
+                     'Circle CEO Jeremy Allaire told Reuters the USDC issuer plans to enter about 40 emerging and developing markets, citing rising demand in Southeast Asia, Latin America, Africa and the Middle East.')
         self.assertTrue(editorial.equivalent(a, b))
 
     def test_circle_dedup_preserves_both_source_links_and_ids(self):
@@ -151,6 +153,13 @@ class NewsSmallFixTests(unittest.TestCase):
                  self.row(CIRCLE, CIRCLE_BODY)]
         for b in cases:
             with self.subTest(title=b['title'], summary=b['summary']):
+                self.assertFalse(editorial.equivalent(a, b))
+
+    def test_explicitly_different_stablecoins_do_not_merge(self):
+        a = self.expansion('Circle plans USDC push into 40 emerging markets')
+        for asset in ('EURC', 'Bitcoin'):
+            with self.subTest(asset=asset):
+                b = self.expansion(f'Circle plans {asset} push into 40 emerging markets')
                 self.assertFalse(editorial.equivalent(a, b))
 
 

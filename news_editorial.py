@@ -207,7 +207,15 @@ def equivalent(left, right, fallback=None):
             return False
     if stage(text(left)) != stage(text(right)):
         return False
-    if key_a and key_a[0] in {'security', 'service', 'trading', 'market_expansion'} and scope_terms(text(left)) != scope_terms(text(right)):
+    if key_a and key_a[0] == 'market_expansion':
+        x, y = scope_terms(text(left)), scope_terms(text(right))
+        assets = {'btc', 'eth', 'solana', 'usdt', 'usdc', 'eurc', 'rlusd'}
+        # 同一狹義計畫可補齊缺省的幣種名稱，明確矛盾的幣種仍保留新件。
+        explicit = [set(re.findall(r'\b(?:usdc|usdt|eurc|rlusd)\b', text(row), re.I)) for row in (left, right)]
+        explicit = [{v.lower() for v in group} | (scope & assets) for group, scope in zip(explicit, (x, y))]
+        if x - assets != y - assets or (explicit[0] and explicit[1] and explicit[0] != explicit[1]):
+            return False
+    if key_a and key_a[0] in {'security', 'service', 'trading'} and scope_terms(text(left)) != scope_terms(text(right)):
         return False
     for extract in (measures, dated_terms, progress_terms):
         # For acquisitions a bank's total assets in a summary are not deal price.
