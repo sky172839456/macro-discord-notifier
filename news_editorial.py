@@ -7,6 +7,7 @@ from datetime import timedelta
 from notification_quality import published_time, TAIPEI
 
 ALIASES = {
+    'circle': ('circle',),
     'payward': ('payward', 'kraken'), 'ledger': ('ledger',), 'trezor': ('trezor',),
     'strategy': ('strategy', 'microstrategy'), 'bitmine': ('bitmine',),
     'coinbase': ('coinbase',), 'binance': ('binance',), 'bybit': ('bybit',),
@@ -15,7 +16,7 @@ ALIASES = {
     'standard_chartered': ('standard chartered',),
 }
 ASSET_CONTEXT = r'\b(?:crypto|bitcoin|btc|ether(?:eum)?|defi|token|wallet|stablecoin|usdt|usdc|tether|circle|exchange|ledger|trezor|metamask|coinbase|binance|bybit|bitget|kraken|okx)\b'
-INCIDENT = r'\b(?:hack(?:s|ed|ing)?|exploit(?:s|ed|ation)?|breach(?:es)?|drain(?:s|ed)?|phishing|stolen|stole|thefts?|wrench attacks?|knife assault|tamper(?:ed|ing)?|implants?|compromis(?:ed|e)|vulnerabilit(?:y|ies)|malicious firmware|supply.chain attacks?|withdrawals? (?:halted|suspended|paused)|major outage|depeg(?:s|ged)?)\b'
+INCIDENT = r'\b(?:unauthori[sz]ed (?:token )?(?:mint(?:ing)?|issuance)|hack(?:s|ed|ing)?|exploit(?:s|ed|ation)?|breach(?:es)?|drain(?:s|ed)?|phishing|stolen|stole|thefts?|wrench attacks?|knife assault|tamper(?:ed|ing)?|implants?|compromis(?:ed|e)|vulnerabilit(?:y|ies)|malicious firmware|supply.chain attacks?|withdrawals? (?:halted|suspended|paused)|major outage|depeg(?:s|ged)?)\b'
 HISTORY = r'\b(?:jailed|sentenced|anniversary|last year|years? ago|historical|retrospective)\b'
 EXPLAINER = r'^(?:why|how|what|can|opinion[:：]|explained[:：])\b|\b(?:explainer|price prediction|could reach|will hit|safest wallets?)\b'
 ACTION = r'\b(?:pull|recall|halt(?:ed|s)?|suspend(?:ed|s)?|paus(?:e|ed|es)|warn(?:s|ed)?|confirm(?:s|ed)?|report(?:s|ed)?|discover(?:s|ed)?|detect(?:s|ed)?|investigat\w*|claimed|lost|steal|stole|stolen|drain(?:s|ed)?|hack(?:s|ed|ing)?|exploit(?:s|ed)?|breach(?:es)?|implants?|tamper(?:ed|ing)?|major outage|depeg(?:s|ged)?)\b'
@@ -109,6 +110,18 @@ def event_key(item):
     actor = entity(title) or entity(body)
     if not actor:
         return None
+    # 僅合併同一 Circle 市場擴張計畫；不同數量、區域或落地進展保留。
+    if (actor == 'circle' and re.search(r'\b(?:plans?|planning|looking to enter|aims?|seeks?)\b', title, re.I)
+            and not re.search(r'\b(?:approved|approval|authorization|licen[cs]e|launch(?:ed|es)?|entered|enters|completed)\b', body, re.I)):
+        count = re.search(r'\b(\d+)\s+(?:(?:new|emerging|developing|and)\s+)*markets\b', body, re.I)
+        regions = {name for name, pattern in (
+            ('southeast_asia', r'\bsouth(?:east| east) asia\b'),
+            ('latin_america', r'\blatin americ(?:a|an)\b'),
+            ('africa', r'\bafrica\b'),
+            ('middle_east', r'\bmiddle east\b'),
+        ) if re.search(pattern, body, re.I)}
+        if count and regions:
+            return 'market_expansion', actor, count.group(1) + ':' + '+'.join(sorted(regions))
     if re.search(r'\b(?:opens?|unlocks?|expands?|launch(?:es)?|offers?)\b', title, re.I) and re.search(r'\btrading\b', title, re.I):
         assets = set(re.findall(r'\b(?:bitcoin|btc|ether|ethereum|eth|usdt|usdc|rlusd)\b', title.lower()))
         assets = {'btc' if a == 'bitcoin' else 'eth' if a in {'ether', 'ethereum'} else a for a in assets}
@@ -194,7 +207,7 @@ def equivalent(left, right, fallback=None):
             return False
     if stage(text(left)) != stage(text(right)):
         return False
-    if key_a and key_a[0] in {'security', 'service', 'trading'} and scope_terms(text(left)) != scope_terms(text(right)):
+    if key_a and key_a[0] in {'security', 'service', 'trading', 'market_expansion'} and scope_terms(text(left)) != scope_terms(text(right)):
         return False
     for extract in (measures, dated_terms, progress_terms):
         # For acquisitions a bank's total assets in a summary are not deal price.

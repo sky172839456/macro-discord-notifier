@@ -51,6 +51,9 @@ class SlimNotificationsTests(unittest.TestCase):
     def test_daily_news_queues_until_20_and_sends_only_one_card_once(self):
         state = {"initialized": True, "seen": {}, "pending": [], "translation_cache": {}}
         items = [self.article("Strategy adds 250 Bitcoin", "a"), self.article("Bitcoin holds steady ahead of CPI", "b")]
+        # 排程測試使用與原文相符的公司及數字，不能靠無關的 CPI 翻譯通過。
+        items[0].update(title_zh="Strategy 增持250枚 Bitcoin",
+                        summary_zh_points=["Strategy 增持250枚 Bitcoin。"])
         with patch.dict(os.environ, {"DISCORD_CRYPTO_NEWS_WEBHOOK_URL": "https://discord.invalid"}), patch.object(news, "load_state", return_value=state), patch.object(news, "save_state"), patch.object(news, "fetch_all", return_value=(items, [("source", 2, None)])), patch.object(news, "add_translated_title", side_effect=lambda row, *_: dict(row)), patch.object(news, "send_discord") as send:
             news.run(self.now - timedelta(minutes=10))
             send.assert_not_called()
