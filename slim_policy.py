@@ -29,6 +29,9 @@ def material_news(item):
 
 def category(text, categories):
     lowered = f" {text.lower()} "
+    tax_policy = (re.search(r'\b(?:stablecoins?|crypto|cryptocurrency|digital assets?)\b', lowered)
+                  and re.search(r'\b(?:tax|taxes|taxation)\b', lowered)
+                  and re.search(r'\b(?:assembly|parliament|amendments?|proposals?|legislation|tax laws?|tax rules?)\b', lowered))
     # 主題優先於公司名；Fidelity 的網路研究不等同 ETF 公告。
     network_research = (re.search(r'\b(?:report|research|study)\b', lowered)
                         and re.search(r'\b(?:mainnet outages?|network health|network resilience|stake concentration|client software)\b', lowered)
@@ -39,6 +42,10 @@ def category(text, categories):
                           and re.search(r'\breserves?\s+(?:income|assets?|backing|revenue)\b', lowered))
     for row in categories:
         terms = row["keywords"]
+        if row['key'] == 'regulation' and tax_policy:
+            result = dict(row)
+            result['priority'] = 'critical' if material_news({'title': text}) else 'normal'
+            return result
         if row["key"] == "regulation" and courts_partners and not legal_court:
             terms = tuple(t for t in terms if t != 'court')
         if row["key"] == "etf" and stablecoin_reserves:

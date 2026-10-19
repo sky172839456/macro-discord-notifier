@@ -6,6 +6,36 @@ from decimal import Decimal
 
 
 def repair_translation(source, translated):
+    # 稅務提案不得混成商品出口稅，也不把研議中的提案寫成已生效。
+    if re.fullmatch(r'France advances stablecoin tax, eyes self-custodial wallets and exit tax proposals[.!]?', source.strip(), re.I):
+        translated = '法國推進穩定幣稅制，研議自託管錢包與離境稅提案'
+    if re.search(r'\bexit tax(?:es)?\b', source, re.I) and '出口稅' in translated:
+        if re.search(r'\bexport tax(?:es)?\b', source, re.I):
+            raise ValueError('mixed exit and export tax meanings require another translation')
+        translated = translated.replace('出口稅', '離境稅')
+    if re.search(r'\bself-custodial wallets?\b', source, re.I):
+        translated = translated.replace('自我保管錢包', '自託管錢包')
+    if re.search(r'\bcertain stablecoin swaps\b', source, re.I) and not re.search(r'\bswap contracts?\b', source, re.I):
+        translated = translated.replace('穩定幣掉期', '穩定幣兌換')
+
+    # DeFi 策略管理者與美術館策展人不同；混合語境不做全域取代。
+    if (re.search(r'\bcurators?(?:-managed)?\b', source, re.I)
+            and re.search(r'\b(?:lending strategies|defi vaults?|crypto vaults?)\b', source, re.I)
+            and '策展人' in translated):
+        if re.search(r'\b(?:museum|exhibition|art gallery)\b', source, re.I):
+            raise ValueError('mixed curator meanings require another translation')
+        translated = translated.replace('策展人', '策略管理人')
+    if re.search(r'\bcrypto vault deposits\b', source, re.I):
+        translated = translated.replace('加密保管庫', '加密資產金庫')
+
+    # USD1 是幣種名稱；僅在原文明確連結發行方與此幣時補回專名。
+    if re.search(r'\bWorld Liberty(?: Financial)?[’\']s USD1 stablecoin\b', source, re.I) and not re.search(r'\bUSD1\b', translated):
+        translated, restored = re.subn(
+            r'(World\s+Liberty(?:\s+Financial)?\s*的?\s*)(?:美元|美金)穩定幣',
+            r'\1USD1 穩定幣', translated, flags=re.I)
+        if not restored:
+            raise ValueError('USD1 stablecoin identity not preserved')
+
     # 完整原標題已明確提供主體、停鏈、被盜錢包數及弱種子語境。
     # 僅處理這種完整句型，不能將預計／否認停鏈或凍結資金改成停鏈。
     wallet_incident = re.fullmatch(
