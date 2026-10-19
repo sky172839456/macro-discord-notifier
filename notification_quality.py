@@ -58,6 +58,8 @@ def checked_translation(source, translated):
 
 def polish_chinese(source, translated):
     """Narrow source-led copy edits; never change figures or government entities."""
+    from news_copy_terms import repair_translation
+    translated = repair_translation(source, translated)
     corporate = bool(re.search(r"\b(?:its|their|corporate|company'?s?|firm'?s?)\s+(?:(?:bitcoin|crypto|digital.asset)\s+)?treasur(?:y|ies)\b|\btreasury company\b|\b(?:bitcoin|crypto|digital.asset)\s+treasur(?:y|ies)\b", source, re.I))
     government = bool(re.search(r'\b(?:(?:U\.?S\.?|United States)\s+Treasury|Treasury\s+(?:Department|Secretary))\b', source, re.I))
     if corporate and '財政部' in translated:

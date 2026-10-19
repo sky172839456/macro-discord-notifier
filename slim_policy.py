@@ -29,8 +29,25 @@ def material_news(item):
 
 def category(text, categories):
     lowered = f" {text.lower()} "
+    # 主題優先於公司名；Fidelity 的網路研究不等同 ETF 公告。
+    network_research = (re.search(r'\b(?:report|research|study)\b', lowered)
+                        and re.search(r'\b(?:mainnet outages?|network health|network resilience|stake concentration|client software)\b', lowered)
+                        and not re.search(r'\b(?:etfs?|exchange.traded|fund flows?)\b', lowered))
+    courts_partners = bool(re.search(r'\bcourt(?:s|ed|ing)?\s+(?:(?:its|their|new|existing)\s+)*partners?\b', lowered))
+    legal_court = bool(re.search(r'\b(?:court (?:orders?|rulings?|decisions?|cases?|filings?|rejects?|approves?|rules?|hears?|blocks?|denies|overturns?|of appeals)|supreme court|federal court|district court|lawsuit|litigation)\b', lowered))
+    stablecoin_reserves = (re.search(r'\b(?:stablecoins?|usdc|usdt|tether)\b', lowered)
+                          and re.search(r'\breserves?\s+(?:income|assets?|backing|revenue)\b', lowered))
     for row in categories:
         terms = row["keywords"]
+        if row["key"] == "regulation" and courts_partners and not legal_court:
+            terms = tuple(t for t in terms if t != 'court')
+        if row["key"] == "etf" and stablecoin_reserves:
+            terms = tuple(t for t in terms if t != 'reserve')
+        if row["key"] == "etf" and network_research:
+            result = next((dict(r) for r in categories if r['key'] == 'network'), None)
+            if result:
+                result['priority'] = 'normal'
+                return result
         if row["key"] == "network":
             terms = tuple(t for t in terms if t not in {"bitcoin", "ethereum", "solana"})
         if any(t in lowered for t in terms):
