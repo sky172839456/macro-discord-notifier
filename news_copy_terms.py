@@ -6,6 +6,19 @@ from decimal import Decimal
 
 
 def repair_translation(source, translated):
+    # 完整原標題已明確提供主體、停鏈、被盜錢包數及弱種子語境。
+    # 僅處理這種完整句型，不能將預計／否認停鏈或凍結資金改成停鏈。
+    wallet_incident = re.fullmatch(
+        r'([A-Za-z][A-Za-z0-9-]{1,30}) freezes chain after attacker drains '
+        r'(\d+(?:\.\d+)?K) wallets with weak seeds[.!]?', source.strip(), re.I)
+    if wallet_incident:
+        subject, count = wallet_incident.groups()
+        wallets = Decimal(count[:-1]) * 1000
+        if wallets != wallets.to_integral_value():
+            raise ValueError('wallet count must be a whole number')
+        translated = (f'{subject} 暫停區塊鏈運作，攻擊者盜取'
+                      f'{int(wallets):,}個使用弱種子金鑰的錢包內資產')
+
     # 法院與招攬、收益分成與削減不能只靠英文字面判斷。
     if (re.search(r'\b(?:circle|usdc|stablecoins?)\b', source, re.I)
             and re.search(r'\bpartners?\b', source, re.I)
