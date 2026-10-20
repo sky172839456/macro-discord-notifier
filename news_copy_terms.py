@@ -6,6 +6,18 @@ from decimal import Decimal
 
 
 def repair_translation(source, translated):
+    # 已核對的 CFTC／CME 原文：perps 是永續合約，may 與未證明均須保留。
+    normalized = re.sub(r'\s+', ' ', source.replace('’', "'").strip()).casefold()
+    cftc_title = ('U.S. CFTC rebuffs CME legal stance in consequential fight '
+                  'over perpetual futures')
+    cftc_summary = ("The future of perps in the U.S. may be at stake as the CFTC argues "
+                    "that CME hasn't shown the new policy is hurting it after the "
+                    "agency OK'd its first bitcoin perp.")
+    if normalized == cftc_title.casefold():
+        translated = '在關鍵永續期貨爭議中，美國 CFTC 反駁 CME 的法律立場'
+    elif normalized == cftc_summary.casefold():
+        translated = ('美國永續合約的未來可能受到影響；CFTC 主張，該機關核准首個比特幣永續合約後，'
+                      'CME 並未證明新政策對其造成損害。')
     # 稅務提案不得混成商品出口稅，也不把研議中的提案寫成已生效。
     if re.fullmatch(r'France advances stablecoin tax, eyes self-custodial wallets and exit tax proposals[.!]?', source.strip(), re.I):
         translated = '法國推進穩定幣稅制，研議自託管錢包與離境稅提案'
