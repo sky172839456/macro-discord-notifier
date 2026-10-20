@@ -26,6 +26,31 @@ def text(item):
     return f"{item.get('title', '')} {item.get('summary', '')}"
 
 
+def acquisition_with_only_old_incident(value):
+    """An acquisition's explicitly older hack is background, not a new alert."""
+    if not re.search(r'\b(?:acquisition|acquires?|acquiring|merger)\b', value, re.I):
+        return False
+    historical = (r'\b(?:(?:\d+|a|several|two|three|a few)\s+)?'
+                  r'(?:weeks?|months?|years?)\s+(?:after|following)\s+'
+                  r'(?:(?:a|the)\s+)?(?:\$?\d[\d,.]*(?:\s?(?:million|billion|[mbk]))?\s+)?'
+                  r'(?:crypto\s+)?(?:hack|exploit|breach|attack|theft)\b')
+    remaining, count = re.subn(historical, ' ', value, flags=re.I)
+    if not count:
+        return False
+    # 舊事故可作收購背景；同篇損失、受害者或資金處置仍走原資安檢查。
+    progress = (r'\b(?:loss(?:es)?|lost|damage\w*|victims?|affected|impacted|'
+                r'recover\w*|compensat\w*|reimburs\w*|refund\w*|restitut\w*|'
+                r'recoup\w*|repatriat\w*|freez\w*|froze\w*|seiz\w*|unfreez\w*|'
+                r'(?:funds?|assets?)\s+(?:(?:have|has|been|were|are|being|now)\s+){0,4}return\w*|'
+                r'return\w*\s+(?:the\s+)?funds?|'
+                r'(?:additional|more)\s+(?:customers?|users?|wallets?|accounts?)|'
+                r'ongoing\s+attack|active\s+attack|new\s+incident|'
+                r'revised\s+estimat\w*|updated\s+estimat\w*)\b')
+    return not (re.search(INCIDENT, remaining, re.I)
+                or re.search(progress, remaining, re.I)
+                or re.search(r'\b(?:recall\w*|halt\w*|suspend\w*|paus\w*|resum\w*|restor\w*)\b', remaining, re.I))
+
+
 def current_safety_evidence(item):
     """A report containing an explicit new incident still enters the safety inbox."""
     return any(re.search(r'\b(?:new|today|ongoing|active|currently)\b', sentence, re.I)
@@ -59,6 +84,8 @@ def event_kind(item):
 def safety_candidate(item):
     """Protect current asset-safety candidates before generic relevance/exclusions."""
     title, body = str(item.get('title', '')), text(item)
+    if acquisition_with_only_old_incident(body):
+        return False
     if retrospective(item) or (re.search(EXPLAINER, title, re.I) and not current_safety_evidence(item)):
         return False
     if not re.search(INCIDENT, title, re.I) and not re.search(r'\b(?:pull|recall|halt\w*|suspend\w*|paus\w*|resellers?)\b', title, re.I):

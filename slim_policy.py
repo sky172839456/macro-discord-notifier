@@ -29,6 +29,12 @@ def material_news(item):
 
 def category(text, categories):
     lowered = f" {text.lower()} "
+    from news_editorial import acquisition_with_only_old_incident
+    if acquisition_with_only_old_incident(text):
+        result = next((dict(row) for row in categories if row['key'] == 'exchange'), None)
+        if result:
+            result['priority'] = 'critical' if material_news({'title': text}) else 'normal'
+            return result
     tax_policy = (re.search(r'\b(?:stablecoins?|crypto|cryptocurrency|digital assets?)\b', lowered)
                   and re.search(r'\b(?:tax|taxes|taxation)\b', lowered)
                   and re.search(r'\b(?:assembly|parliament|amendments?|proposals?|legislation|tax laws?|tax rules?)\b', lowered))
