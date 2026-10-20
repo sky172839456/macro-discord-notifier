@@ -104,9 +104,35 @@ def stage(value):
     return 'reported'
 
 
+def first_swiss_retail_bitcoin_approval(item):
+    """Only the two unqualified descriptions of Switzerland's first retail approval."""
+    title = str(item.get('title', '')).replace('’', "'").strip()
+    patterns = (
+        r"FINMA approves Switzerland's first Bitcoin (?:ETF|exchange-traded fund) for retail investors",
+        r"Swiss Regulator Approves (?:Switzerland's )?First Retail Fund That Holds Bitcoin Directly",
+    )
+    return any(re.fullmatch(pattern, title, re.I) for pattern in patterns)
+
+
+def swiss_approval_has_unresolved_update(item):
+    """A product identity or material development needs its own review."""
+    summary = str(item.get('summary', ''))
+    if re.search(r'\b(?:new|updated|revised|amended|additional|another|second|third|launch\w*|'
+                 r'list(?:ed|ing|s)?|start\w*|begin\w*|trad(?:e|ing)|conditional|subject to|pending|'
+                 r'effective|withdraw\w*|cancel\w*|revok\w*|halt\w*|suspend\w*|tighten\w*|'
+                 r'restrict\w*|lift\w*|issuer|issued by|managed by|fund named|fund called|ticker)\b',
+                 summary, re.I):
+        return True
+    # 未知發行人／基金專名不能因相同監管機關而被吞掉。
+    names = set(re.findall(r'\b[A-Z][A-Za-z0-9]+\b', summary))
+    return bool(names - {'The', 'Swiss', 'FINMA', 'Bitcoin', 'ETF', 'ETFs'})
+
+
 def event_key(item):
     """Narrow high-confidence event keys; unsupported events use guarded title overlap."""
     title, body = str(item.get('title', '')), text(item)
+    if first_swiss_retail_bitcoin_approval(item):
+        return 'swiss_first_retail_approval', 'finma', 'btc'
     actor = entity(title) or entity(body)
     if not actor:
         return None
@@ -204,6 +230,9 @@ def equivalent(left, right, fallback=None):
         def named_subject(value):
             return next((word for word in re.findall(r'\b[A-Z][A-Za-z0-9]+\b', value) if word not in stop), None)
         if named_subject(a) != named_subject(b):
+            return False
+    if key_a and key_a[0] == 'swiss_first_retail_approval':
+        if any(swiss_approval_has_unresolved_update(row) for row in (left, right)):
             return False
     if stage(text(left)) != stage(text(right)):
         return False
