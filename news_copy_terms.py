@@ -7,7 +7,7 @@ from decimal import Decimal
 
 def repair_translation(source, translated):
     # 已核對的 CFTC／CME 原文：perps 是永續合約，may 與未證明均須保留。
-    normalized = re.sub(r'\s+', ' ', source.replace('’', "'").strip()).casefold()
+    normalized = re.sub(r'\s+', ' ', source.replace('’', "'").replace('‘', "'").strip()).casefold()
     cftc_title = ('U.S. CFTC rebuffs CME legal stance in consequential fight '
                   'over perpetual futures')
     cftc_summary = ("The future of perps in the U.S. may be at stake as the CFTC argues "
@@ -18,6 +18,21 @@ def repair_translation(source, translated):
     elif normalized == cftc_summary.casefold():
         translated = ('美國永續合約的未來可能受到影響；CFTC 主張，該機關核准首個比特幣永續合約後，'
                       'CME 並未證明新政策對其造成損害。')
+    # 八月是已提出提案的時間，不是徵詢意見的截止日；claims 不補成賠償。
+    exact_copy = {
+        "Market participants weigh in on SEC's proposed crypto regulations":
+            '市場參與者就 SEC 擬議的加密資產規則發表意見',
+        ("The financial agency is scheduled to close public comments on its "
+         "'Regulation Crypto Assets' proposed in August."):
+            '該監管機關預定結束對八月提出的《Regulation Crypto Assets》提案公開徵詢意見。',
+        ("Nine other crypto platforms voluntarily restricted app access in Kazakhstan, "
+         "prompting the regulator to withdraw its claims against them."):
+            '另外九個加密平台已自願限制在哈薩克的應用程式存取，因此監管機關撤回對這些平台的相關法律請求。',
+    }
+    for original, copy in exact_copy.items():
+        if normalized == original.casefold():
+            translated = copy
+            break
     # 稅務提案不得混成商品出口稅，也不把研議中的提案寫成已生效。
     if re.fullmatch(r'France advances stablecoin tax, eyes self-custodial wallets and exit tax proposals[.!]?', source.strip(), re.I):
         translated = '法國推進穩定幣稅制，研議自託管錢包與離境稅提案'
