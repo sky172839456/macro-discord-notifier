@@ -47,6 +47,17 @@ def category(text, categories):
         if result:
             result['priority'] = 'normal'
             return result
+    # OCC 的 GENIUS 法案發行人規則屬監管；reserve 在此不是 ETF 儲備。
+    occ_rules = (
+        'OCC Finalizes GENIUS Act Stablecoin Rules Ahead of January Deadline '
+        'The rule sets reserve, redemption and risk standards for issuers, but the OCC has yet '
+        'to say when it will begin accepting applications.'
+    )
+    if re.sub(r'\s+', ' ', text.strip()).casefold() == occ_rules.casefold():
+        result = next((dict(row) for row in categories if row['key'] == 'regulation'), None)
+        if result:
+            result['priority'] = 'critical' if material_news({'title': text}) else 'normal'
+            return result
     tax_policy = (re.search(r'\b(?:stablecoins?|crypto|cryptocurrency|digital assets?)\b', lowered)
                   and re.search(r'\b(?:tax|taxes|taxation)\b', lowered)
                   and re.search(r'\b(?:assembly|parliament|amendments?|proposals?|legislation|tax laws?|tax rules?)\b', lowered))
