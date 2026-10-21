@@ -35,6 +35,18 @@ def category(text, categories):
         if result:
             result['priority'] = 'critical' if material_news({'title': text}) else 'normal'
             return result
+    # 已核對的價格／期權新聞：ETF 流入僅是摘要背景，不覆蓋其市場主題。
+    # 完整標題與摘要均相符才修正；新增政策、資安或 ETF 進展仍走既有分類。
+    market_context = (
+        "Bitcoin drops to $81,400 as Asian chip stocks tumble, options traders seek downside protection "
+        "Bitcoin slipped 0.5% to around $81,400 even after the biggest daily spot ETF inflow in nearly "
+        "a month as South Korea's Kospi index fell 3.7% on AI worries."
+    )
+    if re.sub(r'\s+', ' ', text.strip()).casefold() == market_context.casefold():
+        result = next((dict(row) for row in categories if row['key'] == 'market'), None)
+        if result:
+            result['priority'] = 'normal'
+            return result
     tax_policy = (re.search(r'\b(?:stablecoins?|crypto|cryptocurrency|digital assets?)\b', lowered)
                   and re.search(r'\b(?:tax|taxes|taxation)\b', lowered)
                   and re.search(r'\b(?:assembly|parliament|amendments?|proposals?|legislation|tax laws?|tax rules?)\b', lowered))
