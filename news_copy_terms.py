@@ -18,8 +18,17 @@ def repair_translation(source, translated):
     elif normalized == cftc_summary.casefold():
         translated = ('美國永續合約的未來可能受到影響；CFTC 主張，該機關核准首個比特幣永續合約後，'
                       'CME 並未證明新政策對其造成損害。')
-    # 八月是已提出提案的時間，不是徵詢意見的截止日；claims 不補成賠償。
+    # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        'Qubic restarts blockchain, opens recovery claims after $1.4M hack':
+            'Qubic 在140萬美元駭客攻擊後重啟區塊鏈，開放資產追回申請',
+        'Crypto rises with Asian tech stocks, zcash extends gain after setting upgrade date':
+            '加密資產隨亞洲科技股上漲，Zcash 確定升級日期後延續漲勢',
+        'Housing is flashing warning signs just as the Fed weighs more interest rate hikes':
+            '聯準會考慮進一步升息之際，房市浮現警訊',
+        ('Lloyds drew the most complaints despite having no published policy restricting crypto '
+         'transfers, according to a Stand With Crypto report.'):
+            '根據 Stand With Crypto 報告，Lloyds 收到的投訴最多，儘管該行未公布限制加密資產轉帳的政策。',
         'Bitcoin is rejected at $83K as US bond yields reverse higher with equities':
             '比特幣在8.3萬美元受阻，美國公債殖利率轉升、股市走高',
         "Market participants weigh in on SEC's proposed crypto regulations":
