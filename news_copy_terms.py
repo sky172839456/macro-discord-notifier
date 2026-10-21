@@ -20,6 +20,8 @@ def repair_translation(source, translated):
                       'CME 並未證明新政策對其造成損害。')
     # 八月是已提出提案的時間，不是徵詢意見的截止日；claims 不補成賠償。
     exact_copy = {
+        'Bitcoin is rejected at $83K as US bond yields reverse higher with equities':
+            '比特幣在8.3萬美元受阻，美國公債殖利率轉升、股市走高',
         "Market participants weigh in on SEC's proposed crypto regulations":
             '市場參與者就 SEC 擬議的加密資產規則發表意見',
         ("The financial agency is scheduled to close public comments on its "
