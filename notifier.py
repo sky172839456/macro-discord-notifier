@@ -637,6 +637,8 @@ def format_metrics(summary: str, event_key: str) -> str:
         labels = ("職位空缺", "前值／聘僱", "離職／其他")
         return "\n".join(f"**{label}**　{value}" for label, value in zip(labels, amounts[:3])) or extract_numbers(summary)
     if event_key == "claims":
+        # PDF extraction may wrap words or insert repeated spaces.
+        clean = html_to_text(summary)
         claims = re.search(r"initial claims was\s+([\d,]+)", clean, re.I)
         change = re.search(
             r"(increase|decrease)\s+of\s+([\d,]+)\s+from\s+the\s+previous\s+week(?:'s)?",
@@ -652,7 +654,7 @@ def format_metrics(summary: str, event_key: str) -> str:
         previous_level = re.search(
             r"previous week(?:'s)? (?:revised|unrevised) level of ([\d,]+)", clean, re.I
         )
-        four_week = re.search(r"4-week\s+moving\s+average\s+was\s+([\d,]+)", clean, re.I)
+        four_week = re.search(r"4\s*-\s*week\s+moving\s+average\s+was\s+([\d,]+)", clean, re.I)
         number = lambda match, group=1: match.group(group).rstrip(",")  # noqa: E731
         lines = [f"**實際值｜初領失業金**　{number(claims)} 人" if claims else ""]
         if revision:
@@ -712,9 +714,9 @@ def release_critical_missing(item: dict[str, Any]) -> list[str]:
     if item['rule']['key'] == 'retail':
         from macro_results import retail_details
         return retail_details(item)[1]
-    if item['rule']['key'] == 'claims' and not re.search(r'initial claims was\s+[\d,]+', str(item.get('summary') or ''), re.I):
-        return ['本次初領失業金人數']
     summary = html_to_text(str(item.get('summary') or '')).strip()
+    if item['rule']['key'] == 'claims' and not re.search(r'initial claims was\s+[\d,]+', summary, re.I):
+        return ['本次初領失業金人數']
     if not summary:
         return ['本次官方摘要與主數據']
     numeric_keys = {'ppi', 'pce', 'gdp', 'retail', 'durable', 'jolts', 'jobs', 'claims'}
