@@ -29,6 +29,9 @@ def material_news(item):
 
 def category(text, categories):
     lowered = f" {text.lower()} "
+    from news_verified_context import core_policy_text
+    if core_policy_text(text):
+        return next(dict(row, priority='normal') for row in categories if row['key'] == 'network')
     from news_editorial import acquisition_with_only_old_incident
     if acquisition_with_only_old_incident(text):
         result = next((dict(row) for row in categories if row['key'] == 'exchange'), None)

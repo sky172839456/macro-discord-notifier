@@ -18,6 +18,29 @@ def repair_translation(source, translated):
     elif normalized == cftc_summary.casefold():
         translated = ('美國永續合約的未來可能受到影響；CFTC 主張，該機關核准首個比特幣永續合約後，'
                       'CME 並未證明新政策對其造成損害。')
+    # 軟體發布與IPO撤回的狹義語境；不改寫一般cut/pull/release。
+    if re.search(r'\bbackport fixes\b.*\bcut releases immediately\b', source, re.I):
+        translated = translated.replace('立即刪除版本', '立即發布修正版').replace('刪除版本', '發布修正版')
+        translated = translated.replace('回溯修復', '回溯套用修補')
+    if re.search(r'\bSolidigm pulls IPO\b|\bpulled IPOs\b', source, re.I):
+        translated = translated.replace('拉動 IPO', '撤回 IPO').replace('拉動IPO', '撤回IPO')
+        translated = translated.replace('IPO 拉動', 'IPO 撤回').replace('IPO拉動', 'IPO撤回')
+    if re.search(r'\bAI buildout\b', source, re.I):
+        translated = translated.replace('AI 的構建', 'AI 基建擴張').replace('AI的構建', 'AI基建擴張')
+    if re.search(r'\bneoclouds\b', source, re.I):
+        translated = translated.replace('新雲', '新興雲端服務商')
+    if re.search(r'\bSpaceX\b', source, re.I) and re.search(r'\bTesla\b', source, re.I) and re.search(r'\belection stakes\b', source, re.I):
+        translated = translated.replace('選舉權益', '選舉利害關係')
+    if re.search(r'\bBitcoin circles\b.*\bETF cost basis\b', source, re.I):
+        translated = translated.replace('Bitcoin圈為', '比特幣徘徊在').replace('Bitcoin 圈為', '比特幣徘徊在')
+        translated = translated.replace('成本基礎', '成本基準')
+    if re.search(r'\bBitcoin\b', source, re.I) and re.search(r'\bextended (?:its )?daily losses to\b', source, re.I):
+        translated = translated.replace('每日損失延長至', '單日跌幅擴大至').replace('延長每日損失至', '單日跌幅擴大至')
+    if re.search(r'\bSolana\b.*\bAlpenglow\b', source, re.I):
+        translated = translated.replace('阿爾卑斯光', 'Alpenglow').replace('索拉娜', 'Solana')
+        if normalized == "solana alpenglow goes live in 'most ambitious' upgrade since ethereum's merge":
+            translated = translated.replace('將進行', '已完成').replace('將上線', '已上線')
+
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
         'Qubic restarts blockchain, opens recovery claims after $1.4M hack':

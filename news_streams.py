@@ -129,7 +129,8 @@ def run(now):
         state['initialized'] = True
         news.save_state(state)
         return len(all_rows), 0
-    history = [r for r in state.get('headline_history', []) if published_time(r['date']) >= now - timedelta(hours=24)]
+    from news_verified_context import keep_history
+    history = [r for r in state.get('headline_history', []) if keep_history(r, now)]
     state['headline_history'] = history
     pending = [restore(r) for r in state.get('pending', []) if r['id'] not in seen]
     candidates = [r for r in all_rows + pending if r['id'] not in seen and r['published'] >= now - timedelta(hours=24)]

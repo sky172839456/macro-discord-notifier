@@ -338,6 +338,10 @@ def similar_title(left: str, right: str) -> bool:
 def same_news_event(left, right):
     if slim_policy.enabled():
         import news_auto_recovery as auto
+        if auto.enabled():
+            from news_verified_context import same_verified_event, same_swiss_launch_version
+            if same_verified_event(left, right) or same_swiss_launch_version(left, right):
+                return True
         if auto.enabled() and auto.same_article(left, right):
             return True
         from news_editorial import equivalent
