@@ -28,10 +28,10 @@ class RulesClaimsCopyTests(unittest.TestCase):
         self.assertNotIn('聲明', fixed)
         self.assertNotIn('已賠償', fixed)
 
-    def test_date_with_may_is_still_deferred_by_existing_safety_guard(self):
-        # 此已知摘要限制另列待核，本輪不放寬安全閘來恢復全文。
-        with self.assertRaises(ValueError):
-            auto.checked_copy(QBODY, '該網路驗證者已通過復原計畫，並開放申請至2027年5月1日。')
+    def test_valid_may_date_keeps_deadline_without_invented_uncertainty(self):
+        text = auto.checked_copy(QBODY, '該網路驗證者已通過復原計畫，並開放申請至2027年5月1日。')
+        self.assertIn('2027年5月1日', text)
+        self.assertNotIn('可能', text)
         self.assertEqual(repair_translation(QBODY, '原摘要'), '原摘要')
 
     def test_changed_recovery_amount_stage_and_deadline_are_not_overwritten(self):
