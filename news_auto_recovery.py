@@ -41,8 +41,17 @@ def checked_copy(source, translated):
         (r"\b(?:not|never|cannot|denies?|denied)\b|n[’']t\b", r'不|未|無|否認|否決|拒絕'),
         (r'\b(?:expects?|expected|plans?|planned|proposed)\b', r'預計|預期|計劃|計畫|擬|提議|提案|提出'),
     )
+    # Valid explicit dates use May as a month, not an uncertainty modal.
+    # Invalid/partial dates and any separate may remain subject to the guard.
+    from news_policy_context import DATE, parse_date
+    qualification_source = re.sub(
+        r'\b' + DATE + r'\b',
+        lambda match: ' [calendar date] ' if parse_date(match.group(0)) else match.group(0),
+        source, flags=re.I,
+    )
     for english, chinese in checks:
-        if re.search(english, source, re.I) and not re.search(chinese, result):
+        qualifier_text = qualification_source if english == checks[0][0] else source
+        if re.search(english, qualifier_text, re.I) and not re.search(chinese, result):
             raise ValueError('translation lost source qualification')
     for english, wrong in ((r'\b(?:outflows?|withdrawals?)\b', r'淨流入'),
                            (r'\b(?:inflows?)\b', r'淨流出')):
