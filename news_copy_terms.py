@@ -7,6 +7,9 @@ from decimal import Decimal
 
 def repair_translation(source, translated):
     # 已核對的 CFTC／CME 原文：perps 是永續合約，may 與未證明均須保留。
+    from news_streak_guard import TITLE, COPY
+    if source.strip() == TITLE:
+        translated = COPY
     normalized = re.sub(r'\s+', ' ', source.replace('’', "'").replace('‘', "'").strip()).casefold()
     cftc_title = ('U.S. CFTC rebuffs CME legal stance in consequential fight '
                   'over perpetual futures')

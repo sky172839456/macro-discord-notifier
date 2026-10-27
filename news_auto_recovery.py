@@ -34,6 +34,8 @@ def checked_copy(source, translated):
     result = checked_translation(source, translated)
     if not numeric_values(source).issubset(numeric_values(result)):
         raise ValueError('translation dropped numeric facts')
+    from news_streak_guard import validate
+    validate(source, result)
     # Preserve qualifications instead of converting an allegation into a fact.
     checks = (
         (r'\b(?:may|might|could|potential(?:ly)?|possibly)\b', r'可能|或許|潛在|有望|或將'),

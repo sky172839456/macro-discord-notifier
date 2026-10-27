@@ -62,7 +62,9 @@ class MacroScopeExpansionTests(unittest.TestCase):
         self.assertEqual(events[1]['time'].hour, 14)
         self.assertIn('industrial', policy.CALENDAR_EVENTS)
         self.assertNotIn('industrial', policy.REMINDER_EVENTS)
-        self.assertNotIn('industrial', policy.RESULT_EVENTS)
+        self.assertIn('industrial', policy.RESULT_EVENTS)  # Explicitly approved result expansion.
+        from macro_result_extensions import details
+        self.assertTrue(details({'rule':{'key':'industrial'},'title':'Annual Revision','summary':'Industrial production increased 4 percent annually.'})[1])
 
     def test_industrial_missing_year_or_time_fails(self):
         for source in ('2026: October 16.', 'monthly releases are issued at 9:15 a.m. 2027: October 16.'):

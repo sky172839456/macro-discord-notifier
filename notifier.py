@@ -51,6 +51,8 @@ PUBLIC_CALENDARS = (
 OFFICIAL_PAGE_RELEASES = (
     ("retail", "CENSUS", "https://www.census.gov/retail/sales.html", "advance monthly sales for retail and food services"),
     ("durable", "CENSUS", "https://www.census.gov/manufacturing/m3/adv/current/index.html", "monthly advance report on durable goods"),
+    ("gdp", "BEA", "https://www.bea.gov/data/gdp/gross-domestic-product", "real gross domestic product"),
+    ("industrial", "FED", "https://www.federalreserve.gov/releases/g17/current/default.htm", "release date:"),
 )
 EXTENDED_CALENDARS = {
     "BEA": "https://www.bea.gov/news/schedule/full",
@@ -186,8 +188,15 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
             summary += "."
         else:
             current = float(datasets[0][0]["value"])
-            previous_value = float(datasets[0][1]["value"]) if len(datasets[0]) > 1 else current
-            summary = f"Job openings were {current / 1000:.1f} million; previous value {previous_value / 1000:.1f} million."
+            summary = f"Job openings were {current / 1000:.3f} million."
+            prior_period = datasets[0][1] if len(datasets[0]) > 1 else None
+            from cpi_release import previous_period
+            prior_year, prior_month = previous_period(int(latest[0]["year"]), int(latest[0]["period"][1:]))
+            if prior_period and (int(prior_period["year"]), prior_period["period"]) == (prior_year, f"M{prior_month:02d}"):
+                summary += f" previous value {float(prior_period['value']) / 1000:.3f} million."
+            # An old-period revision is not a newly published monthly release.
+            if previous.get("reference") == reference:
+                continue
         releases.append({
             "id": f"bls-api-{event_key}-{reference}-{signature}",
             "title": rule["name"], "summary": summary, "url": rule["source"],
@@ -223,6 +232,11 @@ def fetch_official_page_releases(now: datetime, state: dict[str, Any]) -> tuple[
             excerpt = text[max(0, index - 100):index + 2200]
             if slim_policy.enabled() and event_key == 'retail' and not re.search(r'[A-Z][a-z]+ \d{1,2}, \d{4}', excerpt):
                 raise ValueError('retail official publication date missing')
+            if slim_policy.enabled() and event_key in {"durable", "gdp", "industrial"}:
+                from macro_result_extensions import publication
+                published_at = publication(excerpt, event_key)
+                if now < published_at:
+                    continue  # Do not baseline a preloaded release before embargo.
             signature = hashlib.sha256(excerpt.encode("utf-8")).hexdigest()[:20]
             previous = saved.get(event_key)
             saved[event_key] = signature
@@ -300,6 +314,9 @@ def fetch_claims_pdf_release(now: datetime, state: dict[str, Any]) -> dict[str, 
 
 def official_page_published_at(excerpt: str, event_key: str, now: datetime) -> datetime:
     """Recover an official release time from a dated listing page."""
+    if event_key in {"durable", "gdp", "industrial"}:
+        from macro_result_extensions import publication
+        return publication(excerpt, event_key)
     if event_key not in {"claims", "retail"}:
         return now
     match = re.search(
@@ -711,6 +728,9 @@ def release_critical_missing(item: dict[str, Any]) -> list[str]:
             from macro_results import ppi_details
             return ppi_details(item)[1]
         return details(item)[1]
+    from macro_result_extensions import KEYS, details as extended_details
+    if item['rule']['key'] in KEYS:
+        return extended_details(item)[1]
     if item['rule']['key'] == 'retail':
         from macro_results import retail_details
         return retail_details(item)[1]
@@ -821,6 +841,10 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
     if slim_policy.enabled():
         fields = [f for f in fields if f["name"] not in {"⚡ 快速判讀", "📅 下次公布（台灣）"}]
         numbers = numbers.replace('（MoM）', '').replace('（YoY）', '')
+        from macro_result_extensions import KEYS, details as extended_details
+        if item['rule']['key'] in KEYS:
+            numbers, _ = extended_details(item)
+            fields = [f for f in fields if f['name'] != '🔄 前值與修正資訊']
         if item['rule']['key'] == 'retail':
             from macro_results import retail_details
             numbers, _ = retail_details(item)
@@ -1210,6 +1234,9 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
                         save_state(state)
             digests.append(digest_key)
 
+    if slim_policy.enabled():
+        from macro_result_extensions import enrich
+        releases = [enrich(row, lambda url: http_text(url, attempts=1)) for row in releases]
     pending_release_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for item in releases:
         age = (now - item["published"]).total_seconds() / 60

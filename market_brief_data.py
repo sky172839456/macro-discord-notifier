@@ -361,7 +361,8 @@ def parse_farside_week(source: str, trading_days: int = 5) -> dict[str, Any]:
 
 
 def etf_flow_snapshot(url: str = FARSIDE_BTC) -> dict[str, Any]:
-    result = parse_farside_latest(get_text(url, referer="https://farside.co.uk/"))
+    from etf_source_context import parse
+    result = parse(get_text(url, referer="https://farside.co.uk/"))
     result["retrieved_at"] = datetime.now(timezone.utc).isoformat()
     return result
 
@@ -450,6 +451,9 @@ def collect_weekly_dashboard(now: datetime) -> dict[str, Any]:
     collect("weekly_crypto", weekly_crypto_snapshot)
     collect("weekly_sentiment", weekly_sentiment_snapshot)
     collect("weekly_derivatives", lambda: weekly_funding_snapshot(now))
+    if slim_policy.enabled():
+        collect("etf", etf_flow_snapshot)
+        collect("eth_etf", lambda: etf_flow_snapshot(FARSIDE_ETH))
     collect("weekly_btc_etf", lambda: weekly_etf_snapshot(FARSIDE_BTC))
     collect("weekly_eth_etf", lambda: weekly_etf_snapshot(FARSIDE_ETH))
     return dashboard

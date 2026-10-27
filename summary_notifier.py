@@ -684,6 +684,8 @@ def run_scheduled(now: datetime) -> list[str]:
     def remember(result):
         if isinstance(result, dict) and result.get('at'):
             history.append(result)
+            from etf_followup import remember as remember_etf
+            remember_etf(state, result, now)
         cutoff = (now - timedelta(days=9)).isoformat()
         history[:] = [r for r in history if r.get('at', '') >= cutoff]
     if local.hour >= 7 and state.get("daily") != today and not (slim_policy.enabled() and local.weekday() == 0):
@@ -694,8 +696,16 @@ def run_scheduled(now: datetime) -> list[str]:
         remember(run("weekly", now, history=history) if slim_policy.enabled() else run("weekly", now))
         state["weekly"] = week
         sent.append("weekly")
-    SCHEDULE_STATE.parent.mkdir(parents=True, exist_ok=True)
-    SCHEDULE_STATE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    def persist():
+        SCHEDULE_STATE.parent.mkdir(parents=True, exist_ok=True)
+        SCHEDULE_STATE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    persist()  # A later ETF request/send failure cannot replay today's daily brief.
+    if slim_policy.enabled():
+        from etf_followup import check
+        from market_brief_data import etf_flow_snapshot, FARSIDE_BTC, FARSIDE_ETH
+        if check(state, now, lambda symbol: etf_flow_snapshot(FARSIDE_BTC if symbol == 'BTC' else FARSIDE_ETH),
+                 lambda card: send(os.environ['DISCORD_DAILY_SUMMARY_WEBHOOK_URL'],card,False), persist):
+            sent.append('etf_update')
     return sent
 
 
