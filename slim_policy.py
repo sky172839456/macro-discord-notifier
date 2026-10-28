@@ -10,7 +10,7 @@ TAIPEI = ZoneInfo("Asia/Taipei")
 CORE_EVENTS = {"cpi", "jobs", "pce", "fomc"}
 RESULT_EVENTS = CORE_EVENTS | {"ppi", "retail", "claims", "gdp", "durable", "jolts", "industrial"}
 CALENDAR_EVENTS = CORE_EVENTS | {"ppi", "gdp", "retail", "claims", "jolts", "durable", "industrial"}
-REMINDER_EVENTS = CORE_EVENTS | {"fed_chair_policy"}
+REMINDER_EVENTS = set()  # Member pre-release notices are consolidated into the daily timetable.
 CALENDAR_EVENTS |= {"fed_chair_policy"}
 
 
@@ -228,12 +228,12 @@ def merge_pending(rows):
     return kept
 
 
-def today_events(events, now, days=1):
+def today_events(events, now, days=1, include_elapsed=False):
     today = now.astimezone(TAIPEI).date()
     kept, seen = [], set()
     for event in sorted(events, key=lambda e: e['time']):
         identity = (event['rule']['key'], event['time'].replace(second=0, microsecond=0), event.get('speaker', ''))
-        if (event['rule']['key'] in CALENDAR_EVENTS and event['time'] >= now
+        if (event['rule']['key'] in CALENDAR_EVENTS and (include_elapsed or event['time'] >= now)
                 and today <= event['time'].astimezone(TAIPEI).date() < today + timedelta(days=days)
                 and identity not in seen):
             kept.append(event)
@@ -246,13 +246,16 @@ def reminder_due(event, now):
 
 
 def calendar_cards(events, now, error=None):
-    selected = today_events(events, now)
+    selected = today_events(events, now, include_elapsed=True)
     if not selected:
         return []  # Never construct an empty member calendar, even via direct callers.
-    lines = [f"**{e['time'].astimezone(TAIPEI):%H:%M}｜{e['rule']['name']}**\n🔗 [官方來源]({e['rule']['source']})" for e in selected]
+    lines = []
+    for e in selected:
+        status = "已過排定時間；結果另見正式公告" if e['time'] <= now else "待公布"
+        lines.append(f"**{e['time'].astimezone(TAIPEI):%H:%M}｜{e['rule']['name']}**\n{status}\n🔗 [官方來源]({e['rule']['source']})")
     if error:
         lines.append("⚠️ 部分行事曆尚未確認；未列出不代表今天沒有事件。")
-    intro = '台灣時間｜以下為今日尚未發生的追蹤事件。\n\n'
+    intro = '台灣時間｜本群追蹤項目，非全球全部經濟數據。\n依本輪取得的今日排程排序；排定時間不代表結果已確認。\n\n'
     pages, current = [], []
     for line in lines:
         if current and len(intro + '\n\n'.join(current + [line])) > 3500:
@@ -263,7 +266,7 @@ def calendar_cards(events, now, error=None):
         pages.append(current)
     return [{"title": f"🗓️ 今日總經行事曆｜{now.astimezone(TAIPEI):%m/%d}｜共{len(selected)}項" + (f"｜{i+1}/{len(pages)}" if len(pages) > 1 else ''),
              "description": intro + "\n\n".join(page), "fields": [], "color": 0x647FB5,
-             "footer": {"text": "台灣時間｜核心數據與已核對主席政策談話另發一次提醒"}}
+             "footer": {"text": "每日早上一次總表｜不另發逐項公布前提醒｜結果確認後另發"}}
             for i, page in enumerate(pages)]
 
 

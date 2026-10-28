@@ -58,7 +58,7 @@ class MacroCalendarDeliveryTests(unittest.TestCase):
 
     def test_skips_empty_and_non_today_calendars_without_consuming_daily_key(self):
         for calendar in ([], [self.event("cpi", 24 * 60)],
-                         [self.event("cpi", -60)], [self.event("fed_official", 120)]):
+                         [self.event("fed_official", 120)]):
             with self.subTest(calendar=calendar):
                 self.calendar = calendar
                 notifier.run(self.now)
@@ -100,13 +100,13 @@ class MacroCalendarDeliveryTests(unittest.TestCase):
         self.assertEqual([c.args[1] for c in self.member_calls()], [{"title": "release"}])
         self.assertIn("release-event:cpi:2026-10-14", self.state["sent"])
 
-    def test_core_reminder_is_unchanged(self):
+    def test_core_reminders_are_consolidated_into_daily_calendar(self):
         self.calendar = [self.event("cpi", 15)]
         with patch.object(notifier, "pre_embed", return_value={"title": "reminder"}):
             notifier.run(self.now)
             notifier.run(self.now + timedelta(minutes=5))
-        self.assertEqual(sum(c.args[1]["title"] == "reminder" for c in self.member_calls()), 1)
-        self.assertEqual(len(self.member_calls()), 2)  # calendar + one reminder
+        self.assertEqual(sum(c.args[1]["title"] == "reminder" for c in self.member_calls()), 0)
+        self.assertEqual(len(self.member_calls()), 1)  # only the daily timetable
 
     def test_forcing_an_empty_digest_does_not_send_blank_card(self):
         notifier.run(self.now, force_digest=True)
@@ -144,6 +144,68 @@ class MacroCalendarDeliveryTests(unittest.TestCase):
         titles = [c.args[1]['title'] for c in self.member_calls()]
         self.assertEqual(titles, ['page1', 'page2', 'page2'])
         self.assertEqual(self.state['digests'], ['2026-10-14'])
+
+
+    def test_early_event_is_listed_without_claiming_result_published(self):
+        self.calendar = [self.event("fomc", -360)]
+        notifier.run(self.now)
+        card = self.member_calls()[0].args[1]
+        self.assertIn("02:00", card["description"])
+        self.assertIn("已過排定時間；結果另見正式公告", card["description"])
+        self.assertNotIn("已公布", card["description"])
+        self.assertEqual(self.state["digests"], ["2026-10-14"])
+
+    def test_all_tracked_types_share_one_sorted_table_and_no_later_alert(self):
+        keys = sorted(notifier.slim_policy.CALENDAR_EVENTS - {"fed_chair_policy"})
+        self.calendar = [self.event(key, 120+i) for i,key in enumerate(keys)]
+        self.calendar.append(dict(self.calendar[0]))
+        notifier.run(self.now)
+        notifier.run(self.now+timedelta(minutes=110))
+        self.assertEqual(len(self.member_calls()), 1)
+        card = self.member_calls()[0].args[1]
+        self.assertIn("共11項", card["title"])
+        self.assertIn("本群追蹤項目", card["description"])
+        self.assertIn("不另發逐項公布前提醒", card["footer"]["text"])
+        for key in keys:
+            rule = next(r for r in notifier.EVENT_RULES if r["key"] == key)
+            self.assertEqual(card["description"].count(rule["name"]), 1)
+        self.assertFalse(any(k.startswith("pre:") for k in self.state["sent"]))
+
+    def test_already_sent_daily_key_prevents_midday_resend(self):
+        self.state["digests"] = ["2026-10-14"]
+        self.calendar = [self.event("cpi", 15)]
+        notifier.run(self.now)
+        self.assertEqual(self.member_calls(), [])
+
+    def test_releases_still_deliver_after_table_once_without_reminders(self):
+        rule = next(r for r in notifier.EVENT_RULES if r["key"] == "cpi")
+        self.calendar = [self.event("cpi", 15)]
+        self.releases = [{"id":"valid-cpi", "published":self.now, "rule":rule,
+            "url":rule["source"], "summary":"", "reference_period":"2026-M09",
+            "cpi_metrics":{"monthly":.6,"annual":3.7,"monthly_seasonally_adjusted":True,"annual_unadjusted":True}}]
+        with patch.object(notifier, "release_embed", return_value={"title":"result"}):
+            notifier.run(self.now)
+            notifier.run(self.now+timedelta(minutes=5))
+        self.assertEqual(len(self.member_calls()), 2)
+        self.assertEqual(sum(c.args[1]["title"]=="result" for c in self.member_calls()), 1)
+        self.assertIn("release-event:cpi:2026-10-14", self.state["sent"])
+
+    def test_default_upcoming_selection_still_excludes_elapsed_events(self):
+        past = self.event("fomc", -360)
+        future = self.event("claims", 120)
+        self.assertEqual(notifier.slim_policy.today_events([past,future],self.now), [future])
+        self.assertEqual(notifier.slim_policy.today_events([past,future],self.now,include_elapsed=True), [past,future])
+
+    def test_no_individual_chair_policy_reminder(self):
+        self.calendar = [{"id":"chair","time":self.now+timedelta(minutes=15),
+            "rule":{"key":"fed_chair_policy","name":"已核對主席政策談話","source":"https://www.federalreserve.gov/"},
+            "speaker":"Chair", "title":"Policy speech"}]
+        # Enrichment is tested elsewhere; use an already verified calendar row.
+        with patch.object(notifier.fed_speech_policy,"enrich",side_effect=lambda rows,*_: (rows,[])):
+            notifier.run(self.now)
+            notifier.run(self.now+timedelta(minutes=5))
+        self.assertEqual(len(self.member_calls()), 1)
+        self.assertNotIn("pre:chair",self.state["sent"])
 
 
 if __name__ == "__main__":

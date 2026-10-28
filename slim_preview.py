@@ -13,7 +13,7 @@ import risk_notifier
 
 
 def cards(now):
-    event = {"id": "preview-cpi", "time": now + timedelta(minutes=15),
+    event = {"id": "preview-cpi", "time": now.astimezone(policy.TAIPEI).replace(hour=20, minute=30, second=0, microsecond=0),
              "rule": {"key": "cpi", "name": "美國消費者物價指數（CPI）", "source": "https://www.bls.gov/cpi/"}}
     dashboard = {"crypto": {"BTC": {"price": 80000., "change_24h": 1.2}, "ETH": {"price": 2500., "change_24h": -.8}},
                  "etf": {"date": now, "net_flow_musd": 120.}, "errors": {}}
@@ -26,7 +26,7 @@ def cards(now):
                 "summary": "Example company adds 250 Bitcoin.", "summary_zh_points": ["本則為測試資料；未對實際公司作出陳述。"], "official": False}]
     return [
         ("daily_market", policy.summary_card("daily", now, None, None, [event], None, dashboard)),
-        ("macro_alerts", notifier.pre_embed(event, minutes_until=15)),
+        ("macro_alerts", policy.calendar_card([event], now)),
         ("macro_alerts", notifier.release_embed({"published": now, "url": event["rule"]["source"], "rule": event["rule"], "summary": "The Consumer Price Index increased 0.2 percent in the month and 2.7 percent over the last 12 months."})),
         ("crypto_news", policy.digest_card(general, now)),
         ("breaking_news", policy.news_card(news)),

@@ -65,9 +65,9 @@ class QualityTests(unittest.TestCase):
         a['title'], b['title'] = 'Governor A speaks', 'Governor B speaks'
         self.assertEqual(len(notifier.merge_calendar_events([a, b])), 2)
 
-    def test_chair_reminder_uses_single_window_and_never_runs_after_start(self):
+    def test_chair_has_no_individual_reminder_and_legacy_copy_is_explicit(self):
         event = self.event('fed_chair_policy', 15, '聯準會主席 Alex Example｜貨幣政策')
-        self.assertTrue(policy.reminder_due(event, self.now))
+        self.assertFalse(policy.reminder_due(event, self.now))
         self.assertFalse(policy.reminder_due(event, self.now + timedelta(minutes=16)))
         self.assertFalse(policy.reminder_due(self.event('fed_official', 15), self.now))
         card = apply_delivery_format(notifier.pre_embed(event, minutes_until=15), 'macro_alerts')

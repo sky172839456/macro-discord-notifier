@@ -84,8 +84,8 @@ class SlimNotificationsTests(unittest.TestCase):
             return {"time": self.now+timedelta(hours=offset), "rule": {"key": key, "name": key, "source": "https://example.invalid"}}
         self.assertEqual([e["rule"]["key"] for e in policy.today_events([event("fed_official", 1), event("cpi", 1), event("jobs", 8)], self.now)], ["cpi"])
 
-    def test_reminders_never_send_three_hours_early_or_after_release(self):
-        for minutes, expected in ((176, False), (28, False), (27, True), (15, True), (1, True), (0, False), (-5, False)):
+    def test_individual_reminders_are_disabled_at_every_window(self):
+        for minutes, expected in ((176, False), (28, False), (27, False), (15, False), (1, False), (0, False), (-5, False)):
             event = {"rule": {"key": "cpi"}, "time": self.now+timedelta(minutes=minutes)}
             self.assertEqual(policy.reminder_due(event, self.now), expected)
         self.assertFalse(policy.reminder_due({"rule": {"key": "fed_official"}, "time": self.now+timedelta(minutes=15)}, self.now))

@@ -1230,11 +1230,11 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
         weekly_overviews.append(week_key)
         weekly_sent = True
     if (force_digest or local.hour >= 7) and digest_key not in digests:
-        # In slim mode, no remaining tracked events means no member calendar.
+        # In slim mode, no tracked events for this local date means no member timetable.
         # Source failures are still reported to the admin log above. Do not
         # consume the daily key on a skip: a later source recovery or schedule
         # update must still be able to publish today's newly available events.
-        if not slim_policy.enabled() or slim_policy.today_events(calendar, now):
+        if not slim_policy.enabled() or slim_policy.today_events(calendar, now, include_elapsed=True):
             cards = slim_policy.calendar_cards(calendar, now, calendar_error) if slim_policy.enabled() else [daily_embed(calendar, now, calendar_error)]
             for card in cards:
                 page_key = f'calendar-page:{digest_key}:' + hashlib.sha256(json.dumps(card, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:20]
