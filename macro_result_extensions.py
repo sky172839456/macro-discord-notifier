@@ -38,6 +38,9 @@ def publication(text, key):
 
 def details(item):
     key = item['rule']['key']
+    if key == 'durable' and item.get('durable_table'):
+        from durable_release import details as table_details
+        return table_details(item)
     text = clean(item.get('title','')+' '+item.get('summary',''))
     lines, missing = [], []
     if key == 'industrial' and re.search(r'annual revision',item.get('title',''),re.I):
@@ -64,7 +67,7 @@ def details(item):
         m = re.search(r'(?:number of job openings was (?:little changed at|unchanged at|increased to|decreased to)|Job openings were)\s*(\d+(?:\.\d+)?)\s+million',text,re.I)
         if not m or not (ref or period):
             return '', ['JOLTS職位空缺與資料月份']
-        if not (item.get('id','').startswith('bls-api-jolts-') or re.search(r'seasonally adjusted|Seasonal Adjustment',text,re.I)):
+        if not (item.get('id','').startswith('bls-api-jolts-') or re.search(r'(?<!not )(?<!un)seasonally adjusted|Seasonal Adjustment',text,re.I)):
             return '', ['JOLTS季調口徑']
         y,mo = (int(ref[1]),int(ref[2])) if ref else (int(period[2]),MONTHS[period[1].lower()])
         lines = [f'**資料月份**　{y}/{mo:02d}',f'**職位空缺（季調）**　{float(m[1])*100:,.1f}萬人']
@@ -74,7 +77,7 @@ def details(item):
         else:
             lines.append('**前月值**　暫缺；聘僱、離職不當作職位空缺前值')
     else:
-        if not re.search(r'adjusted for seasonal variation|(?<!not )(?<!un)seasonally adjusted',text,re.I):
+        if not re.search(r'(?<!not )adjusted for seasonal variation|(?<!not )(?<!un)seasonally adjusted',text,re.I):
             return '', ['主數據季調口徑']
         if key == 'durable':
             subject = re.search(r'New orders for manufactured durable goods in ('+MONTH+r')\b(.{0,280}?)\b'+VERB+r'.{0,100}?\b'+VALUE+r'\s+percent',text,re.I)

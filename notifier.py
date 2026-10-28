@@ -139,7 +139,7 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
         if len(latest) != len(datasets):
             continue
         reference = f"{latest[0]['year']}-{latest[0]['period']}"
-        if event_key in {'cpi', 'ppi'} and any(f"{row['year']}-{row['period']}" != reference for row in latest):
+        if event_key in {'cpi', 'ppi', 'jobs'} and any(f"{row['year']}-{row['period']}" != reference for row in latest):
             continue  # Never combine monthly/annual observations from different months.
         price_metrics = None
         if event_key in {'cpi', 'ppi'}:
@@ -150,6 +150,21 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
             month = int(latest[0]['period'][1:])
             previous_year, previous_month = (int(latest[0]['year'])-1, 12) if month == 1 else (int(latest[0]['year']), month-1)
             if not 1 <= month <= 12 or len(datasets[0]) < 2 or (int(datasets[0][1]['year']), datasets[0][1]['period']) != (previous_year, f'M{previous_month:02d}'):
+                continue
+        if event_key == 'jobs':
+            from cpi_release import previous_period
+            y, m = int(latest[0]['year']), int(latest[0]['period'][1:])
+            if not 1 <= m <= 12:
+                continue
+            prior = previous_period(y,m)
+            import math
+            try:
+                numeric=[float(row['value']) for rows in datasets for row in rows[:2]]
+                if not all(math.isfinite(value) for value in numeric):
+                    continue
+            except (ValueError,TypeError,KeyError):
+                continue
+            if any(len(rows)<2 or (int(rows[1]['year']),rows[1]['period']) != (prior[0],f'M{prior[1]:02d}') for rows in datasets):
                 continue
         signature = hashlib.sha256(
             "|".join(f"{item['year']}:{item['period']}:{item['value']}" for item in latest).encode()
@@ -174,6 +189,8 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
                 summary += f" and {annual_change:.1f} percent over the last 12 months"
             summary += "."
         elif event_key == "jobs":
+            if previous.get("reference") == reference:
+                continue
             payroll_change = float(datasets[0][0]["value"]) - float(datasets[0][1]["value"])
             previous_payroll_change = (
                 float(datasets[0][1]["value"]) - float(datasets[0][2]["value"])
@@ -202,6 +219,15 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
             "title": rule["name"], "summary": summary, "url": rule["source"],
             "published": now, "rule": rule, 'reference_period': reference,
         })
+        if event_key == 'jobs':
+            from cpi_release import previous_period
+            prior_prior = previous_period(*previous_period(int(latest[0]['year']), int(latest[0]['period'][1:])))
+            pp = datasets[0][2] if len(datasets[0])>2 else None
+            safe_previous = previous_payroll_change if pp and (int(pp['year']),pp['period']) == (prior_prior[0],f'M{prior_prior[1]:02d}') else None
+            releases[-1]['jobs_metrics'] = {'payroll':payroll_change*1000,
+                'unemployment':float(datasets[1][0]['value']),
+                'previous_payroll':safe_previous*1000 if safe_previous is not None else None,
+                'previous_unemployment':float(datasets[1][1]['value'])}
         if event_key in {'cpi', 'ppi'}:
             year = int(latest[0]['year'])
             urls = [f'{BLS_API_URL}{series_id}?startyear={year-2}&endyear={year}' for series_id in ids]
@@ -719,33 +745,11 @@ def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool,
 
 
 def release_critical_missing(item: dict[str, Any]) -> list[str]:
-    """Do not equate missing forecast/previous values with missing current data."""
+    """Validate each result's actual subject, measurement and reference period."""
     if not slim_policy.enabled():
         return []
-    if item['rule']['key'] in {'cpi', 'ppi'} or item.get('price_metrics'):
-        from cpi_release import details
-        if item['rule']['key'] == 'ppi':
-            from macro_results import ppi_details
-            return ppi_details(item)[1]
-        return details(item)[1]
-    from macro_result_extensions import KEYS, details as extended_details
-    if item['rule']['key'] in KEYS:
-        return extended_details(item)[1]
-    if item['rule']['key'] == 'retail':
-        from macro_results import retail_details
-        return retail_details(item)[1]
-    summary = html_to_text(str(item.get('summary') or '')).strip()
-    if item['rule']['key'] == 'claims' and not re.search(r'initial claims was\s+[\d,]+', summary, re.I):
-        return ['本次初領失業金人數']
-    if not summary:
-        return ['本次官方摘要與主數據']
-    numeric_keys = {'ppi', 'pce', 'gdp', 'retail', 'durable', 'jolts', 'jobs', 'claims'}
-    if item['rule']['key'] in numeric_keys and not re.search(
-        r'[-+]?\d[\d,.]*\s*(?:percent|%|thousand|million|billion)|initial claims was\s+[\d,]+',
-        summary, re.I,
-    ):
-        return ['本次主數據']
-    return []
+    from macro_result_integrity import details
+    return details(item)[1]
 
 
 def retry_release_sources(state, baselines, event_key):
@@ -823,7 +827,13 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
                   next_time: datetime | None = None, detected_at: datetime | None = None) -> dict[str, Any]:
     local = (official_time or item["published"]).astimezone(TAIPEI)
     source = item["url"] or item["rule"]["source"]
-    numbers = format_metrics(item["summary"], item["rule"]["key"])
+    if slim_policy.enabled():
+        from macro_result_integrity import details as result_details
+        numbers, missing = result_details(item)
+        if missing:
+            numbers = '尚未確認：' + '、'.join(missing)
+    else:
+        numbers = format_metrics(item["summary"], item["rule"]["key"])
     time_label = "官方排定時間" if official_time else item.get("time_label", "機器人發現時間")
     fields = [
         {"name": f"🕐 本次{time_label}（台灣）", "value": local.strftime("%Y/%m/%d %H:%M"), "inline": True},
@@ -841,6 +851,7 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
     if slim_policy.enabled():
         fields = [f for f in fields if f["name"] not in {"⚡ 快速判讀", "📅 下次公布（台灣）"}]
         numbers = numbers.replace('（MoM）', '').replace('（YoY）', '')
+        fields = [f for f in fields if f['name'] != '🔄 前值與修正資訊']
         from macro_result_extensions import KEYS, details as extended_details
         if item['rule']['key'] in KEYS:
             numbers, _ = extended_details(item)
@@ -1235,8 +1246,10 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
             digests.append(digest_key)
 
     if slim_policy.enabled():
-        from macro_result_extensions import enrich
-        releases = [enrich(row, lambda url: http_text(url, attempts=1)) for row in releases]
+        from macro_result_integrity import enrich
+        releases = [enrich(row, lambda url: http_text(url, attempts=1), lambda url: http_bytes(url, attempts=1))
+                    if 0 <= (now-row['published']).total_seconds()/60 <= RELEASE_BACKFILL_MINUTES
+                    and f"release:{row['id']}" not in sent else row for row in releases]
     pending_release_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for item in releases:
         age = (now - item["published"]).total_seconds() / 60

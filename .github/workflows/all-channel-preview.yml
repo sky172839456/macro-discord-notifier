@@ -57,6 +57,7 @@ jobs:
           python source_quality_check.py
           python macro_scope_check.py
           python member_followup_check.py
+          python macro_member_check.py
           python quality_bundle_preview.py --output quality-preview.json
       - name: Send all previews only to the test channel
         if: inputs.audit_only != true

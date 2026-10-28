@@ -4,7 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timezone
 from urllib.request import Request,urlopen
 import notifier as n
-from macro_result_extensions import details,publication
+from macro_result_extensions import publication
+from macro_result_integrity import details,enrich
 from etf_source_context import parse
 from etf_followup import ready
 from market_brief_data import FARSIDE_BTC,FARSIDE_ETH
@@ -30,7 +31,8 @@ def inspect(pair):
                     'complete':ready(row),'flowMUSD':row['net_flow_musd'],
                     'unreported':row['unreported_components'],'sourceIssue':row.get('source_issue')}
     text=n.html_to_text(raw)
-    item={'rule':{'key':key},'title':'','summary':text}
+    item={'rule':{'key':key},'title':'','summary':text,'url':url}
+    item=enrich(item,lambda target:n.http_text(target,attempts=1),lambda target:n.http_bytes(target,attempts=1))
     copy,missing=details(item)
     if missing:
         raise ValueError(key+': readable official current source not parsed: '+','.join(missing))
