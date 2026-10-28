@@ -206,6 +206,12 @@ def summary_points(value: str) -> list[str]:
 def add_translated_title(item: dict[str, Any], state: dict[str, Any], now: datetime) -> dict[str, Any]:
     import news_auto_recovery as auto
     if auto.enabled():
+        text = str(item.get('title', '')) + ' ' + str(item.get('summary', ''))
+        if slim_policy.enabled() and slim_policy.account_reserve_context(text):
+            # Revalidate unsent cached/retry categories too; never reopen seen.
+            category = category_for(text)
+            if category:
+                item = dict(item, category=category)
         if item.get('auto_copy_version') == 2:
             from notification_quality import digest_exclusion_reason
             if not digest_exclusion_reason(item):

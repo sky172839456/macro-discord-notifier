@@ -46,6 +46,8 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        ('Bithumb hacked through employee system as South Korean financial firms face cyberattacks'):
+            '韓國金融業面臨網路攻擊，Bithumb 遭駭，入侵途徑為員工系統',
         'Qubic restarts blockchain, opens recovery claims after $1.4M hack':
             'Qubic 在140萬美元駭客攻擊後重啟區塊鏈，開放資產追回申請',
         'Crypto rises with Asian tech stocks, zcash extends gain after setting upgrade date':
@@ -70,6 +72,11 @@ def repair_translation(source, translated):
         if normalized == original.casefold():
             translated = copy
             break
+    # 被駭方不能變成入侵者；僅保護明確的Bithumb員工系統入侵途徑語句。
+    # 新增條件或不同事件不套固定譯文，讓既有資格／數字檢查繼續判斷。
+    if re.match(r'^\s*Bithumb\s+(?:(?:was|is|has been)\s+)?hacked\s+through\s+(?:an?\s+)?(?:employee|staff)\s+systems?\b', source, re.I):
+        if re.search(r'Bithumb\s*(?:(?:已|成功)\s*)?(?:駭入|駭進|入侵)', translated, re.I):
+            raise ValueError('translation reversed breach victim and attacker')
     # 稅務提案不得混成商品出口稅，也不把研議中的提案寫成已生效。
     if re.fullmatch(r'France advances stablecoin tax, eyes self-custodial wallets and exit tax proposals[.!]?', source.strip(), re.I):
         translated = '法國推進穩定幣稅制，研議自託管錢包與離境稅提案'
