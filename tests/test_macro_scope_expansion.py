@@ -62,7 +62,9 @@ class MacroScopeExpansionTests(unittest.TestCase):
         self.assertEqual(events[1]['time'].hour, 14)
         self.assertIn('industrial', policy.CALENDAR_EVENTS)
         self.assertNotIn('industrial', policy.REMINDER_EVENTS)
-        self.assertNotIn('industrial', policy.RESULT_EVENTS)
+        self.assertIn('industrial', policy.RESULT_EVENTS)  # Explicitly approved result expansion.
+        from macro_result_extensions import details
+        self.assertTrue(details({'rule':{'key':'industrial'},'title':'Annual Revision','summary':'Industrial production increased 4 percent annually.'})[1])
 
     def test_industrial_missing_year_or_time_fails(self):
         for source in ('2026: October 16.', 'monthly releases are issued at 9:15 a.m. 2027: October 16.'):
@@ -99,7 +101,8 @@ class MacroScopeExpansionTests(unittest.TestCase):
     def test_claims_require_actual_and_keep_people_units(self):
         row = {'summary': 'The 4-week moving average was 220,000.', 'rule': {'key': 'claims'}}
         self.assertTrue(n.release_critical_missing(row))
-        row['summary'] = "initial claims was 216,000, a decrease of 7,000 from the previous week's unrevised level of 223,000. The 4-week moving average was 220,000."
+        row.update(url='https://oui.doleta.gov/press/2026/102226.pdf')
+        row['summary'] = "In the week ending October 17, the advance figure for seasonally adjusted initial claims was 216,000, a decrease of 7,000 from the previous week's unrevised level of 223,000. The 4-week moving average was 220,000."
         self.assertEqual(n.release_critical_missing(row), [])
         copy = n.format_metrics(row['summary'], 'claims')
         for value in ('216,000 人', '223,000 人', '7,000 人', '220,000 人'):
@@ -140,7 +143,8 @@ class MacroScopeExpansionTests(unittest.TestCase):
         def row(key, summary):
             rule = next(r for r in n.EVENT_RULES if r['key'] == key)
             return {'id': 'new-'+key, 'rule': rule, 'published': now, 'summary': summary, 'url': rule['source']}
-        rows = [row('retail', RETAIL), row('claims', 'initial claims was 216,000.'), row('ppi', '')]
+        rows = [row('retail', RETAIL), row('claims', 'In the week ending October 10, the advance figure for seasonally adjusted initial claims was 216,000.'), row('ppi', '')]
+        rows[1]['url']='https://oui.doleta.gov/press/2026/101426.pdf'
         rows[-1].update(reference_period='2026-M09', price_metrics={'monthly': 0.4, 'annual': 3.2, 'monthly_seasonally_adjusted': True, 'annual_unadjusted': True})
         fixture.releases = rows
         n.run(now); n.run(now)

@@ -1,0 +1,85 @@
+Table 1.  Durable Goods Manufacturers' Shipments and New Orders 1
+[Estimates are shown in millions of dollars and are based on data from the Manufacturers' Shipments, Inventories, and Orders Survey.]
+Seasonally Adjusted Not Seasonally Adjusted 
+Monthly Percent Change Monthly Year to Date
+Item          Percent
+Sep Aug Jul Aug - Jul - Jun - Sep Aug Sep Change
+2026 2 2026 r 2026 Sep 2 Aug r Jul 2026 2 2026 r 2025 2026 2025 2026/2025
+DURABLE GOODS
+   Total:             
+               Shipments………………………….. 336,755 333,706 334,510 0.9 -0.2 0.9 356,303 340,351 325,936 2,955,055 2,723,017 8.5
+               New Orders4………………………… 345,371 339,117 338,700 1.8 0.1 0.9 368,559 337,456 334,949 3,007,232 2,784,653 8.0
+         Excluding transportation:
+               Shipments………………………….. 225,670 224,202 223,083 0.7 0.5 0.8 236,903 229,167 217,366 1,980,063 1,839,202 7.7
+               New Orders4………………………… 225,565 224,529 223,813 0.5 0.3 0.7 234,669 225,835 211,201 1,977,906 1,802,555 9.7
+         Excluding defense:
+               Shipments………………………….. 313,170 310,651 311,645 0.8 -0.3 0.9 331,158 317,939 306,621 2,761,308 2,569,894 7.4
+               New Orders4………………………… 321,079 314,203 313,244 2.2 0.3 1.4 338,031 315,183 305,996 2,794,560 2,620,088 6.7
+    Manufacturing with unfilled orders:
+               Shipments………………………….. 237,294 234,595 234,817 1.2 -0.1 1.0 250,980 237,584 226,259 2,068,126 1,885,445 9.7
+               New Orders………………………… 250,863 244,980 244,078 2.4 0.4 0.9 268,738 239,679 240,836 2,164,374 1,990,566 8.7
+    Primary metals:
+               Shipments………………………….. 32,055 31,877 31,249 0.6 2.0 1.8 32,697 32,634 27,684 275,986 241,655 14.2
+               New Orders………………………… 33,010 32,841 32,222 0.5 1.9 2.1 32,890 32,965 27,206 280,374 241,804 16.0
+    Fabricated metal products:
+               Shipments………………………….. 44,178 44,034 43,885 0.3 0.3 0.2 45,959 45,601 42,850 393,759 368,247 6.9
+               New Orders………………………… 45,159 44,992 45,609 0.4 -1.4 0.4 45,771 45,693 42,302 406,693 373,639 8.8
+    Machinery:
+               Shipments………………………….. 44,782 44,039 43,849 1.7 0.4 3.1 46,553 44,342 40,852 384,160 346,847 10.8
+               New Orders………………………… 45,977 45,443 44,980 1.2 1.0 1.5 47,234 45,191 40,546 395,862 349,146 13.4
+    Computers and electronic products4:
+               Shipments………………………….. 34,662 34,225 34,230 1.3 0.0 -1.3 38,243 34,060 35,172 300,350 278,415 7.9
+               New Orders………………………… 31,256 31,012 30,873 0.8 0.5 -0.6 35,141 30,004 30,214 267,305 232,647 14.9
+         Computers and related products:
+               Shipments………………………….. 2,977 2,880 2,850 3.4 1.1 0.2 2,964 3,023 2,489 25,558 21,519 18.8
+               New Orders………………………… 3,053 2,937 2,870 3.9 2.3 -0.6 3,040 3,080 2,493 25,807 21,447 20.3       
+         Communications equipment:
+               Shipments………………………….. 4,855 4,885 4,852 -0.6 0.7 1.1 5,895 4,419 4,973 41,273 33,343 23.8
+               New Orders………………………… 5,098 5,167 5,237 -1.3 -1.3 1.9 6,161 4,932 4,900 43,347 32,276 34.3
+    Electrical equipment, appliances,    
+       and components:                   
+               Shipments…………………………..18,685 18,686 18,538 0.0 0.8 0.1 20,279 19,353 19,359 165,426 156,324 5.8
+               New Orders…………………………18,854 18,908 18,822 -0.3 0.5 0.0 20,267 19,257 19,335 167,581 157,366 6.5
+    Transportation equipment:    
+               Shipments………………………….. 111,085 109,504 111,427 1.4 -1.7 1.1 119,400 111,184 108,570 974,992 883,815 10.3
+               New Orders………………………… 119,806 114,588 114,887 4.6 -0.3 1.2 133,890 111,621 123,748 1,029,326 982,098 4.8
+         Motor vehicles and parts:
+               Shipments………………………….. 73,624 73,212 73,734 0.6 -0.7 0.9 77,554 76,340 71,100 654,552 595,054 10.0
+               New Orders…………………………73,445 73,212 73,766 0.3 -0.8 0.8 77,413 76,306 70,894 653,621 592,900 10.2           
+         Nondefense aircraft and parts:
+               Shipments………………………….. 16,738 16,188 17,794 3.4 -9.0 0.5 19,947 15,369 20,132 151,998 146,026 4.1
+               New Orders………………………… 25,337 19,727 19,671 28.4 0.3 12.0 30,135 16,014 26,247 192,157 234,258 -18.0
+         Defense aircraft and parts:
+               Shipments………………………….. 6,534 6,258 6,248 4.4 0.2 4.6 6,819 6,079 5,395 52,592 46,315 13.6
+               New Orders………………………… 6,222 5,889 5,754 5.7 2.3 -13.0 7,131 5,025 10,137 52,539 49,134 6.9
+    All other durable goods:           
+               Shipments………………………….. 51,308 51,341 51,332 -0.1 0.0 0.5 53,172 53,177 51,449 460,382 447,714 2.8
+               New Orders………………………… 51,309 51,333 51,307 0.0 0.1 0.5 53,366 52,725 51,598 460,091 447,953 2.7
+    Capital goods3:
+               Shipments………………………….. 117,384 115,234 116,345 1.9 -1.0 1.2 126,448 113,346 112,550 1,008,115 908,670 10.9
+               New Orders………………………… 128,570 122,661 121,251 4.8 1.2 0.6 143,134 114,924 127,023 1,080,613 1,006,122 7.4
+           Nondefense capital goods:
+               Shipments………………………….. 97,116 95,460 96,751 1.7 -1.3 1.4 104,816 94,105 96,007 841,721 779,472 8.0
+               New Orders………………………… 107,775 101,479 99,378 6.2 2.1 2.3 116,771 95,711 101,898 897,993 870,821 3.1
+                Excluding aircraft:
+                    Shipments……………………… 86,052 85,013 84,506 1.2 0.6 1.4 90,880 84,201 81,756 740,525 680,825 8.8
+                    New Orders…………………….. 88,039 87,633 86,295 0.5 1.6 0.6 92,658 85,302 81,501 758,336 683,600 10.9
+           Defense capital goods:
+               Shipments………………………….. 20,268 19,774 19,594 2.5 0.9 0.2 21,632 19,241 16,543 166,394 129,198 28.8
+               New Orders…………………………20,795 21,182 21,873 -1.8 -3.2 -6.4 26,363 19,213 25,125 182,620 135,301 35.0
+r  Revised data due to late receipts and concurrent seasonal adjustment.     
+1  Estimates of shipments and new orders are for the duration of the period, while estimates of unfilled orders and total inventories are for the end of the period. Not seasonally adjusted estimates of    
+shipments and new orders include adjusted data for non-calendar reporters. Seasonally adjusted estimates include concurrent adjustments for holiday and trading-day differences, where appropriate,  
+as well as seasonal variation, based on the results of the latest annual review of the model parameters. Estimates are not adjusted for price changes.        
+2  Based on advance sample. Estimates of manufacturers' shipments, inventories, and orders are subject to survey error and revision. One major component of survey error is nonsampling error, which includes errors of coverage, response and 
+nonreporting. Since the survey panel is not a probability sample, estimates of sampling error cannot be calculated. For further details on survey design, methodology, and data limitations, see http://www.census.gov/manufacturing/m3.   
+3  The Capital Goods Industries include Nondefense : small arms and ordnance; farm machinery and equipment; construction machinery; mining, oil, and gas field machinery; industrial machinery; vending, laundry, and other machinery; photographic 
+equipment; metalworking machinery; turbines and generators; other power transmission equipment; pumps and compressors; material handling equipment; all other machinery; electronic computers; computer storage devices; other computer 
+peripheral equipment; communications equipment; search and navigation equipment; electromedical, measuring, and  control instruments; electrical equipment; other electrical equipment, appliances, and components; heavy duty trucks; aircraft; 
+railroad rolling stock; ships and boats; office and institutional furniture; and medical equipment and supplies. Defense Capital Goods include : small arms and ordnance, communications equipment, aircraft; missiles, space vehicles, and parts, ships 
+and boats, and search and navigation equipment.   
+4  Estimates and percent changes of shipments and inventories for the semiconductor industry are included in computers and electronic products, and all other applicable aggregate totals.  Estimates and percent changes for new orders and unfilled 
+orders exclude semiconductor industry data.
+The Census Bureau has reviewed this data product to ensure appropriate access, use, and disclosure avoidance protection of the confidential source data (Project No. P-6000307, Disclosure Review Board (DRB) approval number: CBDRB-FY26-0151).   
+Source: U.S. Census Bureau, Manufacturers’ Shipments, Inventories, and Orders (M3) Survey, September Advance Report, October 27, 2026. Information on data sources and methodology can be found on our website at 
+<www.census.gov/manufacturing/m3/how_the_data_are_collected/index.html>.  

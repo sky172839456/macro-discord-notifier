@@ -39,7 +39,7 @@ class ClaimsPdfWhitespaceTests(unittest.TestCase):
     def test_initial_claims_was_whitespace_variants_share_gate_and_display(self):
         for whitespace in ("\n", "\r\n", "\t", "\u00a0", "   "):
             with self.subTest(whitespace=repr(whitespace)):
-                summary = ("initial" + whitespace + "claims" + whitespace + "was" +
+                summary = ("In the week ending October 17, the advance figure for seasonally adjusted initial" + whitespace + "claims" + whitespace + "was" +
                            whitespace + "194,000.")
                 self.assertEqual(n.release_critical_missing(self.row(summary)), [])
                 self.assertIn("194,000 人", n.format_metrics(summary, "claims"))
