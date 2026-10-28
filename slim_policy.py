@@ -27,6 +27,15 @@ def material_news(item):
     return event_kind(item) in {'safety', 'decision'}
 
 
+
+def account_reserve_context(text):
+    """XRPL account funding requirements, not a corporate reserve alone."""
+    return bool(
+        re.search(r'\b(?:XRP Ledger|XRPL)\b', text, re.I)
+        and re.search(r'\b(?:accounts?|wallets?)\b', text, re.I)
+        and re.search(r'\b(?:account|wallet|base|owner|minimum)\s+reserves?\b|\breserves?\b.{0,70}\baccounts?\b', text, re.I)
+    )
+
 def category(text, categories):
     lowered = f" {text.lower()} "
     from news_verified_context import core_policy_text
@@ -82,6 +91,15 @@ def category(text, categories):
             terms = tuple(t for t in terms if t != 'court')
         if row["key"] == "etf" and stablecoin_reserves:
             terms = tuple(t for t in terms if t != 'reserve')
+        if row["key"] == "etf" and account_reserve_context(text):
+            # Security/regulation rows above keep precedence. Explicit ETF,
+            # treasury or institutional terms retain the existing ETF route.
+            etf_terms = tuple(t for t in terms if t != 'reserve')
+            if not any(t in lowered for t in etf_terms):
+                result = next((dict(r) for r in categories if r['key'] == 'network'), None)
+                if result:
+                    result['priority'] = 'normal'
+                    return result
         if row["key"] == "etf" and network_research:
             result = next((dict(r) for r in categories if r['key'] == 'network'), None)
             if result:
