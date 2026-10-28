@@ -71,24 +71,26 @@ def sentiment_lines(data, now, weekly=False):
     interval = 7 * 86400 if weekly else 86400
     if not instant(row.get('previous_timestamp')) or abs((instant(row['timestamp']) - instant(row['previous_timestamp'])).total_seconds() - interval) > 60:
         delta = None
-    return (f'恐慌貪婪指數 **{row["value"]}/100｜{label}**　較{"七日前" if weekly else "前一日"} {signed(delta, "分")}\n'
+    return (f'恐慌貪婪指數 **{row["value"]}/100｜{label}**\n較{"七日前" if weekly else "前一日"} {signed(delta, "分")}\n\n'
             f'資料：{stamp(row["timestamp"])}｜以比特幣情緒為主\n'
-            f'來源：[Alternative.me]({SENTIMENT_URL})｜情緒不等同漲跌預測')
+            f'來源：[Alternative.me]({SENTIMENT_URL})\n\n情緒不等同漲跌預測')
 
 
 def global_lines(data, now):
     row = data.get('global') or {}
     if not fresh(row.get('timestamp'), now, 3) or not all(number(row.get(k)) for k in ('market_cap', 'market_cap_change_24h', 'btc_dominance')):
         return f'⚠️ 市場總覽暫缺或未更新。\n來源：[CoinGecko]({GLOBAL_URL})'
-    return (f'總市值 **{money(row["market_cap"])}**｜24h **{signed(row["market_cap_change_24h"])}**\n'
+    return (f'總市值 **{money(row["market_cap"])}**\n24h **{signed(row["market_cap_change_24h"])}**\n'
             f'BTC市占 **{row["btc_dominance"]:.2f}%**\n'
-            f'資料：{stamp(row["timestamp"])}｜[CoinGecko]({GLOBAL_URL})\n市占是市值占比，並非資金流量。')
+            f'\n資料：{stamp(row["timestamp"])}\n來源：[CoinGecko]({GLOBAL_URL})\n\n市占是市值占比，並非資金流量。')
 
 
 def price_lines(data, market, now, weekly):
     coins = data.get('weekly_crypto' if weekly else 'crypto') or {}
     lines = []
     for symbol in ('BTC', 'ETH'):
+        if lines:
+            lines.append('')
         row = coins.get(symbol) or (market or {}).get(symbol) or {}
         if not number(row.get('price')) or (not weekly and row.get('source') == 'CoinGecko' and not fresh(row.get('updated_at'), now, 3)):
             lines.append(f'⚠️ {symbol}價格暫缺')
@@ -101,7 +103,9 @@ def price_lines(data, market, now, weekly):
             lines.append(f'↳ 資料更新：{stamp(row["updated_at"])}')
         if weekly and row.get('source') == 'OKX':
             lines.append('↳ OKX USDT現貨：最近七根完整UTC日線；非即時七日快照。')
+    lines.append('')
     lines.append('七日區間；各來源截止時間可能不同。' if weekly else '近24小時漲跌；查詢快照，非即時報價。')
+    lines.append('')
     lines.append('[CoinGecko](https://www.coingecko.com/) · [OKX現貨](https://www.okx.com/markets/prices)')
     return '\n'.join(lines)
 
@@ -149,7 +153,7 @@ def etf_lines(data, weekly):
     lines = ['\n'.join(header)]
     for row in rows:
         if 'flow' not in row:
-            lines.append(f'⚠️ **{row["symbol"]} ETF**｜資料暫缺\n'+row.get('source_status','來源讀取失敗或缺少可核對數值，未以0代替。')+f'\n[查看來源]({row["url"]})')
+            lines.append(f'⚠️ **{row["symbol"]} ETF**\n資料暫缺\n'+row.get('source_status','來源讀取失敗或缺少可核對數值，未以0代替。')+f'\n[查看來源]({row["url"]})')
             continue
         context = []
         if not shared_period:
@@ -161,7 +165,7 @@ def etf_lines(data, weekly):
         if row['pending_zero'] and not weekly and row.get('previous_complete'):
             previous = row['previous_complete']
             context.append(f'前次完整資料｜交易日 {previous["date"]:%m/%d}：{money_musd(previous["net_flow_musd"])}（非本交易日）')
-        lines.append(f'**{row["symbol"]} ETF**｜{status}'
+        lines.append(f'**{row["symbol"]} ETF**\n{status}'
                      + ('\n'+'\n'.join(context) if context else '') + f'\n[查看來源]({row["url"]})')
     if any(row.get('pending_zero') for row in rows):
         lines.append('📝 來源尚有基金未列數值，暫不列合計；不代表資金沒有流入或流出。')
@@ -211,13 +215,13 @@ def contract_lines(data, now, weekly):
         days = 7 if weekly else 1
         delta = row.get(f'oi_change_{days}d')
         base = row.get(f'oi_base_{days}d')
-        lines.append(f'**{symbol}**｜未平倉名目額 {money(row["oi_usd"])}\n'
+        lines.append(f'**{symbol}**\n未平倉名目額 {money(row["oi_usd"])}\n'
                      + (f'數量較{stamp(base)} **{signed(delta)}**' if number(delta) else f'約{days}日前的數量比較暫缺'))
         if weekly and number(row.get('funding_avg_7d')):
             lines.append(f'七日已結算費率：每次平均 **{row["funding_avg_7d"]:+.4f}%**｜{row["samples"]}次\n'
                          f'期間 {stamp(row["start_timestamp"])}～{stamp(row["end_timestamp"])}')
         elif number(row.get('funding_rate')) and fresh(row.get('rate_timestamp'), now, .5) and instant(row.get('funding_time', 0) / 1000) and now < instant(row['funding_time'] / 1000):
-            lines.append(f'本期預估資金費率 **{row["funding_rate"]:+.4f}%**｜結算 {stamp(row["funding_time"] / 1000)}')
+            lines.append(f'本期預估資金費率 **{row["funding_rate"]:+.4f}%**\n結算 {stamp(row["funding_time"] / 1000)}')
         else:
             lines.append('本期費率／結算時間尚未確認')
         lines.append(f'未平倉資料：{stamp(row["timestamp"])}')
