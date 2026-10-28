@@ -57,7 +57,7 @@ class EtfUpdateContextTests(unittest.TestCase):
         pending=source.parse_farside_latest(self.html)
         ready=source.parse_farside_latest(self.html.replace('<td>-</td>','<td>(18.8)</td>').replace('<td>0.0</td></tr>','<td>(18.8)</td></tr>'))
         text=brief.etf_lines({'etf':pending,'eth_etf':ready},False)
-        self.assertIn('**BTC ETF**｜**等候數據更新**',text)
+        self.assertIn('**BTC ETF**\n**等候數據更新**',text)
         self.assertIn('淨流出1,880萬美元',text)
         self.assertNotIn('0美元',text)
         self.assertEqual(text.count('交易日：'),1)
@@ -82,7 +82,7 @@ class EtfUpdateContextTests(unittest.TestCase):
         from datetime import date
         text=brief.etf_lines({'etf':{'date':date(2026,10,14),'net_flow_musd':0}},False)
         self.assertNotIn('查詢時間：',text)
-        self.assertIn('**ETH ETF**｜資料暫缺',text)
+        self.assertIn('**ETH ETF**\n資料暫缺',text)
         self.assertEqual(text.count('0美元'),1)
 
     def test_weekly_period_counts_and_shared_notice_are_preserved(self):

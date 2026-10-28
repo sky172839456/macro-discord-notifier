@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
+from notification_layout import readable_card
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 
@@ -225,7 +226,7 @@ def apply_delivery_format(
         else:
             card["footer"] = {"text": "台灣時間｜不構成投資建議"}
         card.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
-        return wm_member_style(card, channel_key)
+        return readable_card(wm_member_style(card, channel_key))
     description = str(card.get("description", ""))
     if channel_key != "bot_log" and "**📌 繁中標題**" in description and "**🌐 英文原標題**" in description:
         original = description.split("**🌐 英文原標題**", 1)[1].split("\n\n", 1)[0].strip()
@@ -263,7 +264,7 @@ def apply_delivery_format(
     footer["text"] = "｜".join(part for part in (footer_text, *additions) if part)
     card["footer"] = footer
     card.setdefault("timestamp", sent_at.astimezone(timezone.utc).isoformat())
-    return card
+    return readable_card(card) if slim_policy.enabled() else card
 
 
 def standard_fields(
