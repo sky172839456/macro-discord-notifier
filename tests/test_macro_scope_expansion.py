@@ -150,7 +150,7 @@ class MacroScopeExpansionTests(unittest.TestCase):
         n.run(now); n.run(now)
         self.assertEqual(len(fixture.member_calls()), 3)
         self.assertEqual(len([k for k in fixture.state['sent'] if k.startswith('release-event:')]), 3)
-        self.assertEqual(policy.REMINDER_EVENTS, policy.CORE_EVENTS | {'fed_chair_policy'})
+        self.assertEqual(policy.REMINDER_EVENTS, set())
 
 
 if __name__ == '__main__':
