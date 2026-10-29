@@ -120,7 +120,15 @@ def etf_lines(data, weekly):
             previous = row.get('previous_complete') or {}
             fallback = (f'\n前次完整資料｜交易日 {previous["date"]:%m/%d}：{money_musd(previous["net_flow_musd"])}（非本交易日）'
                         if number(previous.get('net_flow_musd')) else '')
-            rows.append({'symbol':symbol,'url':url,'source_status':period+'\n來源欄位未齊或合計待核，暫不判定本日方向。'+fallback})
+            issue = row.get('source_issue')
+            if issue == '來源合計尚未列值':
+                label, detail = 'Farside 尚未列出完整數據', '來源合計欄尚未列值。'
+            elif issue == '來源分項與合計不符':
+                label, detail = 'Farside 分項與合計待核對', '暫不列本日合計。'
+            else:
+                label, detail = '暫時無法取得可核對的 Farside 數據', '本日合計尚未確認。'
+            rows.append({'symbol':symbol,'url':url,'source_label':label,
+                         'source_status':period+'\n'+detail+fallback})
             continue
         if number(row.get('net_flow_musd')):
             period = f'統計期間：{row["start_date"]:%m/%d}～{row["end_date"]:%m/%d}' if weekly else f'交易日：{row["date"]:%m/%d}'
@@ -153,20 +161,21 @@ def etf_lines(data, weekly):
     lines = ['\n'.join(header)]
     for row in rows:
         if 'flow' not in row:
-            lines.append(f'⚠️ **{row["symbol"]} ETF**\n資料暫缺\n'+row.get('source_status','來源讀取失敗或缺少可核對數值，未以0代替。')+f'\n[查看來源]({row["url"]})')
+            lines.append(f'⚠️ **{row["symbol"]} ETF**\n'+row.get('source_label','暫時無法取得 Farside 數據')
+                         +'\n'+row.get('source_status','本輪未取得可核對數值。')+f'\n[Farside來源]({row["url"]})')
             continue
         context = []
         if not shared_period:
             context.append(row['period'])
         if not shared_query and row['query']:
             context.append(row['query'])
-        status = ('**等候數據更新**' if row['pending_zero'] else
-                  f'來源目前合計 **{row["flow"]}**{row["count"]}')
+        status = ('**Farside 尚未列出完整數據**' if row['pending_zero'] else
+                  f'來源目前合計 **{row["flow"]}**{row["count"]}'+('（暫定）' if row['partial'] else ''))
         if row['pending_zero'] and not weekly and row.get('previous_complete'):
             previous = row['previous_complete']
             context.append(f'前次完整資料｜交易日 {previous["date"]:%m/%d}：{money_musd(previous["net_flow_musd"])}（非本交易日）')
         lines.append(f'**{row["symbol"]} ETF**\n{status}'
-                     + ('\n'+'\n'.join(context) if context else '') + f'\n[查看來源]({row["url"]})')
+                     + ('\n'+'\n'.join(context) if context else '') + f'\n[Farside來源]({row["url"]})')
     if any(row.get('pending_zero') for row in rows):
         lines.append('📝 來源尚有基金未列數值，暫不列合計；不代表資金沒有流入或流出。')
     if valid:
