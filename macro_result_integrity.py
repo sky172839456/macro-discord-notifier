@@ -72,11 +72,11 @@ def fomc(item):
     return '\n\n'.join(lines), []
 
 
-def pce(item):
+def pce_values(item):
     text = text_of(item)
     period = re.search(r'Personal Income and Outlays,\s*('+MONTH+r')\s+(20\d{2})', text, re.I)
     if not period:
-        return '', ['PCE資料月份']
+        return None, None, {}, ['PCE資料月份']
     month, year = MONTHS[period[1].lower()], int(period[2])
     text=re.sub(r'(the PCE price index(?: for (?:'+MONTH+r'))? )(?:(?:was|remained) unchanged)',r'\1increased 0.0 percent',text,flags=re.I)
     monthly = re.search(r'From the preceding month, the PCE price index(?: for ('+MONTH+r'))?\s+'+MOVE, text, re.I)
@@ -96,14 +96,31 @@ def pce(item):
     for m in (monthly, annual):
         if m and m[1] and MONTHS[m[1].lower()] != month:
             missing.append('PCE本次月份一致性')
+    values = {key:signed(m) for key,m in zip(('monthly','core_monthly','annual','core_annual'),
+              (monthly,core_monthly,annual,core_annual)) if m}
+    return year,month,values,missing
+
+
+def pce(item):
+    from macro_result_display import comparison
+    from pce_comparison import inline_previous
+    year,month,values,missing=pce_values(item)
     if missing:
-        return '', missing
-    lines = [f'**資料月份**　{year}/{month:02d}']
-    for label, match in [('PCE月增率',monthly),('核心PCE月增率',core_monthly),
-                         ('PCE年增率',annual),('核心PCE年增率',core_annual)]:
-        lines.append(f'**{label}**　{signed(match):+.1f}%')
-    lines.append('月增比較前一月；年增比較去年同月，均非年化增幅。季調標示依官方原表，本文不另推定。')
-    lines.append('**前值／修正**　尚未取得可核對的同口徑前值，未以所得或支出增幅代替。')
+        return '',missing
+    if item.get('pce_comparison_error'):
+        return '', ['PCE主文與官方比較表一致性']
+    try:
+        prior=inline_previous(text_of(item),year,month,values)
+    except ValueError:
+        return '', ['PCE主文與官方月增率表一致性']
+    period='%04d/%02d'%previous_period(year,month)
+    if item.get('pce_previous_period')==period:
+        prior.update(item.get('pce_previous') or {})
+    lines=[f'**資料月份**　{year}/{month:02d}｜前期 {period}']
+    for key,label in [('monthly','PCE月增率'),('core_monthly','核心PCE月增率'),
+                      ('annual','PCE年增率'),('core_annual','核心PCE年增率')]:
+        lines.append(comparison(label,values[key],prior.get(key),signed=True))
+    lines.append('月增比上月；年增比去年同月，均非年化。前值採本次公告列示的前一月。')
     return '\n\n'.join(lines), []
 
 
@@ -137,12 +154,13 @@ def jobs(item):
     if not (ref or period):
         return '', ['就業資料月份']
     year, month = (int(ref[1]),int(ref[2])) if ref else (int(period[2]),MONTHS[period[1].lower()])
-    lines = [f'**資料月份**　{year}/{month:02d}',f'**非農新增就業（季調）**　{payroll/10000:+.1f} 萬人',
-             f'**失業率（季調）**　{unemployment:.1f}%']
-    if previous_payroll is not None and previous_unemployment is not None:
-        lines.append(f'**前月（本次官方版本）**　非農 {previous_payroll/10000:+.1f} 萬人；失業率 {previous_unemployment:.1f}%')
-    else:
-        lines.append('**前月值**　暫缺，未以其他月份或非農總人數代替。')
+    from macro_result_display import comparison
+    prior='%04d/%02d'%previous_period(year,month)
+    lines=[f'**資料月份**　{year}/{month:02d}｜前期 {prior}',
+           comparison('非農新增就業（季調）',payroll/10000,
+                      previous_payroll/10000 if previous_payroll is not None else None,
+                      unit=' 萬人',signed=True,change_unit='萬人'),
+           comparison('失業率（季調）',unemployment,previous_unemployment)]
     return '\n\n'.join(lines), []
 
 
@@ -168,9 +186,18 @@ def claims(item):
             raise ValueError()
     except ValueError:
         return '', ['初領失業金資料週次']
-    # The legacy formatter already preserves revised prior, direction and 4-week average.
-    import notifier as n
-    lines = [f'**資料週次**　截至 {week:%Y/%m/%d}（季調）',n.format_metrics(section,'claims')]
+    from macro_result_display import comparison
+    prior=re.search(r"previous\s+week(?:'s)?\s+level\s+was\s+revised\s+(?:up|down)\s+by\s+[\d,]+\s+from\s+([\d,]+)\s+to\s+([\d,]+)",section,re.I)
+    old=re.search(r"previous week(?:'s)? (?:revised|unrevised) level of ([\d,]+)",section,re.I)
+    previous=int((prior[2] if prior else old[1]).replace(',','')) if prior or old else None
+    current=int(actual[1].replace(',',''))
+    lines=[f'**資料週次**　截至 {week:%Y/%m/%d}（季調）',
+           comparison('初領失業金',current,previous,unit=' 人',decimals=0,change_unit='人')]
+    if prior:
+        lines.append(f'**前值修正**　{int(prior[1].replace(",","")):,} → {previous:,} 人')
+    average=re.search(r'4\s*-\s*week\s+moving\s+average\s+was\s+([\d,]+)',section,re.I)
+    if average:
+        lines.append(f'**四週移動平均**　{int(average[1].replace(",","")):,} 人')
     return '\n\n'.join(lines), []
 
 
@@ -199,6 +226,9 @@ def details(item):
 def enrich(item, fetch_text, fetch_bytes):
     """Only follow the same responsible agency's actual release/attachment."""
     key=item['rule']['key']
+    if key == 'pce':
+        from pce_comparison import enrich as pce_enrich
+        return pce_enrich(item,fetch_text,fetch_bytes)
     if key == 'durable':
         from durable_release import enrich as durable
         return durable(item,fetch_text,fetch_bytes)

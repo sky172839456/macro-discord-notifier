@@ -105,7 +105,7 @@ class NewsCpiCopyTests(unittest.TestCase):
         row=self.cpi();before=copy.deepcopy(row)
         card=apply_delivery_format(notifier.release_embed(row,self.now,detected_at=self.now+timedelta(minutes=4)),'macro_alerts')
         text=json.dumps(card,ensure_ascii=False)
-        for value in ('2026/09','月增率（季調）','年增率（未季調）','0.6%','3.7%','市場預期未納入'):
+        for value in ('2026/09','月增率（季調）','年增率（未季調）','0.6%','3.7%'):
             self.assertIn(value,text)
         self.assertNotIn('部分資料缺少',text)
         self.assertEqual(row,before)

@@ -120,7 +120,7 @@ class ClaimsPdfWhitespaceTests(unittest.TestCase):
             self.assertEqual(row["published"], PUBLISHED)
             self.assertTrue(n.deliver_release("https://member.invalid", row, None, None, PUBLISHED, False, {}))
             send.assert_called_once()
-            self.assertIn("初領失業金**　194,000 人", send.call_args.args[1]["description"])
+            self.assertIn("初領失業金**\n本次 **194,000 人**", send.call_args.args[1]["description"])
 
 if __name__ == "__main__":
     unittest.main()

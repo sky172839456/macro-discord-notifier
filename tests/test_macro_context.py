@@ -32,7 +32,7 @@ class MacroContextTests(unittest.TestCase):
     def test_result_previous_and_percentage_point_change_use_display_precision(self):
         text, missing = cpi.details(self.row())
         self.assertEqual(missing, [])
-        for token in ('2026/09', '前期 2026/08', '本次 **0.6%**｜前值 0.4%', '變化 +0.2 個百分點', '本次 **3.7%**｜前值 3.5%'):
+        for token in ('2026/09', '前期 2026/08', '本次 **0.6%**\n前值 0.4%', '變化 +0.2 個百分點', '本次 **3.7%**\n前值 3.5%'):
             self.assertIn(token, text)
         self.assertNotIn('變化 +0.3 個百分點', text)
 

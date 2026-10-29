@@ -28,7 +28,7 @@ class ExtendedResultTests(unittest.TestCase):
 
     def test_gdp_unmatched_previous_quarter_is_missing(self):
         text,_=details(item('gdp',GDP.replace('first quarter','fourth quarter')))
-        self.assertIn('前季值',text);self.assertIn('暫缺',text);self.assertNotIn('2.5%',text)
+        self.assertIn('前值',text);self.assertIn('暫缺',text);self.assertNotIn('2.5%',text)
 
     def test_durable_anchors_headline_not_transportation_or_dollars(self):
         text,missing=details(item('durable',DURABLE))
@@ -51,7 +51,7 @@ class ExtendedResultTests(unittest.TestCase):
 
     def test_jolts_not_hires_as_prior_and_preserve_units(self):
         text,missing=details(item('jolts',JOLTS))
-        self.assertFalse(missing);self.assertIn('710.0萬人',text);self.assertIn('前月值',text)
+        self.assertFalse(missing);self.assertIn('710.0萬人',text);self.assertIn('前值',text)
         self.assertNotIn('520.0',text)
         self.assertTrue(details(item('jolts',JOLTS.replace('seasonally adjusted','unadjusted')))[1])
 

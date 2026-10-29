@@ -73,11 +73,13 @@ def details(item):
                 raise ValueError('headline/table previous disagreement')
     except (ValueError,KeyError,TypeError):
         return '', ['耐久財主文與官方附表的期間、數值及口徑一致性']
-    lines=[f"**資料月份**　{table['year']}/{table['month']:02d}",
-           f"**耐久財新訂單月增率（季調、未扣除價格變動）**　{table['current']:+.1f}%",
-           f"**前月增率（本次官方修訂版本）**　{table['previous']:+.1f}%",
-           '主文與官方表1「總新訂單」交叉核對；不以排除運輸或未季調欄替代。']
+    from macro_result_display import comparison
+    prior=previous_period(table['year'],table['month'])
+    lines=[f"**資料月份**　{table['year']}/{table['month']:02d}｜前期 {prior[0]}/{prior[1]:02d}",
+           comparison('耐久財新訂單月增率（季調、未扣除價格變動）',table['current'],table['previous'],signed=True),
+           '前值採本次官方修訂版本。主文與官方表1總新訂單已交叉核對。']
     return '\n\n'.join(lines),[]
+
 
 
 def enrich(item,fetch_text,fetch_bytes):

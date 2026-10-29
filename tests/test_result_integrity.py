@@ -60,7 +60,7 @@ class ResultIntegrityTests(unittest.TestCase):
     def test_live_pce_anchors_price_indexes_not_income_spending_or_saving(self):
         text,missing=details(row('pce',self.pce))
         self.assertFalse(missing)
-        for value in ('2026/08','PCE月增率**　+0.3%','核心PCE月增率**　+0.2%','PCE年增率**　+3.4%','核心PCE年增率**　+3.0%'):
+        for value in ('2026/08','PCE月增率**\n本次 **+0.3%**','核心PCE月增率**\n本次 **+0.2%**','PCE年增率**\n本次 **+3.4%**','核心PCE年增率**\n本次 **+3.0%**'):
             self.assertIn(value,text)
         for value in ('+0.9%','+4.1%','年增率**　+0.6%'):
             self.assertNotIn(value,text)
@@ -75,11 +75,11 @@ class ResultIntegrityTests(unittest.TestCase):
         source=(FIX/'pce_20260826.txt').read_text(encoding='utf-8')
         text,missing=details(row('pce',source))
         self.assertFalse(missing)
-        for value in ('2026/07','核心PCE月增率**　+0.2%','PCE年增率**　+3.7%','核心PCE年增率**　+3.3%'):
+        for value in ('2026/07','核心PCE月增率**\n本次 **+0.2%**','PCE年增率**\n本次 **+3.7%**','核心PCE年增率**\n本次 **+3.3%**'):
             self.assertIn(value,text)
 
     def test_pce_direction_is_preserved(self):
-        text,missing=details(row('pce',self.pce.replace('PCE price index for August increased','PCE price index for August decreased')))
+        text,missing=details(row('pce',self.pce.replace('PCE price index for August increased','PCE price index for August decreased').replace('PCE price index 0.1 0.3','PCE price index 0.1 -0.3')))
         self.assertFalse(missing);self.assertIn('-0.3%',text);self.assertIn('-3.4%',text)
 
     def test_jobs_api_source_metadata_and_units(self):
@@ -172,9 +172,9 @@ class ResultIntegrityTests(unittest.TestCase):
             send.assert_called_once()
 
     def test_zero_pce_and_basis_point_fomc_have_real_meaning(self):
-        text=self.pce.replace('PCE price index for August increased 0.3 percent','PCE price index for August was unchanged')
+        text=self.pce.replace('PCE price index for August increased 0.3 percent','PCE price index for August was unchanged').replace('PCE price index 0.1 0.3','PCE price index 0.1 0.0')
         rendered,missing=details(row('pce',text))
-        self.assertFalse(missing);self.assertIn('PCE月增率**　+0.0%',rendered)
+        self.assertFalse(missing);self.assertIn('PCE月增率**\n本次 **+0.0%**',rendered)
         text='The Committee decided to lower the target range for the federal funds rate by 25 basis points to 3.5 to 3.75 percent.'
         rendered,missing=details(row('fomc',text))
         self.assertFalse(missing);self.assertIn('降息',rendered);self.assertIn('25 基點',rendered)

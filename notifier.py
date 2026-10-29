@@ -876,6 +876,10 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
             state_copy = ('⚠️ 尚未確認：' + '、'.join(missing) + '\n已確認的數值照常列出。' if missing
                           else '✅ 主數據與口徑完整\n市場預期未納入，與官方數據缺漏分開處理。')
             fields.append({'name': '🩺 資料狀態', 'value': state_copy, 'inline': False})
+    if slim_policy.enabled() and item.get('pce_source_urls'):
+        fields = [f for f in fields if f['name'] != '🔗 官方原始資料']
+        urls=item['pce_source_urls']
+        fields.append({'name':'🔗 官方原始資料','value':'\n'.join('[BEA公告]('+url+')' if i==0 else '[本次公告比較表]('+url+')' for i,url in enumerate(urls)),'inline':False})
     late = False
     if slim_policy.enabled() and detected_at:
         from notification_quality import time_copy
@@ -888,7 +892,7 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
         fields.insert(0, {'name': '🕒 發布與發現時間', 'value': timing, 'inline': False})
     return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
             "title": f"{'【數據公布】⏳ 補發｜' if late else '🔴 '}{item['rule']['name']}｜最新數據",
-            "description": f"### 📊 本次公布結果\n{numbers}\n\n> " + ('前值採本次官方資料的前一期，可能含修訂；市場預期未納入。' if slim_policy.enabled() and (item['rule']['key'] == 'cpi' or item.get('price_metrics')) else '市場預期未納入；前值僅列官方已確認資料。' if slim_policy.enabled() else '市場預期值不屬於官方資料；官方未提供時會明確標示「未提供」。'),
+            "description": f"### 📊 本次公布結果\n{numbers}" + ("" if slim_policy.enabled() else "\n\n> 市場預期值不屬於官方資料；官方未提供時會明確標示「未提供」。"),
             "color": 0xE74C3C,
             "fields": fields,
             "footer": {"text": "官方免費資料｜先看結果，再看解讀｜僅供資訊參考，不構成投資建議"},

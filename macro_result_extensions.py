@@ -51,16 +51,16 @@ def details(item):
             return '', ['實質GDP本季年化季增率與季度']
         y,q = int(m[4]), Q[m[3].lower()]
         # Explicit annual rate; never use nominal GDP, industry or annual growth.
-        lines = [f'**資料季度**　{y}年第{q}季', f'**實質GDP年化季增率**　{signed(m):+.1f}%']
+        from macro_result_display import comparison
         stage = re.search(r'(advance|second|third) estimate',text,re.I)
-        if stage:
-            lines.append('**估計版本**　'+{'advance':'初估','second':'第二次估計','third':'第三次估計'}[stage[1].lower()])
+        version={'advance':'初估','second':'第二次估計','third':'第三次估計'}.get(stage[1].lower()) if stage else None
         prev_q, prev_y = (q-1,y) if q>1 else (4,y-1)
         prev = re.search(r'In the (first|second|third|fourth) quarter(?: of (20\d{2}))?, real GDP\s+'+VERB+r'\s+'+VALUE+r'\s+percent', text,re.I)
-        if prev and Q[prev[1].lower()] == prev_q and (not prev[2] or int(prev[2]) == prev_y):
-            lines.append(f'**前季年化季增率**　{signed(prev):+.1f}%（依本次官方版本）')
-        else:
-            lines.append('**前季值**　暫缺，未以本季前一版估計代替')
+        prior_value=signed(prev) if prev and Q[prev[1].lower()]==prev_q and (not prev[2] or int(prev[2])==prev_y) else None
+        lines=[f'**資料季度**　{y}年第{q}季'+(f'（{version}）' if version else ''),
+               comparison('實質GDP年化季增率',signed(m),prior_value,signed=True,
+                          current_period=f'{y}年第{q}季',previous_period=f'{prev_y}年第{prev_q}季'),
+               '季增年率：與上一季比較後換算成年率，並非全年成長率。前值採本次公告的前一季。']
     elif key == 'jolts':
         ref = re.fullmatch(r'(20\d{2})-M?(0[1-9]|1[0-2])',str(item.get('reference_period','')))
         period = re.search(r'JOB OPENINGS AND LABOR TURNOVER\s*[-–—]\s*('+MONTH+r')\s+(20\d{2})',text,re.I)
@@ -70,12 +70,13 @@ def details(item):
         if not (item.get('id','').startswith('bls-api-jolts-') or re.search(r'(?<!not )(?<!un)seasonally adjusted|Seasonal Adjustment',text,re.I)):
             return '', ['JOLTS季調口徑']
         y,mo = (int(ref[1]),int(ref[2])) if ref else (int(period[2]),MONTHS[period[1].lower()])
-        lines = [f'**資料月份**　{y}/{mo:02d}',f'**職位空缺（季調）**　{float(m[1])*100:,.1f}萬人']
+        from macro_result_display import comparison
         prior = re.search(r'previous value (\d+(?:\.\d+)?) million',text,re.I) if ref else None
-        if prior:
-            lines.append(f'**前月值**　{float(prior[1])*100:,.1f}萬人（依本次官方版本）')
-        else:
-            lines.append('**前月值**　暫缺；聘僱、離職不當作職位空缺前值')
+        previous=float(prior[1])*100 if prior else None
+        prev_y,prev_m=previous_period(y,mo)
+        lines=[f'**資料月份**　{y}/{mo:02d}｜前期 {prev_y}/{prev_m:02d}',
+               comparison('職位空缺（季調）',float(m[1])*100,previous,
+                          unit='萬人',change_unit='萬人')]
     else:
         if not re.search(r'(?<!not )adjusted for seasonal variation|(?<!not )(?<!un)seasonally adjusted',text,re.I):
             return '', ['主數據季調口徑']
@@ -110,8 +111,10 @@ def details(item):
             capacity = re.search(r'Capacity utilization\s+(?:moved up to|moved down to|was|remained at|decreased to|increased to)\s+(\d+(?:\.\d+)?) percent in ('+MONTH+r')',text,re.I)
             if capacity and MONTHS[capacity[2].lower()] == month:
                 lines.append(f'**產能利用率**　{float(capacity[1]):.1f}%')
-        lines[:0] = [f'**資料月份**　{y}/{month:02d}', f'**{label}**　{current:+.1f}%',
-                     '**前月增率**　'+(f'{prior_value:+.1f}%（依本次官方版本）' if prior_value is not None else '暫缺')]
+        from macro_result_display import comparison
+        prior=previous_period(y,month)
+        lines[:0]=[f'**資料月份**　{y}/{month:02d}｜前期 {prior[0]}/{prior[1]:02d}',
+                   comparison(label,current,prior_value,signed=True)]
     return '\n\n'.join(lines), missing
 
 
