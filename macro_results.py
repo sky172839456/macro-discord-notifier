@@ -49,9 +49,9 @@ def retail_details(item):
     if not basis:
         return '', ['零售銷售季調口徑']
     value = number(monthly)
-    lines = [f'**資料月份**　{year}/{month:02d}',
-             '**零售銷售月增率（季調）**\n本次 **' + f'{value:+.1f}%' + '**｜前值 ' + (f'{previous:+.1f}%' if previous is not None else '暫缺')]
+    from macro_result_display import comparison
+    lines = [f'**資料月份**　{year}/{month:02d}｜前期 {prior[0]}/{prior[1]:02d}',
+             comparison('零售銷售月增率（季調）',value,previous,signed=True)]
     if previous is not None:
-        lines[-1] += f'｜變化 {round(value, 1)-round(previous, 1):+.1f} 個百分點'
         lines.append('前值採本次官方修訂後的前一期。')
     return '\n\n'.join(lines), []

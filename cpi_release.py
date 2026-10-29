@@ -75,9 +75,9 @@ def details(item):
             actual_basis = basis if metrics.get(basis_key) else ('未季調' if key == 'monthly' else '季調')
             previous = metrics.get('previous_' + key) if comparable else None
             comparison = f'{previous:.1f}%' if finite(previous) else '暫缺'
-            line = f'**{label}（{actual_basis if confirmed else "口徑未確認"}）**\n本次 **{metrics[key]:.1f}%**｜前值 {comparison}'
-            if finite(previous) and confirmed:
-                line += f'｜變化 {round(metrics[key], 1) - round(previous, 1):+.1f} 個百分點'
+            from macro_result_display import comparison as block
+            line = block(f'{label}（{actual_basis if confirmed else "口徑未確認"}）',
+                         metrics[key], previous, comparable=confirmed)
             lines.append(line)
             if not confirmed:
                 missing.append(label+'季調口徑')
