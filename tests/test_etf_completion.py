@@ -20,7 +20,7 @@ class CompletionTests(unittest.TestCase):
 
     def test_latest_pending_kept_with_previous_explicitly_dated(self):
         text=etf_lines({'etf':self.row},False)
-        for s in ('交易日：10/27','等候數據更新','前次完整資料','交易日 10/26','非本交易日'):self.assertIn(s,text)
+        for s in ('交易日：10/27','Farside 尚未列出完整數據','前次完整資料','交易日 10/26','非本交易日'):self.assertIn(s,text)
         self.assertNotIn('淨流入0',text)
 
     def test_missing_total_and_invalid_components_never_zero(self):
