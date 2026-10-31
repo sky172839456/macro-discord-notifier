@@ -118,4 +118,50 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(state['seen'],{});self.assertEqual(state['pending'][0]['id'],'c1')
         self.assertEqual(self.run_rows([],json.loads(json.dumps(state))).call_count,1)
 
+    def test_finance_digest_has_one_reading_note_and_no_cached_generic_relations(self):
+        rows=[self.row(n,True) for n in range(1,6)]
+        for row in rows:
+            row['transmission']='觀察關聯｜舊快取的科技投資與政策限制套話'
+        state={'initialized':True,'finance_initialized':True,'seen':{},'pending':[]}
+        send=self.run_rows(rows,state)
+        self.assertEqual(send.call_count,1)
+        card=send.call_args.args[1]
+        notes=[f for f in card.get('fields',[]) if f['name']=='閱讀提示']
+        self.assertEqual(len(notes),1)
+        self.assertNotIn('觀察關聯',json.dumps(card,ensure_ascii=False))
+        self.assertNotIn('與加密市場的關聯',json.dumps(card,ensure_ascii=False))
+        for row in rows:
+            self.assertIn(row['url'],card['description'])
+            self.assertIn(row['title_zh'],card['description'])
+        self.assertIn('不構成投資建議',card['footer']['text'])
+        self.assertEqual(len(state['seen']),5)
+        self.run_rows(rows,json.loads(json.dumps(state))).assert_not_called()
+
+    def test_urgent_finance_has_one_final_note_without_generic_description(self):
+        row=self.row(1,True)
+        row.update(title='White House imposes tariffs on imports',summary='White House imposes tariffs on imports',
+                   title_zh='白宮對進口商品徵收關稅',summary_zh_points=['白宮對進口商品徵收關稅'],
+                   transmission='觀察關聯｜舊政策套話')
+        state={'initialized':True,'finance_initialized':True,'seen':{},'pending':[]}
+        send=self.run_rows([row],state)
+        self.assertEqual(send.call_count,1)
+        self.assertEqual(send.call_args.args[0],'https://finance.invalid')
+        card=send.call_args.args[1]
+        self.assertTrue(card['title'].startswith('【金融快訊】'))
+        self.assertEqual(card['fields'][-1]['name'],'閱讀提示')
+        self.assertNotIn('觀察關聯',json.dumps(card,ensure_ascii=False))
+        self.assertIn(row['url'],json.dumps(card,ensure_ascii=False))
+        self.assertIn('白宮對進口商品徵收關稅',card['description'])
+
+    def test_crypto_and_source_specific_summary_are_preserved(self):
+        row=self.row(1,True)
+        row['summary_zh_points']=['來源指出銀行服務調整將改變機構客戶的資產保管管道。']
+        crypto=self.row(2)
+        state={'initialized':True,'finance_initialized':True,'seen':{},'pending':[]}
+        send=self.run_rows([row,crypto],state)
+        cards={call.args[0]:call.args[1] for call in send.call_args_list}
+        self.assertIn(row['summary_zh_points'][0],cards['https://finance.invalid']['description'])
+        self.assertNotIn('閱讀提示',json.dumps(cards['https://crypto.invalid'],ensure_ascii=False))
+        self.assertEqual(len(state['seen']),2)
+
 if __name__=='__main__':unittest.main()

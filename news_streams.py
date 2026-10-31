@@ -12,19 +12,22 @@ FINANCE_SOURCES = (
     {'name': '聯準會', 'url': 'https://www.federalreserve.gov/feeds/press_all.xml', 'official': True, 'stream': 'finance'},
 )
 CRYPTO = r'\b(?:bitcoin|btc|ethereum|ether|crypto\w*|stablecoin\w*|tether|usdt|usdc|blockchain|coinbase|binance|bitget|okx|solana|digital assets?)\b'
+FINANCE_READING_NOTE = '金融事件可能透過利率、流動性與市場情緒影響加密市場，並不代表價格必然同向變動。'
+
+# Keep the existing topic-matching shape; category-only copy is no longer generated.
 TOPICS = (
     ('policy', '🏛️', '政策／利率', r'\b(?:federal reserve|fed|ecb|bank of japan|boj|central bank|treasury|trump|white house|tariffs?|sanctions?|interest rates?|capital controls?)\b',
      r'\b(?:announces?|imposes?|raises?|cuts?|holds?|approves?|signs?|bans?|orders?|enacts?|expands?|hikes?|warns?|signals?|rates?|tariffs?|sanctions?|liquidity)\b',
-     '觀察關聯｜利率、政策與流動性可能影響加密市場的資金成本及風險偏好；不代表價格必然同向變動。'),
+     ''),
     ('banking', '🏦', '銀行／資金', r'\b(?:blackrock|fidelity|jpmorgan|goldman sachs|banks?|credit|financial system|bond market)\b',
      r'\b(?:liquidity|crisis|collapse|bankrupt\w*|rescue|bailout|default\w*|withdrawals?|custody|settlement|launch\w*|stress|funding)\b',
-     '觀察關聯｜銀行信用與資金供應變化可能傳導至市場流動性及避險需求。'),
+     ''),
     ('technology', '💻', '科技／企業', r'\b(?:nvidia|microsoft|alphabet|google|amazon|meta|tsmc|taiwan semiconductor|tesla|musk|strategy)\b',
      r'\b(?:export (?:ban|controls?|restrictions?)|capital expenditure|capex|spending|investment|debt|financing|acquisition|tariffs?|sanctions?|bitcoin|crypto|digital assets?)\b',
-     '觀察關聯｜重大科技投資或政策限制可能影響整體風險偏好；與加密市場的關聯屬間接傳導。'),
+     ''),
     ('energy', '🛢️', '能源／地緣', r'\b(?:oil|opec|energy supply|strait of hormuz|shipping route)\b',
      r'\b(?:supply cut|cuts? output|production cut|disruption|blockade|sanctions?|war|ceasefire|attack)\b',
-     '觀察關聯｜能源供應事件可能改變通膨與利率預期，間接影響風險資產。'),
+     ''),
 )
 
 
@@ -161,8 +164,9 @@ def run(now):
         if urgent and immediate_count < news.MAX_IMMEDIATE_PER_RUN:
             card = slim_policy.news_card(row, now=now)
             card['title'] = ('【金融快訊】 ' if stream == 'finance' else '【重大快訊】 ') + card['title']
-            if stream == 'finance' and row.get('transmission'):
-                card['description'] += '\n\n' + row['transmission']
+            if stream == 'finance':
+                # Ignore generic transmission copy still present in pending caches.
+                card.setdefault('fields', []).append({'name': '閱讀提示', 'value': FINANCE_READING_NOTE, 'inline': False})
             news.send_discord(destinations[stream], card, '金融風向' if stream == 'finance' else '幣圈有事')
             delivered([row]); immediate_count += 1; sent += 1
             state['pending'] = [news.serialize_pending(r) for r in ready if r['id'] not in seen]
@@ -190,10 +194,9 @@ def run(now):
                 card = slim_policy.digest_card(group, now)
                 card['title'] = ('【金融新聞】 🌐 金融風向' if stream == 'finance' else '【加密新聞】 🪙 幣圈有事') + f'｜{local:%m/%d}'
                 if stream == 'finance':
-                    # One concise transmission note per selected event.
-                    notes = '\n'.join(f"{i+1:02d}｜{r['transmission']}" for i, r in enumerate(group) if r.get('transmission'))
-                    if notes:
-                        card.setdefault('fields', []).append({'name': '與加密市場的關聯', 'value': notes[:1024], 'inline': False})
+                    # Article-specific facts stay in the checked title/summary;
+                    # do not infer a crypto impact from the topic category.
+                    card.setdefault('fields', []).append({'name': '閱讀提示', 'value': FINANCE_READING_NOTE, 'inline': False})
                 news.send_discord(destinations[stream], card, '金融風向' if stream == 'finance' else '幣圈有事')
                 delivered(group)
                 progress['ids'].extend(r['id'] for r in group)
