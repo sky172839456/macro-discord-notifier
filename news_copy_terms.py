@@ -46,6 +46,12 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        "Canada's Draft Stablecoin Rules Cap Redemption Fees at 1% and Ban Yield":
+            '加拿大穩定幣規則草案：贖回費上限1%，禁止支付持幣利息',
+        'Bitcoin Dips Below $80,000 Ahead of Fed Decision, Midterms':
+            '聯準會決策與期中選舉前，比特幣跌破8萬美元',
+        'Bitcoin Wallet Maker Keystone Pulls Devices as Stolen Key Opens Door to Fakes':
+            'Keystone 撤回比特幣錢包設備，遭竊金鑰帶來偽造風險',
         "Wall Street's Fast Money Fled Bitcoin ETFs, Sovereign Funds Stepped In":
             '華爾街短線資金撤出比特幣 ETF，主權基金進場',
         ('Bithumb hacked through employee system as South Korean financial firms face cyberattacks'):
