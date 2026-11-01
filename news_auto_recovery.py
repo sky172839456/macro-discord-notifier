@@ -36,6 +36,16 @@ def checked_copy(source, translated):
         raise ValueError('translation dropped numeric facts')
     from news_streak_guard import validate
     validate(source, result)
+    # A fund-flow headline about fleeing FROM ETFs cannot become an inflow.
+    if (re.search(r'\b(?:funds?|money|investors?)\b.*\b(?:fled|fleeing|flee)\s+(?:from\s+)?(?:bitcoin\s+)?etfs?\b', source, re.I)
+            and re.search(r'流入|湧入|淨流入', result)
+            and not re.search(r'\b(?:stepped in|inflows?|into)\b', source, re.I)):
+        raise ValueError('translation reversed ETF money leaving into entering')
+    ongoing_recovery = re.search(r'''\b(?:race|game|attempting|working|efforts|seeks?|trying)['’"]?\s+(?:against time\s+)?to recover\b''', source, re.I)
+    if ongoing_recovery and not re.search(r'\b(?:recovered|returned|repaid)\b', source, re.I):
+        if (re.search(r'(?:已|成功|完成).{0,5}(?:追回|追討|收回)', result)
+                or not re.search(r'追查|追索|搶救|追回.{0,8}中|正(?:在)?|嘗試|試圖|競速|設法|努力|尋求', result)):
+            raise ValueError('translation turned an ongoing recovery effort into a result')
     # Preserve qualifications instead of converting an allegation into a fact.
     checks = (
         (r'\b(?:may|might|could|potential(?:ly)?|possibly)\b', r'可能|或許|潛在|有望|或將'),
@@ -135,6 +145,27 @@ def material_news(item):
         return kind == 'decision'
     title = str(item.get('title', ''))
     body = title + ' ' + str(item.get('summary', ''))
+    # Commentary alone cannot become another major incident. Preserve concrete
+    # losses, victims, recovery and official actions appearing in the same item.
+    commentary = re.search(
+        r'\b(?:exposes? .{0,35}(?:risks?|flaws?)|raises? questions|buying opportunity|'
+        r'what it means|analysts? (?:say|says|argue\w*)|'
+        r'(?:price|stocks?|shares?|bitcoin|ether) (?:falls?|drops?|rises?|slumps?|rebounds?|rallies) (?:after|following))\b', title, re.I)
+    material_progress = re.search(
+        r'\b(?:loss(?:es)?\s+(?:rise\w*|revis\w*|increas\w*|updat\w*)|'
+        r'(?:additional|more|new)\s+(?:victims?|users?|wallets?|accounts?)|'
+        r'(?:froze|frozen|freeze\w*|seiz\w*|recover\w*|reimburse\w*|compensat\w*)\s+(?:\$|funds?|assets?|victims?|users?)|'
+        r'(?:fbi|police|authorities|regulators?)\s+(?:begins?|launch\w*|open\w*|order\w*|announc\w*)|'
+        r'(?:withdrawals?|deposits?)\s+(?:resum\w*|halt\w*|suspend\w*)|'
+        r'(?:new|active|ongoing)\s+(?:exploit|attack|breach|vulnerability))\b', body, re.I)
+    material_progress = material_progress or re.search(
+        r'\b(?:(?:loss(?:es)?|victims?)\s+(?:estimate\s+|count\s+)?(?:rise\w*|revis\w*|increas\w*|updat\w*)|'
+        r'\d+\s+(?:customer\s+)?(?:accounts?|wallets?|users?)\s+(?:are\s+|were\s+)?(?:affected|impacted)|'
+        r'(?:funds?|assets?)\s+(?:(?:have|has|been|were|are|being|now)\s+){0,5}(?:recover\w*|return\w*|froze\w*|seiz\w*)|'
+        r'(?:confirms?|confirmed)\s+(?:a\s+|new\s+)?(?:breach|exploit)|'
+        r'return\w*\s+(?:the\s+)?funds?)\b', body, re.I)
+    if commentary and not material_progress:
+        return False
     progress = re.search(r'\b(?:new vulnerability|new exploit|active exploit|ongoing attack|additional (?:victims|users|wallets)|recall\w*|halt\w*|suspend\w*|resum\w*|restor\w*|loss(?:es)? (?:rise|rises|revised)|confirms? (?:a )?(?:new )?(?:breach|exploit))\b', body, re.I)
     background = re.search(r'\b(?:scammer gets scammed|scammer (?:lost|loses)|victim profile|questioning (?:its|their) response|early .{0,25}warnings|months before|years ago|deserved more action)\b', body, re.I)
     if background and not progress:

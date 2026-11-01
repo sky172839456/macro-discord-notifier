@@ -46,6 +46,8 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        "Wall Street's Fast Money Fled Bitcoin ETFs, Sovereign Funds Stepped In":
+            '華爾街短線資金撤出比特幣 ETF，主權基金進場',
         ('Bithumb hacked through employee system as South Korean financial firms face cyberattacks'):
             '韓國金融業面臨網路攻擊，Bithumb 遭駭，入侵途徑為員工系統',
         'Qubic restarts blockchain, opens recovery claims after $1.4M hack':
