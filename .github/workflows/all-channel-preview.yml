@@ -16,6 +16,28 @@ permissions:
   contents: read
 
 jobs:
+
+  approved-guide-update:
+    needs: preview
+    if: inputs.audit_only == true && inputs.apply_approved_guides == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply only two explicitly approved pinned-guide updates and read back
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
+        run: python apply_approved_guides.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: approved-guide-result
+          path: approved-guide-result.json
+          retention-days: 7
+
   preview:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -73,24 +95,3 @@ jobs:
         env:
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
         run: python realtime_health.py --test-preview
-
-  approved-guide-update:
-    needs: preview
-    if: inputs.audit_only == true && inputs.apply_approved_guides == true
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Apply only two explicitly approved pinned-guide updates and read back
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
-        run: python apply_approved_guides.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: approved-guide-result
-          path: approved-guide-result.json
-          retention-days: 7
