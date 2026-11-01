@@ -27,62 +27,100 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements.txt
 
       - name: Restore macro state
+        id: restore_macro
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/notified.json
           key: macro-state-${{ github.run_id }}
           restore-keys: macro-state-
       - name: Restore listing state
+        id: restore_listing
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/exchange-listings.json
           key: exchange-listing-state-${{ github.run_id }}
           restore-keys: exchange-listing-state-
       - name: Restore announcement state
+        id: restore_announcement
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/exchange-announcements.json
           key: exchange-announcement-state-${{ github.run_id }}
           restore-keys: exchange-announcement-state-
       - name: Restore news state
+        id: restore_news
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/crypto-news.json
           key: crypto-news-state-${{ github.run_id }}
           restore-keys: crypto-news-state-
       - name: Restore risk state
+        id: restore_risk
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/risk-monitor.json
           key: risk-state-${{ github.run_id }}
           restore-keys: risk-state-
       - name: Restore derivatives state
+        id: restore_derivatives
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/derivatives.json
           key: derivatives-state-${{ github.run_id }}
           restore-keys: derivatives-state-
       - name: Restore market summary state
+        id: restore_summary
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/market-summaries.json
           key: market-summary-state-${{ github.run_id }}
           restore-keys: market-summary-state-
       - name: Restore analysis state
+        id: restore_analysis
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/channel-analysis.json
           key: channel-analysis-state-${{ github.run_id }}
           restore-keys: channel-analysis-state-
       - name: Restore realtime heartbeat state
+        id: restore_health
+        continue-on-error: true
         uses: actions/cache/restore@v4
         with:
           path: .state/realtime-health.json
           key: realtime-health-state-${{ github.run_id }}
           restore-keys: realtime-health-state-
 
+      - name: Validate restored state without initialization
+        id: state_guard
+        env:
+          RESTORE_MACRO: ${{ steps.restore_macro.outputs.cache-hit }}
+          RESTORE_LISTING: ${{ steps.restore_listing.outputs.cache-hit }}
+          RESTORE_ANNOUNCEMENT: ${{ steps.restore_announcement.outputs.cache-hit }}
+          RESTORE_NEWS: ${{ steps.restore_news.outputs.cache-hit }}
+          RESTORE_RISK: ${{ steps.restore_risk.outputs.cache-hit }}
+          RESTORE_DERIVATIVES: ${{ steps.restore_derivatives.outputs.cache-hit }}
+          RESTORE_SUMMARY: ${{ steps.restore_summary.outputs.cache-hit }}
+          RESTORE_ANALYSIS: ${{ steps.restore_analysis.outputs.cache-hit }}
+          RESTORE_HEALTH: ${{ steps.restore_health.outputs.cache-hit }}
+        run: python state_restore_guard.py
+
       - name: Run all realtime monitors independently
         env:
+          READY_MACRO: ${{ steps.state_guard.outputs.macro }}
+          READY_NEWS: ${{ steps.state_guard.outputs.news }}
+          READY_RISK: ${{ steps.state_guard.outputs.risk }}
+          READY_SUMMARY: ${{ steps.state_guard.outputs.summary }}
+          READY_HEALTH: ${{ steps.state_guard.outputs.health }}
+          READY_ANALYSIS: ${{ steps.state_guard.outputs.analysis }}
           CONSOLIDATED_CHANNELS: "1"
           SLIM_NOTIFICATIONS: "1"
           NEWS_AUTO_RECOVERY: "1"
@@ -104,12 +142,24 @@ jobs:
           results_file=".state/realtime-results.txt"
           mkdir -p .state
           : > "$results_file"
-          python realtime_health.py --begin
+          if [ "$READY_HEALTH" = "true" ]; then
+            python realtime_health.py --begin
+          else
+            echo "::error::Health state restore unconfirmed; no initialization or overwrite."
+            failures=$((failures + 1))
+          fi
 
           run_if_configured() {
             name="$1"
             secret_value="$2"
-            shift 2
+            state_ready="$3"
+            shift 3
+            if [ "$state_ready" != "true" ]; then
+              echo "::error::$name state restore unconfirmed; sender and state writes skipped."
+              printf '%s|failed|去重紀錄未完整恢復；暫停發送與寫入\n' "$name" >> "$results_file"
+              failures=$((failures + 1))
+              return
+            fi
             if [ -z "$secret_value" ]; then
               echo "::warning::$name production webhook is not configured; monitor skipped."
               printf '%s|skipped|Webhook 未設定\n' "$name" >> "$results_file"
@@ -123,14 +173,17 @@ jobs:
             fi
           }
 
-          run_if_configured "總經數據" "$DISCORD_WEBHOOK_URL" python notifier.py
+          run_if_configured "總經數據" "$DISCORD_WEBHOOK_URL" "$READY_MACRO" python notifier.py
           printf '%s|disabled|社群精簡版停用\n' "上幣通知" >> "$results_file"
           printf '%s|disabled|社群精簡版停用\n' "交易所公告" >> "$results_file"
-          run_if_configured "加密新聞" "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" python crypto_news_notifier.py
-          run_if_configured "市場風險" "$DISCORD_RISK_WEBHOOK_URL" python risk_notifier.py
+          run_if_configured "加密新聞" "$DISCORD_CRYPTO_NEWS_WEBHOOK_URL" "$READY_NEWS" python crypto_news_notifier.py
+          run_if_configured "市場風險" "$DISCORD_RISK_WEBHOOK_URL" "$READY_RISK" python risk_notifier.py
           printf '%s|disabled|社群精簡版停用\n' "衍生品" >> "$results_file"
           if [ "$CONSOLIDATED_CHANNELS" = "1" ]; then
             printf '%s|merged|已併入行情日週報，不另行發送\n' "市場分析" >> "$results_file"
+          elif [ "$READY_ANALYSIS" != "true" ]; then
+            printf '%s|failed|去重紀錄未完整恢復；暫停發送與寫入\n' "市場分析" >> "$results_file"
+            failures=$((failures + 1))
           elif [ -n "$DISCORD_MACRO_ANALYSIS_WEBHOOK_URL" ] || [ -n "$DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL" ]; then
             if python analysis_notifier.py --scheduled; then
               printf '%s|ok|本輪執行完成\n' "市場分析" >> "$results_file"
@@ -142,7 +195,10 @@ jobs:
             echo "::warning::Macro and technical analysis webhooks are not configured; analysis skipped."
             printf '%s|skipped|Webhook 未設定\n' "市場分析" >> "$results_file"
           fi
-          if [ -n "$DISCORD_DAILY_SUMMARY_WEBHOOK_URL" ] && [ -n "$DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL" ]; then
+          if [ "$READY_SUMMARY" != "true" ]; then
+            printf '%s|failed|去重紀錄未完整恢復；暫停發送與寫入\n' "市場摘要" >> "$results_file"
+            failures=$((failures + 1))
+          elif [ -n "$DISCORD_DAILY_SUMMARY_WEBHOOK_URL" ] && [ -n "$DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL" ]; then
             if python summary_notifier.py --scheduled; then
               printf '%s|ok|本輪執行完成\n' "市場摘要" >> "$results_file"
             else
@@ -154,7 +210,9 @@ jobs:
             printf '%s|skipped|Webhook 未設定\n' "市場摘要" >> "$results_file"
           fi
 
-          python realtime_health.py --finish --results-file "$results_file"
+          if [ "$READY_HEALTH" = "true" ]; then
+            python realtime_health.py --finish --results-file "$results_file"
+          fi
 
           if [ "$failures" -gt 0 ]; then
             echo "::error::$failures realtime monitor(s) failed."
@@ -162,55 +220,55 @@ jobs:
           fi
 
       - name: Save macro state
-        if: always()
+        if: always() && steps.state_guard.outputs.macro == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/notified.json
           key: macro-state-${{ github.run_id }}
       - name: Save listing state
-        if: always()
+        if: always() && steps.state_guard.outputs.listing == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/exchange-listings.json
           key: exchange-listing-state-${{ github.run_id }}
       - name: Save analysis state
-        if: always()
+        if: always() && steps.state_guard.outputs.analysis == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/channel-analysis.json
           key: channel-analysis-state-${{ github.run_id }}
       - name: Save announcement state
-        if: always()
+        if: always() && steps.state_guard.outputs.announcement == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/exchange-announcements.json
           key: exchange-announcement-state-${{ github.run_id }}
       - name: Save news state
-        if: always()
+        if: always() && steps.state_guard.outputs.news == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/crypto-news.json
           key: crypto-news-state-${{ github.run_id }}
       - name: Save risk state
-        if: always()
+        if: always() && steps.state_guard.outputs.risk == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/risk-monitor.json
           key: risk-state-${{ github.run_id }}
       - name: Save derivatives state
-        if: always()
+        if: always() && steps.state_guard.outputs.derivatives == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/derivatives.json
           key: derivatives-state-${{ github.run_id }}
       - name: Save market summary state
-        if: always()
+        if: always() && steps.state_guard.outputs.summary == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/market-summaries.json
           key: market-summary-state-${{ github.run_id }}
       - name: Save realtime heartbeat state
-        if: always()
+        if: always() && steps.state_guard.outputs.health == 'true'
         uses: actions/cache/save@v4
         with:
           path: .state/realtime-health.json

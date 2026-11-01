@@ -118,6 +118,8 @@ def entity(value):
 
 
 def stage(value):
+    if re.search(r"\b(?:not|never|yet to|hasn't|haven't|wasn't|weren't)\s+(?:been\s+)?recovered\b", value, re.I):
+        return 'recovery_pending'
     for name, pattern in (
         ('recovered', r'\b(?:recovered|funds returned|repaid|compensated)\b'),
         ('resumed', r'\b(?:resumes?|resumed|restores?|restored|resolved|reopens?|reopened)\b'),
