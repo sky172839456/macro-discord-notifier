@@ -481,6 +481,10 @@ def fetch_extended_calendar(now: datetime) -> tuple[list[dict[str, Any]], list[t
 
 def classify(text: str) -> dict[str, Any] | None:
     value = text.lower()
+    # ADP私人就業調查不是BLS非農／失業率；公開行事曆展開別名後仍須區分。
+    # 既有範圍只追蹤官方BLS結果，不為ADP假接BLS來源或新增未授權產品。
+    if re.search(r"\b(?:adp|automatic data processing)\b", value) and re.search(r"\b(?:non[-\s]?farm|employment|payrolls?|jobs)\b", value):
+        return None
     # FOMC 官員發言不可被寬鬆的「fomc」關鍵字當成利率決議。
     if re.search(r"\b(speaks?|speech|remarks|member|press conference|testimony|testifies)\b", value) and re.search(r"\b(fomc|governor|chair|fed)\b", value):
         key = "powell" if "powell" in value else "fed_official"
