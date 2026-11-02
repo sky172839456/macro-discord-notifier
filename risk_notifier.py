@@ -235,7 +235,7 @@ def bybit_incidents():
         state = item.get('state')
         if state not in {'scheduled', 'ongoing', 'completed'}:
             continue
-        normalized['status'] = {'ongoing': 'investigating', 'completed': 'resolved'}.get(state, state)
+        normalized['status'] = {'completed': 'resolved'}.get(state, state)
         normalized['planned_maintenance'] = str(item.get('maintainType')) in {'1', '2'}
         normalized['impact'] = 'major' if str(item.get('maintainType')) == '3' else 'none'
         normalized['production_incident'] = str(item.get('env')) == '1' and str(item.get('maintainType')) == '3'

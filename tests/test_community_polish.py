@@ -48,7 +48,7 @@ class CommunityPolishTests(unittest.TestCase):
 
     def test_bybit_unplanned_production_incident_is_material(self):
         row = self.bybit()[0]
-        self.assertEqual(row['status'], 'investigating')
+        self.assertEqual(row['status'], 'ongoing')  # Ongoing does not establish an investigation.
         self.assertTrue(slim_risk.incident_material(row))
         self.assertIsNone(row['updated_at'])
 

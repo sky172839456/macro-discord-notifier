@@ -149,11 +149,55 @@ def incident_transition(record, item):
     return publish
 
 
+def bounded_incident_lines(lines):
+    kept = []
+    for line in lines:
+        if len("\n".join(kept+[line])) > 960:
+            break
+        kept.append(line)
+    if len(kept) < len(lines):
+        kept.append(f'另有{len(lines)-len(kept)}項，請查看官方清單。')
+    return "\n".join(kept)
+
+
+def bybit_scope_fields(item, now):
+    """Display existing source fields using the verified Bybit enum definitions."""
+    fields = []
+    for key, label, values, unknown in (
+        ('serviceTypes', '公告列出的服務', {1:'交易服務',2:'HTTP交易',3:'WebSocket交易',4:'私人WebSocket資料流',5:'行情資料'}, '服務'),
+        ('product', '公告列出的產品', {1:'期貨',2:'現貨',3:'選擇權',4:'價差交易'}, '產品')):
+        codes = item.get(key)
+        if isinstance(codes, list) and codes:
+            names = [values.get(code, f'未識別{unknown}代碼（{code}）') if isinstance(code,int) and not isinstance(code,bool)
+                     else f'{unknown}代碼待核對' for code in codes]
+            fields.append({'name':label,'value':bounded_incident_lines(names),'inline':False})
+    def source_time(value):
+        try:
+            if isinstance(value,bool):
+                return None
+            value=float(value)/1000
+            return datetime.fromtimestamp(value, timezone.utc) if math.isfinite(value) and value>0 else None
+        except (TypeError,ValueError,OverflowError,OSError):
+            return None
+    begin,end = source_time(item.get('begin')),source_time(item.get('end'))
+    if begin and begin<=now and (not end or begin<=end):
+        lines = [f'事件開始：{begin.astimezone(TAIPEI):%Y/%m/%d %H:%M}']
+        if end:
+            completed = item.get('state') == 'completed' or item.get('status') == 'resolved'
+            if not completed or end<=now:
+                lines.append(f'{"實際結束" if completed else "預計結束"}：{end.astimezone(TAIPEI):%Y/%m/%d %H:%M}')
+        fields.append({'name':'官方事件時程（台灣）','value':"\n".join(lines),'inline':False})
+    return fields
+
+
 def incident_card(api, exchange, item, now):
-    status = str(item.get("status") or item.get("state") or "investigating").lower()
+    # The source's event state is evidence; an absent state is not investigating.
+    status = str(item.get("status") or item.get("state") or "").lower()
     resolved = status in {"resolved", "completed"}
-    title = str(item.get("name") or item.get("title") or "服務異常")
-    body = str(item.get("body") or (item.get("incident_updates") or [{}])[0].get("body", ""))
+    title = str(item.get("name") or item.get("title") or "服務事件")
+    updates = item.get("incident_updates") or []
+    latest = updates[0] if updates else {}
+    body = str(item.get("body") or latest.get("body") or "")
     excerpt = api.clean_source_text(body, 500)
     if excerpt:
         try:
@@ -162,27 +206,52 @@ def incident_card(api, exchange, item, now):
             excerpt = checked_translation(excerpt, translate_text(excerpt))
         except Exception:
             excerpt = "中文摘要暫缺，請閱讀官方原文核對影響範圍。"
-    source = item.get("shortlink") or item.get("url") or "https://status.coinbase.com/"
-    from notification_quality import has_chinese, time_copy
+    else:
+        excerpt = "本次官方狀態資料未附事件說明。"
+    source = item.get("shortlink") or item.get("url") or {
+        "Coinbase": "https://status.coinbase.com/", "Bybit": "https://announcements.bybit.com/"
+    }.get(exchange, "")
+    from notification_quality import time_copy
     translated_title = api.translate_title(title)
     try:
         from notification_quality import checked_translation
         translated_title = checked_translation(title, translated_title)
     except ValueError:
         translated_title = '服務事件更新'
-    updated = item.get('updated_at') or item.get('endTime')
+    # A planned/expected end is not a source update or an actual restoration.
+    updated = item.get('updated_at') or latest.get('display_at') or latest.get('created_at')
+    query = f'🕒 本次查詢：{now.astimezone(TAIPEI):%Y/%m/%d %H:%M}'
     try:
-        timing, late = time_copy(updated, now) if updated else ('官方更新時間：未提供', False)
+        timing, late = time_copy(updated, now) if updated else ('此狀態資料未列更新時間\n'+query, False)
     except (TypeError, ValueError, AttributeError):
-        timing, late = '官方更新時間：未確認', False
-    timing = timing.replace('來源發布時間', '官方更新時間')
-    return {"title": f"{'✅ 服務已恢復' if resolved else '🚨 服務風險'}｜{'補發｜' if late else ''}{exchange}｜{translated_title}"[:240],
-            "description": excerpt or "官方未提供詳細影響範圍，請閱讀原公告。",
-            "fields": [{"name": "官方狀態", "value": api.translate_status(status), "inline": False},
-                       {"name": "需要留意", "value": "恢復範圍以官方公告為準。" if resolved else "確認公告列出的平台與服務是否影響你的操作；不推測資產損失或恢復時間。", "inline": False},
-                       {"name": "🔗 官方來源與更新時間", "value": f"[閱讀公告]({source})\n{timing}", "inline": False}],
+        timing, late = '來源更新時間待核對\n'+query, False
+    timing = timing.replace('來源發布時間', '官方更新時間').replace('機器人發現', '本次查詢')
+    label = '狀態未確認' if not status else '已解決' if status == 'resolved' else api.translate_status(status)
+    fields = [{"name": "官方事件狀態", "value": label, "inline": False}]
+    components = []
+    component_states = {'operational': '正常', 'degraded_performance': '效能下降',
+                        'partial_outage': '部分中斷', 'major_outage': '重大中斷',
+                        'under_maintenance': '維護中'}
+    import re
+    for row in item.get('components') or []:
+        name = api.clean_source_text(str(row.get('name') or ''), 160)
+        if not name:
+            continue
+        # Keep asset/product identity; translate only established service terms.
+        for english, chinese in (('withdrawals', '提款'), ('deposits', '充值'),
+                                  ('trading', '交易'), ('wallet', '錢包')):
+            name = re.sub(r'\b'+english+r'\b', chinese, name, flags=re.I)
+        state = component_states.get(str(row.get('status') or ''), '狀態未確認')
+        components.append(name+'：'+state)
+    if components:
+        fields.append({"name": "公告列出的服務", "value": bounded_incident_lines(components), "inline": False})
+    if exchange == "Bybit":
+        fields.extend(bybit_scope_fields(item, now))
+    fields.append({"name": "🔗 官方來源與更新時間", "value": f"[閱讀公告]({source})\n{timing}", "inline": False})
+    return {"title": f"{'✅ 事件已解決' if resolved else '🚨 服務風險'}｜{'補發｜' if late else ''}{exchange}｜{translated_title}"[:240],
+            "description": excerpt, "fields": fields,
             "color": 0x2ECC71 if resolved else 0xE74C3C,
-            "footer": {"text": "官方原文摘錄｜不構成投資建議"}, "timestamp": now.isoformat()}
+            "footer": {"text": "官方事件資料｜範圍以本公告為準｜不構成投資建議"}, "timestamp": now.isoformat()}
 
 
 def monitor(api, webhook, now=None):
