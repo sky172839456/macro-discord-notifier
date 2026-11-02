@@ -345,17 +345,14 @@ def news_review(path, now):
         return {'items': [], 'complete_window': False}
     start = now - timedelta(days=7)
     selected = []
-    seen = set()
-    from slim_policy import same_event
-    from crypto_news_notifier import similar_title
+    from crypto_news_notifier import same_news_event
     for row in sorted(state.get('weekly_journal', []), key=lambda r: (news_score(r), str(r.get('published', ''))), reverse=True):
         time = instant(row.get('published'))
         if not time or not start <= time <= now or not str(row.get('url', '')).startswith('https://'):
             continue
         title = headline(row)
-        if '中文標題待確認' in title or row['url'] in seen or any(same_event(row.get('title', ''), r.get('title', '')) or similar_title(row.get('title', ''), r.get('title', '')) for r in selected):
+        if '中文標題待確認' in title or any(same_news_event(row, prior) for prior in selected):
             continue
-        seen.add(row['url'])
         selected.append(row)
         if len(selected) == 3:
             break

@@ -251,13 +251,23 @@ def scope_terms(value):
     return tokens
 
 
+WITHDRAWAL_PHASE_SOURCE_PAIRS = frozenset(('3cb5f832a5bc6e4f95aebadd610b972849523c36dc806b7ce8d328a1b0f7f964', '832cc66370496e3ec7977497d5ac19aade0b657aa8ad4b4785b96ab31473bc88'))
+
+
+def same_verified_withdrawal_phase(left, right):
+    """The two checked first-phase reports only; changed details never match."""
+    fingerprints = {hashlib.sha256(re.sub(r'\s+', ' ', text(row)).strip().casefold().encode()).hexdigest()
+                    for row in (left, right)}
+    return fingerprints == WITHDRAWAL_PHASE_SOURCE_PAIRS
+
+
 def equivalent(left, right, fallback=None):
     """Only suppress near-time repeats; changes of stage/amount/conditions stay visible."""
     if left.get('published') and right.get('published'):
         if abs(published_time(left['published']) - published_time(right['published'])) > timedelta(hours=24):
             return False
     a, b = str(left.get('title', '')), str(right.get('title', ''))
-    if same_victim_episode(left, right):
+    if same_victim_episode(left, right) or same_verified_withdrawal_phase(left, right):
         return True
     key_a, key_b = event_key(left), event_key(right)
     # A known mismatch must not be overridden by a bag-of-words fallback.
