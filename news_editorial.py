@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from datetime import timedelta
 
 from notification_quality import published_time, TAIPEI
@@ -24,6 +25,15 @@ ACTION = r'\b(?:pull|recall|halt(?:ed|s)?|suspend(?:ed|s)?|paus(?:e|ed|es)|warn(
 
 def text(item):
     return f"{item.get('title', '')} {item.get('summary', '')}"
+
+
+VERIFIED_ETF_FLOW_FINGERPRINT = 'e8c34378d581e333058d06fd315e87dbe5f57ebf3b90c9b2b0da5b8dab0829d6'
+
+
+def verified_etf_flow_reaction(item):
+    """Only the verified full headline+summary pair; any changed detail falls back."""
+    value = re.sub(r'\s+', ' ', text(item).replace('’', "'").replace('‘', "'").strip()).casefold()
+    return hashlib.sha256(value.encode('utf-8')).hexdigest() == VERIFIED_ETF_FLOW_FINGERPRINT
 
 
 def acquisition_with_only_old_incident(value):
@@ -84,6 +94,8 @@ def event_kind(item):
 def safety_candidate(item):
     """Protect current asset-safety candidates before generic relevance/exclusions."""
     title, body = str(item.get('title', '')), text(item)
+    if verified_etf_flow_reaction(item):
+        return False
     if acquisition_with_only_old_incident(body):
         return False
     if retrospective(item) or (re.search(EXPLAINER, title, re.I) and not current_safety_evidence(item)):

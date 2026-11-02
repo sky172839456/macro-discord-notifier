@@ -37,6 +37,13 @@ def account_reserve_context(text):
     )
 
 def category(text, categories):
+    # 已核對的ETF資金反應不可只因事故背景再走重大資安。
+    from news_editorial import verified_etf_flow_reaction
+    if verified_etf_flow_reaction({'title': text}):
+        result = next((dict(row) for row in categories if row['key'] == 'etf'), None)
+        if result:
+            result['priority'] = 'normal'
+            return result
     lowered = f" {text.lower()} "
     from news_verified_context import core_policy_text
     if core_policy_text(text):
