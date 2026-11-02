@@ -207,7 +207,8 @@ def add_translated_title(item: dict[str, Any], state: dict[str, Any], now: datet
     import news_auto_recovery as auto
     if auto.enabled():
         text = str(item.get('title', '')) + ' ' + str(item.get('summary', ''))
-        if slim_policy.enabled() and slim_policy.account_reserve_context(text):
+        from news_editorial import verified_etf_flow_reaction
+        if slim_policy.enabled() and (slim_policy.account_reserve_context(text) or verified_etf_flow_reaction(item)):
             # Revalidate unsent cached/retry categories too; never reopen seen.
             category = category_for(text)
             if category:

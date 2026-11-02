@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from decimal import Decimal
 
 
@@ -43,6 +44,17 @@ def repair_translation(source, translated):
         translated = translated.replace('阿爾卑斯光', 'Alpenglow').replace('索拉娜', 'Solana')
         if normalized == "solana alpenglow goes live in 'most ambitious' upgrade since ethereum's merge":
             translated = translated.replace('將進行', '已完成').replace('將上線', '已上線')
+
+    # 既有CNBC／Decrypt RSS已核對來源指紋；不套用到改數字、否認或新增進展。
+    source_scoped = {
+        '203a115ab2df8413b6fa2fd85cc18db819aaaec895419e5d27562f17b1bd872e':
+            '標普因現金流與資本支出疑慮，下調 Meta 展望',
+        'aeb52716f0fb1dafd9750efb47c8ee0eed785e3092dd512b57888143e8039cdf':
+            '幣安創紀錄駭客事件後，比特幣 ETF 投資人撤資',
+        'b65deb183f656b8eddf0b4e3c665655315472cec3fbaccf4bc23073f6e82ac91':
+            '比特幣 ETF 週五流出6.432億美元，這是幣安64億美元駭客事件後首個完整交易日；十月合計淨流出約5.16億美元。',
+    }
+    translated = source_scoped.get(hashlib.sha256(normalized.encode('utf-8')).hexdigest(), translated)
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
