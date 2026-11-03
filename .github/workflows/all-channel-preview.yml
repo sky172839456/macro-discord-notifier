@@ -25,6 +25,7 @@ jobs:
       - name: Audit webhook destinations without sending messages
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_MATERIAL_WEBHOOK_URL: ${{ secrets.DISCORD_MATERIAL_WEBHOOK_URL }}
           DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
           DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
           DISCORD_EXCHANGE_LISTING_WEBHOOK_URL: ${{ secrets.DISCORD_EXCHANGE_LISTING_WEBHOOK_URL }}
@@ -54,6 +55,7 @@ jobs:
       - name: Check public source diagnostics and quality fixtures without sending
         if: inputs.audit_only == true
         run: |
+          python material_inbox_check.py
           python exchange_market_check.py
           python source_quality_check.py
           python macro_scope_check.py

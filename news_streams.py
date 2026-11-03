@@ -125,6 +125,13 @@ def run(now):
                 seen[row['id']] = now.date().isoformat()
         state['finance_initialized'] = True
     all_rows = rows + financial
+    # Private editorial inbox is independent of member gates, budgets and seen.
+    try:
+        import material_inbox
+        material_inbox.run(all_rows, state, now, fetch=material_inbox.fetch_feed, send=material_inbox.send_card,
+                           persist=lambda: news.save_state(state), enrich=news.translate_title)
+    except Exception as exc:
+        print(f'素材整理暫未完成（{type(exc).__name__}）；未改送成員，原新聞流程繼續。')
     if not any(c >= 0 for _, c, _ in statuses + finance_status):
         raise RuntimeError('新聞來源皆無法讀取')
     if not state.get('initialized'):

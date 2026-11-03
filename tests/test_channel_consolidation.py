@@ -37,7 +37,7 @@ class ConsolidationRegressionTests(unittest.TestCase):
         import routing_audit
         with patch.object(routing_audit, "urlopen", return_value=io.BytesIO(b'{"channel_id":"wrong"}')):
             results = routing_audit.audit({"DISCORD_LOG_WEBHOOK_URL": "https://example.invalid/SECRET"})
-        self.assertEqual(results[1]["status"], "wrong_channel")
+        self.assertEqual(next(r for r in results if r["secret"] == "DISCORD_LOG_WEBHOOK_URL")["status"], "wrong_channel")
         self.assertNotIn("SECRET", json.dumps(results))
 
     def test_fomc_speech_is_not_a_rate_decision(self):
