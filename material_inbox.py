@@ -49,6 +49,9 @@ ANGLES = {
     'business': ('企業／交易所進展', '合作、收購或服務變更可整理成具體改變與用戶影響。',
                  '限動快訊；貼文整理雙方、合作內容與實際落地階段。',
                  '核對雙方公告、金額與範圍、洽談／簽約／交割／上線階段；不把意向當完成。'),
+    'interesting': ('趣聞／人物事件', '具體人物故事、反常事件或生活應用有敘事切入點，可做輕鬆但有知識點的內容。',
+                 '限動用一個問題帶出事件；Reels講故事；輪播補充背景與容易誤解的地方。',
+                 '核對人物原話、原始日期與上下文；區分趣味、諷刺、傳聞與事實，不把轉帳等同買賣或替人物推測動機。'),
     'research': ('研究／市場知識', '有報告或研究可拆解方法、數據與限制，延伸成常青教材。',
                  '輪播拆成問題、研究發現、證據與限制；Reels解釋單一概念。',
                  '讀原始論文或報告，核對資料期間、樣本、方法與利益關係；不把相關性寫成因果。'),
@@ -96,7 +99,7 @@ def topic(row):
     from news_editorial import safety_candidate, retrospective
     if safety_candidate(row):
         return 'security'
-    if retrospective(row):
+    if retrospective(row) or re.search(r'\b(?:weekly|monthly|daily) (?:recap|roundup|round-up|review)\b', title, re.I):
         return None
     if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI model|AI research)\b', title, re.I):
         return 'ai'
@@ -107,6 +110,15 @@ def topic(row):
         return 'research'
     if re.search(r'\b(?:partnership|partners with|collaborat\w*|acquir\w*|acquisition|merger|launch\w*|expands?|investment)\b', title, re.I):
         return 'business'
+    # Concrete story hooks from existing feeds, not a blanket catch-all for hype.
+    if re.search(
+        r'\b(?:bitcoin pizza|pizza day|solo miner|lottery miner|lost (?:bitcoin |crypto )?wallet|'
+        r'dormant (?:bitcoin |crypto )?wallet|accidental(?:ly)?|mistaken(?:ly)?|'
+        r'world record|guinness|meme culture|crypto wedding|bitcoin wedding|'
+        r'(?:buys?|bought|pays?|paid) .{0,65} (?:with|using|in) (?:bitcoin|crypto|btc)|'
+        r'(?:cz|changpeng zhao|vitalik buterin|elon musk) (?:says?|said|reveals?|responds?|jokes?|shares?))\b',
+        title, re.I):
+        return 'interesting'
     return None
 
 
@@ -151,7 +163,7 @@ def card(row, now):
     refs = [r for r in refs if public_url(r.get('url'))][:3]
     links = '\n'.join(f'[{clean(r["source"], 60)}]({r["url"]})' for r in refs)
     fields.append({'name': '🔗 來源與時間', 'value': links+f'\n原文：{published_time(row["published"]).astimezone(TZ):%Y/%m/%d %H:%M}\n收錄：{now.astimezone(TZ):%Y/%m/%d %H:%M}（台灣）', 'inline': False})
-    result = {'title': '📝 素材候選｜'+title, 'description': '【僅管理員】選題建議，不代表事實已全部核實或已製作發布。\n\n原文標題：'+clean(row['title'], 210),
+    result = {'title': '📝 素材候選｜'+title, 'description': f'分類：{label}\n\n【僅管理員】選題建議，不代表事實已全部核實或已製作發布。\n\n原文標題：'+clean(row['title'], 210),
               'fields': fields, 'color': 0xB99B66, 'timestamp': now.isoformat(),
               'footer': {'text': 'WV素材整理｜先查證再製作｜不會自動發布IG'}}
     if any(len(f['value']) > 1024 for f in fields) or sum(len(f['name'])+len(f['value']) for f in fields)+len(result['description']) > 5500:
@@ -248,13 +260,10 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
     if not waiting:
         return 0
     verify(webhook)
-    today = now.astimezone(TZ).date()
-    ordinary_sent = sum(r.get('status') == 'notified' and not urgent(r) and published_time(r['notified_at']).astimezone(TZ).date() == today for r in box['items'])
     count = 0
     for row in waiting:
-        priority = urgent(row)
-        if count >= 2 or (not priority and ordinary_sent >= 3):
-            continue
+        if count >= 2:
+            break  # Batch only; no daily quota. Remaining candidates wait for the next scan.
         if enrich:
             # Title-only translation through the existing checked free provider.
             # Do not invent Chinese summaries or consume a new paid AI service.
@@ -275,5 +284,4 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         row['status'], row['notified_at'] = 'notified', now.isoformat()
         persist()  # A later failed send must not replay an already confirmed item.
         count += 1
-        ordinary_sent += not priority
     return count
