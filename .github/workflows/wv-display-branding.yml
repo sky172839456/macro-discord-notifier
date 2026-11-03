@@ -1,0 +1,45 @@
+name: WV Notification Display Branding
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply approved notification avatar and display names without sending messages
+        type: boolean
+        default: false
+      expected_head:
+        description: Exact reviewed commit SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  branding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Require exact reviewed version
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+        run: python -c "import os; assert os.environ['GITHUB_SHA'] == os.environ['EXPECTED_HEAD'], 'Reviewed version mismatch'"
+      - name: Run branding safety tests without network
+        run: python -m unittest tests.test_webhook_branding -q
+      - name: Audit or apply display branding only
+        env:
+          APPLY_WEBHOOK_BRANDING: ${{ inputs.apply }}
+          DISCORD_MATERIAL_WEBHOOK_URL: ${{ secrets.DISCORD_MATERIAL_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_LOG_WEBHOOK_URL: ${{ secrets.DISCORD_LOG_WEBHOOK_URL }}
+          DISCORD_TEST_WEBHOOK_URL: ${{ secrets.DISCORD_TEST_WEBHOOK_URL }}
+          DISCORD_CRYPTO_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
+          DISCORD_FINANCE_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_FINANCE_NEWS_WEBHOOK_URL }}
+          DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
+          DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL }}
+          DISCORD_BREAKING_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_BREAKING_NEWS_WEBHOOK_URL }}
+          DISCORD_REGULATION_ETF_WEBHOOK_URL: ${{ secrets.DISCORD_REGULATION_ETF_WEBHOOK_URL }}
+          DISCORD_MACRO_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_MACRO_ANALYSIS_WEBHOOK_URL }}
+          DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_TECHNICAL_ANALYSIS_WEBHOOK_URL }}
+        run: python webhook_branding.py

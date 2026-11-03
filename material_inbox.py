@@ -1,4 +1,5 @@
 """Private IG topic inbox. Public facts only; never publishes to IG/member channels."""
+from sender_identity import sender_name
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from hashlib import sha256
@@ -189,7 +190,7 @@ class DeliveryUncertain(RuntimeError):
 def send_card(webhook, embed, username):
     from notification_format import readable_card
     embed = readable_card({**embed, 'author': {'name': 'W VIEWTURE｜私人素材整理'}})
-    payload = json.dumps({'username': username, 'embeds': [embed], 'allowed_mentions': {'parse': []}}).encode()
+    payload = json.dumps({'username': sender_name('material_inbox'), 'embeds': [embed], 'allowed_mentions': {'parse': []}}).encode()
     request = Request(webhook+'?wait=true', data=payload, headers={'Content-Type': 'application/json', 'User-Agent': 'WV-material-inbox/1.0'}, method='POST')
     try:
         with urlopen(request, timeout=25) as response:

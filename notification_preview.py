@@ -1,6 +1,7 @@
 """Send normalized previews for every production notification channel."""
 from __future__ import annotations
 
+from sender_identity import sender_name
 import argparse
 import json
 import os
@@ -256,7 +257,7 @@ def payload_batches(now: datetime) -> list[dict[str, Any]]:
     total = len(groups)
     for batch_number, group in enumerate(groups, start=1):
         batches.append({
-            "username": "通知格式驗收",
+            "username": sender_name("preview"),
             "content": (
                 f"🧪 **全頻道通知第二版驗收（{batch_number}/{total}）**\n"
                 "以下均為測試資料，不代表真實市場事件。"

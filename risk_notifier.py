@@ -1,5 +1,6 @@
 """Stablecoin and official exchange-risk monitor using free public sources."""
 from __future__ import annotations
+from sender_identity import sender_name
 import slim_policy
 
 import argparse
@@ -67,7 +68,7 @@ def get_json(url):
 def send(webhook, embed):
     card = apply_delivery_format(embed, "market_risk")
     body = json.dumps({
-        "username": "加密市場風險監控",
+        "username": sender_name("market_risk"),
         "embeds": [card],
         "allowed_mentions": {"parse": []},
     }).encode()

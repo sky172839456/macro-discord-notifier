@@ -1,6 +1,7 @@
 """Daily macro and technical-analysis cards for dedicated Discord channels."""
 from __future__ import annotations
 
+from sender_identity import sender_name
 import argparse
 import json
 import os
@@ -133,7 +134,7 @@ def macro_embed(dashboard, events, event_error, now):
 def send(webhook, username, embed):
     channel_key = "technical_analysis" if "技術" in username else "macro_analysis"
     card = apply_delivery_format(embed, channel_key)
-    payload = json.dumps({"username": username, "embeds": [card], "allowed_mentions": {"parse": []}}).encode()
+    payload = json.dumps({"username": sender_name(channel_key), "embeds": [card], "allowed_mentions": {"parse": []}}).encode()
     request = Request(
         webhook + ("&" if "?" in webhook else "?") + "wait=true",
         data=payload,

@@ -1,4 +1,5 @@
 """Private-only examples rendered with the same builders used in production."""
+from sender_identity import sender_name
 import argparse
 import json
 import os
@@ -50,7 +51,7 @@ def run(dry_run=False):
         print(json.dumps(output, ensure_ascii=False, indent=2))
         return
     for card in output:
-        payload = {"username": "WM Viewture｜精簡版測試", "embeds": [card], "allowed_mentions": {"parse": []}}
+        payload = {"username": sender_name("preview"), "embeds": [card], "allowed_mentions": {"parse": []}}
         req = Request(target + ("&" if "?" in target else "?") + "wait=true", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", "User-Agent": "macro-discord-notifier/slim-preview-1.0"}, method="POST")
         with urlopen(req, timeout=30):
             pass
