@@ -73,16 +73,49 @@ class MaterialInboxTests(unittest.TestCase):
         self.run_box([a, b])
         self.assertEqual(len(self.state['material_inbox_v1']['items']), 2)
 
-    def test_general_daily_budget_three_but_material_security_still_alerts(self):
+    def test_no_daily_budget_and_security_keeps_priority(self):
         box = self.state['material_inbox_v1']['items']
         for i in range(3):
             row = self.row('Company '+str(i)+' launches product', url='https://example.com/'+str(i))
             row.update(published=row['published'].isoformat(), material_topic='business', status='notified', notified_at=self.now.isoformat())
             box.append(row)
         security = self.row('Binance confirms new hack and pauses withdrawals', url='https://www.coindesk.com/security')
-        self.assertEqual(self.run_box([self.row(), security]), 1)
-        self.assertIn('資安', json.dumps(self.send.call_args.args[1], ensure_ascii=False))
-        self.assertTrue(any(r['status'] == 'queued' for r in self.state['material_inbox_v1']['items']))
+        self.assertEqual(self.run_box([self.row(), security]), 2)
+        self.assertIn('資安', json.dumps(self.send.call_args_list[0].args[1], ensure_ascii=False))
+        self.assertFalse(any(r['status'] == 'queued' for r in box))
+
+    def test_remaining_candidates_drain_across_scans_without_daily_limit(self):
+        titles = [
+            'Binance partners with Mastercard for payments',
+            'OpenAI introduces Alpha model',
+            'Researchers study quantum cryptography methods',
+            'Solo miner wins Bitcoin block reward',
+            'Elon Musk shares a crypto story',
+            'CZ reveals why he bought a pizza',
+        ]
+        rows = [self.row(t, url='https://example.com/story/'+str(i)) for i, t in enumerate(titles)]
+        with patch.object(inbox, 'equivalent', side_effect=lambda a,b: a['url'] == b['url']):
+            self.assertEqual([self.run_box(rows) for _ in range(4)], [2, 2, 2, 0])
+        self.assertEqual(self.send.call_count, 6)
+        self.assertEqual(len({r['url'] for r in self.state['material_inbox_v1']['items']}), 6)
+
+    def test_interesting_events_selected_but_ads_hype_and_old_roundups_excluded(self):
+        for title in ('Solo miner wins Bitcoin block reward', 'Dormant Bitcoin wallet moves after years',
+                      'CZ says crypto needs better education', 'Customer buys coffee with Bitcoin'):
+            with self.subTest(title=title):
+                self.assertEqual(inbox.topic(self.row(title)), 'interesting')
+        for title in ('Sponsored: Solo miner gets lucky', 'Bitcoin giveaway world record',
+                      'Bitcoin price prediction to $1 million', 'Bitcoin rises 2% today',
+                      'Weekly recap: CZ says crypto needs education'):
+            with self.subTest(title=title):
+                self.assertIsNone(inbox.topic(self.row(title)))
+
+    def test_all_categories_are_visible_and_interesting_is_not_called_urgent(self):
+        for category, values in inbox.ANGLES.items():
+            row = self.row('Solo miner wins Bitcoin block reward', material_topic=category)
+            result = inbox.card(row, self.now)
+            self.assertTrue(result['description'].startswith('分類：'+values[0]+'\n\n'))
+        self.assertFalse(inbox.urgent(self.row(material_topic='interesting')))
 
     def test_failed_second_send_does_not_replay_confirmed_first(self):
         a = self.row('OpenAI introduces model Alpha', material_ai=True, url='https://openai.com/a')
