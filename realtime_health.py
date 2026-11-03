@@ -1,6 +1,7 @@
 """Heartbeat, delay detection, and daily execution health for realtime monitors."""
 from __future__ import annotations
 
+from sender_identity import sender_name
 import argparse
 import json
 import os
@@ -185,7 +186,7 @@ def daily_health_embed(
 def send_webhook(webhook: str, embed: dict[str, Any]) -> None:
     card = apply_delivery_format(embed, "bot_log", show_source_status=False)
     payload = {
-        "username": "管家巡檢｜執行紀錄",
+        "username": sender_name("bot_log"),
         "embeds": [card],
         "allowed_mentions": {"parse": []},
     }

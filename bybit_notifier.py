@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from sender_identity import sender_name
 import argparse
 import hashlib
 import html
@@ -442,7 +443,7 @@ def send(webhook: str, message: dict[str, Any] | list[dict[str, Any]], dry_run: 
     messages = message if isinstance(message, list) else [message]
     cards = [apply_delivery_format(card, channel_key) for card in messages]
     username = "交易所公告雷達" if channel_key == "exchange_announcements" else "交易所上幣通知"
-    payload = {"username": username, "embeds": cards, "allowed_mentions": {"parse": []}}
+    payload = {"username": sender_name(channel_key), "embeds": cards, "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return

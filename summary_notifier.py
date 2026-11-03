@@ -1,6 +1,7 @@
 """Daily and weekly Discord market summaries using free public data."""
 
 from __future__ import annotations
+from sender_identity import sender_name
 import slim_policy
 
 import argparse
@@ -537,7 +538,7 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
 def send(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
     channel_key = "weekly_market" if any(word in str(embed.get("title", "")) for word in ("每週", "本週")) else "daily_market"
     card = apply_delivery_format(embed, channel_key)
-    payload = {"username": "市場摘要", "embeds": [card], "allowed_mentions": {"parse": []}}
+    payload = {"username": sender_name(channel_key), "embeds": [card], "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return

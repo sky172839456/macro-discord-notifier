@@ -189,3 +189,9 @@ python -m unittest discover -s tests -v
 - 每張素材卡醒目標示主分類：資安／服務事件、政策／監管、AI／研究、企業／交易所進展、研究／市場知識、趣聞／人物事件。沿用既有來源，新增具體故事切入點（人物發言、獨立礦工、沉睡錢包、加密支付生活事件等）；不是只收重大事件，也不把所有價格波動當素材。廣告、抽獎、喊價及舊事回顧仍排除，人物語境與真實性仍待核對。分類不等於查證完成，不另開頻道。
 - 記錄在既有新聞快取的獨立`material_inbox_v1`區段，包含公開文章與通知狀態，不含成員或金融帳戶資料。未用新資料庫、模型API或付費服務；本機管家不用重啟。
 - Webhook存GitHub Actions Secret `DISCORD_MATERIAL_WEBHOOK_URL`；不放來源、前端、一般log或OneDrive。`MATERIAL_INBOX_ENABLED=1`才啟用；不發測試驗收或重發歷史。
+
+## 2026-11-04 發送名稱統一
+
+自動通知顯示名稱統一為「WV｜用途」，由sender_identity集中維護。各模組先沿原邏輯解析分類與路由，最後僅替換Webhook payload的username；不依新名稱重新選路由，不改Webhook、頻道、訊息內容、數值、頻率或去重。原Bot在此伺服器使用暱稱「WV｜幕後管家」，不改全域帳號或Runtime程式。頭像區分本人與自動通知，另依本人選擇套用，不預設全部改成相同Logo。測試仍保留虛構標示，停用模組不因改名重新啟用。
+
+自動資訊通知共用另外製作的深藍金色資訊卡＋WV頭像（assets/wv-information-avatar.png），和本人Logo、管家原頭像區別。手動WV Notification Display Branding工作須指定精確head，預設唯讀；apply才更新既有Webhook的name/avatar，所有目的地先核對、別名去重，更新後讀回，不發送或修改訊息、不改URL／頻道／權限。它不在一般排程執行。

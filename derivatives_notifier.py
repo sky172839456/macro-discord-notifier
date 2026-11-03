@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from sender_identity import sender_name
 import argparse
 import json
 import os
@@ -136,7 +137,7 @@ def snapshot_embed(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 def send_discord(webhook: str, embed: dict[str, Any]) -> None:
     card = apply_delivery_format(embed, "derivatives")
-    payload = {"username": "加密衍生品監控", "embeds": [card], "allowed_mentions": {"parse": []}}
+    payload = {"username": sender_name("derivatives"), "embeds": [card], "allowed_mentions": {"parse": []}}
     request = Request(
         webhook + ("&" if "?" in webhook else "?") + "wait=true",
         data=json.dumps(payload).encode("utf-8"),

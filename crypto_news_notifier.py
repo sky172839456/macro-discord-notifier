@@ -1,6 +1,7 @@
 """High-signal crypto news radar for Discord (standard library only)."""
 
 from __future__ import annotations
+from sender_identity import sender_name
 import slim_policy
 
 import argparse
@@ -433,7 +434,7 @@ def send_discord(webhook: str, embed: dict[str, Any] | list[dict[str, Any]],
     embeds = embed if isinstance(embed, list) else [embed]
     cards = [apply_delivery_format(card, channel_key) for card in embeds]
     payload = json.dumps({
-        "username": username,
+        "username": sender_name(channel_key),
         "embeds": cards,
         "allowed_mentions": {"parse": []},
     }).encode("utf-8")

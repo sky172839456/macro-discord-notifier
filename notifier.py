@@ -1,6 +1,7 @@
 """Free official-source US macro notifier for Discord (standard library only)."""
 
 from __future__ import annotations
+from sender_identity import sender_name
 import slim_policy
 
 import argparse
@@ -737,7 +738,7 @@ def send_discord(webhook: str, embed: dict[str, Any], dry_run: bool,
                  show_source_status: bool = True) -> None:
     card = apply_delivery_format(embed, channel_key, show_source_status=show_source_status)
     username = "總經系統監控" if channel_key == "bot_log" else "總經數據快訊"
-    payload = {"username": username, "embeds": [card], "allowed_mentions": {"parse": []}}
+    payload = {"username": sender_name(channel_key), "embeds": [card], "allowed_mentions": {"parse": []}}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
