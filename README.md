@@ -177,3 +177,14 @@ python -m unittest discover -s tests -v
 本次不改推播頻率、正式去重／seen、歷史公告、路由或本機 Runtime；獨立技術及衍生品頻道維持既有停用／合併狀態。
 
 官方欄位文件：[Bitget現貨](https://www.bitget.com/zh-CN/docs/catalog/classic-spot-market/classic-spot-market)、[Bitget合約](https://www.bitget.com/docs/catalog/classic-contract-market/classic-contract-market)、[幣安現貨](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/rest-api/market)、[幣安USDⓈ-M合約](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)。
+
+
+## 2026-11-03 管理員IG素材整理
+
+- 本人明確要求新增獨立私人「📝｜素材整理」，頻道1567112861287710741。只送此專用Webhook，缺設定或路由不符就保留佇列，不改送成員／工作簿。既有權限不擴張，一般成員不可見。
+- 沿既有雲端新聞掃描收錄資安、政策、企業／交易所合作收購／重大進展與研究；加上OpenAI News與Google DeepMind的官方RSS，僅供私人選題，不改公開新聞分類或新增會員推播。
+- 每則含原文標題、可核對摘要、選題理由、限動／Reels／輪播建議、查證狀態、製作前缺項、原始連結與台灣時間。官方宣稱、媒體報導及獨立驗證分開；不是可直接對外發布的完整稿。
+- 一般素材每日最多三則、每輪最多兩則；重大資安或已決定的政策新進展不占一般三則，仍每輪最多兩則。既有同事件規則去重，金額／階段等重大變化保留。候選保存30天（最多500筆），逾24h未通知候選只留紀錄不補過期提醒。這不是IG自動發布、下載搬運或全天候完整事件保證。
+- 新功能第一次只記啟用時間，此前文章不補發；不改正式新聞seen、日彙整名額或既有待審資安佇列。來源失敗如實記錄，不能解讀為沒有事件。
+- 記錄在既有新聞快取的獨立`material_inbox_v1`區段，包含公開文章與通知狀態，不含成員或金融帳戶資料。未用新資料庫、模型API或付費服務；本機管家不用重啟。
+- Webhook存GitHub Actions Secret `DISCORD_MATERIAL_WEBHOOK_URL`；不放來源、前端、一般log或OneDrive。`MATERIAL_INBOX_ENABLED=1`才啟用；不發測試驗收或重發歷史。
