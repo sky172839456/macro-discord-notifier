@@ -18,10 +18,14 @@ def core_policy_text(value):
     return (any(text.startswith(norm(title)) for title in CORE_TITLES)
             and not re.search(r"\b(?:new vulnerabilit(?:y|ies)|new exploits?|active exploits?|ongoing attack|additional victims|losses (?:rise|revised)|funds recovered|withdrawals halted|not (?:adopted|implemented|approved)|revoked|reject(?:s|ed)|denies|denied|withdrawn|cancelled)\b", text))
 
+CFTC_EQUITY_REPORTS = (('CFTC Lets Traders Bet on Stocks With Crypto-Style Perpetual Futures', 'Chairman Michael Selig said “equity perpetual futures” can now trade on CFTC-registered exchanges, extending a crypto-native instrument to traditional stocks.'), ('CFTC clears stock perpetual futures for trading on US exchanges', 'US regulators are opening the door to stock-based perpetual futures, extending a popular crypto trading product into traditional markets amid ongoing legal disputes.'))
+
 def verified_key(row):
     title = norm(row.get("title", ""))
     body = norm(row.get("summary", ""))
     text = title + " " + body
+    if (title, body) in {(norm(t), norm(b)) for t, b in CFTC_EQUITY_REPORTS}:
+        return "cftc-equity-perpetual-approval-20261103"
     if title in {norm(t) for t in CORE_TITLES} and core_policy_text(text):
         return "bitcoin-core-easy-discovery-policy"
     # These are reports of the same completed activation, not plans or testnet.

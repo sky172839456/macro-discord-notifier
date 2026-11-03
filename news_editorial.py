@@ -116,9 +116,17 @@ def event_kind(item):
     return 'decision' if decision and authority else 'ordinary'
 
 
+def verified_security_explainer(item):
+    """Only the checked full title+summary; changed facts retain normal review."""
+    value = re.sub(r"\s+", " ", text(item)).strip().casefold()
+    return hashlib.sha256(value.encode()).hexdigest() == 'f09a8b484282307376946d0ae23a8f041311c2b1b8728b02815159ce9973026a'
+
+
 def safety_candidate(item):
     """Protect current asset-safety candidates before generic relevance/exclusions."""
     title, body = str(item.get('title', '')), text(item)
+    if verified_security_explainer(item):
+        return False
     if commentary_only(item):
         return False
     if verified_etf_flow_reaction(item):

@@ -58,6 +58,8 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        'Crypto Docs Host GitBook Hit by AI Agent Security Breach, Urges Users to Rotate Keys': '加密專案文件託管平台 GitBook 遭 AI 代理相關資安入侵，敦促使用者更換金鑰',
+        'CFTC clears stock perpetual futures for trading on US exchanges': 'CFTC 核准股票永續期貨在美國交易所交易',
         "Canada's Draft Stablecoin Rules Cap Redemption Fees at 1% and Ban Yield":
             '加拿大穩定幣規則草案：贖回費上限1%，禁止支付持幣利息',
         'Bitcoin Dips Below $80,000 Ahead of Fed Decision, Midterms':

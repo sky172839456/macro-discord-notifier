@@ -97,7 +97,9 @@ def topic(row):
     body = title+' '+str(row.get('summary', ''))
     if re.search(r'\b(?:sponsored|presale|giveaway|airdrop|price prediction|stocks? to buy|hiring|webinar|podcast|live updates?)\b', title, re.I):
         return None
-    from news_editorial import safety_candidate, retrospective
+    from news_editorial import safety_candidate, retrospective, verified_security_explainer
+    if verified_security_explainer(row):
+        return "research"
     if safety_candidate(row):
         return 'security'
     if retrospective(row) or re.search(r'\b(?:weekly|monthly|daily) (?:recap|roundup|round-up|review)\b', title, re.I):
