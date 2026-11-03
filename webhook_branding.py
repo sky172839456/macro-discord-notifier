@@ -78,7 +78,8 @@ def run(environ=None, *, apply=False, call=api, asset=None):
             after = target['before']
         results.append({'channel_id': target['channel'], 'expected_name': target['name'],
                         'name_matches': after.get('name') == target['name'], 'avatar_set': bool(after.get('avatar')),
-                        'avatar_hash': after.get('avatar'), 'applied': apply})
+                        'avatar_hash': after.get('avatar'), 'previous_name': target['before'].get('name'),
+                        'previous_avatar_hash': target['before'].get('avatar'), 'applied': apply})
     return {'message_sends': 0, 'message_edits': 0, 'state_access': False, 'asset_sha256': ASSET_SHA, 'webhooks': results}
 
 
