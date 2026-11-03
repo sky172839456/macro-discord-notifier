@@ -51,7 +51,7 @@ class ExtendedResultTests(unittest.TestCase):
 
     def test_jolts_not_hires_as_prior_and_preserve_units(self):
         text,missing=details(item('jolts',JOLTS))
-        self.assertFalse(missing);self.assertIn('710.0萬人',text);self.assertIn('前值',text)
+        self.assertFalse(missing);self.assertIn('710.0萬個',text);self.assertIn('前值',text)
         self.assertNotIn('520.0',text)
         self.assertTrue(details(item('jolts',JOLTS.replace('seasonally adjusted','unadjusted')))[1])
 

@@ -76,7 +76,7 @@ def details(item):
         prev_y,prev_m=previous_period(y,mo)
         lines=[f'**資料月份**　{y}/{mo:02d}｜前期 {prev_y}/{prev_m:02d}',
                comparison('職位空缺（季調）',float(m[1])*100,previous,
-                          unit='萬人',change_unit='萬人')]
+                          unit='萬個',change_unit='萬個')]
     else:
         if not re.search(r'(?<!not )adjusted for seasonal variation|(?<!not )(?<!un)seasonally adjusted',text,re.I):
             return '', ['主數據季調口徑']
