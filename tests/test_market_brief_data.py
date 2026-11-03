@@ -15,28 +15,21 @@ from summary_notifier import build_embed, flow_lines, risk_summary
 
 
 class MarketBriefDataTests(unittest.TestCase):
-    def test_weekly_crypto_uses_okx_when_coingecko_fails(self):
-        completed_rows = [
-            [str(1000 + day), "100", "120", "90", str(100 + day), "1", "1000", "1000", "1"]
-            for day in range(7)
-        ]
-
-        def fake_get_json(url):
-            if "market_chart" in url and "bitcoin" in url:
-                raise HTTPError(url, 429, "rate limited", {}, None)
-            if "history-candles" in url:
-                return {"code": "0", "data": list(reversed(completed_rows))}
-            return {
-                "prices": [[1, 100], [2, 110]],
-                "total_volumes": [[1, 1000], [2, 1100]],
-            }
-
-        with patch.object(market_brief_data, "get_json", side_effect=fake_get_json):
+    def test_weekly_crypto_uses_binance_when_bitget_fails(self):
+        now = datetime.now(timezone.utc)
+        end = int(now.timestamp()*1000)//86400000*86400000
+        rows = [[end-day*86400000, '100', '120', '90', '106', '1', '0', '1000'] for day in range(8)]
+        def fake(url):
+            if 'bitget' in url:
+                raise HTTPError(url, 429, 'limited', {}, None)
+            return rows
+        with patch.object(market_brief_data, 'get_json', side_effect=fake):
             result = weekly_crypto_snapshot()
-
-        self.assertEqual(result["BTC"]["source"], "OKX")
-        self.assertEqual(result["ETH"]["source"], "CoinGecko")
-        self.assertEqual(result["BTC"]["price"], 106)
+        self.assertEqual(result['BTC']['source'], 'Binance')
+        self.assertEqual(result['ETH']['source'], 'Binance')
+        self.assertEqual(result['BTC']['price'], 106)
+        self.assertEqual(result['BTC']['end_timestamp'], end/1000)
+        self.assertIn('429', result['BTC']['fallback_reason'])
 
     def test_http_error_label_keeps_status_code(self):
         error = HTTPError("https://example.invalid", 429, "rate limited", {}, None)

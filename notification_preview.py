@@ -91,7 +91,7 @@ CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
         "english_points": ["Price change: +2.1%.", "Open interest change: +11.8%.", "Funding rate: +0.0120%."],
         "event_status": "🟠 中度異常｜尚未達最高警戒門檻",
         "timing": "觀察區間：最近 60 分鐘｜發現時間：07/29 14:30",
-        "source": "OKX 公開市場資料（範例）",
+        "source": "Bitget USDT永續公開資料（範例）",
         "source_status": "ok",
     },
     {
@@ -161,7 +161,7 @@ CHANNEL_PREVIEWS: tuple[dict[str, Any], ...] = (
         "details": "BTC：價格位於 SMA20 上方，RSI `58.4`\nETH：區間整理，RSI `49.7`",
         "event_status": "中性偏多｜不是自動買賣訊號",
         "timing": "每日更新：08:00 後｜K 線週期：日線",
-        "source": "OKX 公開 K 線資料（範例）",
+        "source": "Bitget USDT現貨UTC日線（範例）",
         "source_status": "ok",
     },
     {

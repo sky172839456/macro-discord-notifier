@@ -12,7 +12,6 @@ from notification_quality import money_musd, headline, chinese_points, news_scor
 TZ = ZoneInfo('Asia/Taipei')
 SENTIMENT_URL = 'https://alternative.me/crypto/fear-and-greed-index/'
 GLOBAL_URL = 'https://www.coingecko.com/en/charts'
-OKX_URL = 'https://www.okx.com/trade-market/info/swap'
 
 
 def number(value):
@@ -89,25 +88,25 @@ def price_lines(data, market, now, weekly):
     coins = data.get('weekly_crypto' if weekly else 'crypto') or {}
     lines = []
     for symbol in ('BTC', 'ETH'):
-        if lines:
-            lines.append('')
         row = coins.get(symbol) or (market or {}).get(symbol) or {}
-        if not number(row.get('price')) or (not weekly and row.get('source') == 'CoinGecko' and not fresh(row.get('updated_at'), now, 3)):
-            lines.append(f'⚠️ {symbol}價格暫缺')
+        if (not number(row.get('price')) or
+                (row.get('source') and not fresh(row.get('end_timestamp' if weekly else 'updated_at'), now, 25 if weekly else .5))):
+            lines.append(f'⚠️ **{symbol}** 價格暫缺或未更新\nBitget／幣安本輪未取得可核對資料。')
             continue
         change = row.get('change_7d' if weekly else 'change_24h', row.get('change'))
-        lines.append(f'**{symbol}**　${row["price"]:,.2f}　**{signed(change)}**')
+        quote = row.get('quote_currency', 'USD')
+        part = f'**{symbol}**　{row["price"]:,.2f} {quote}　**{signed(change)}**'
         if weekly and instant(row.get('start_timestamp')) and instant(row.get('end_timestamp')):
-            lines.append(f'↳ 統計：{stamp(row["start_timestamp"])}～{stamp(row["end_timestamp"])}')
+            part += f'\n統計：{stamp(row["start_timestamp"])}～{stamp(row["end_timestamp"])}'
         elif not weekly and row.get('updated_at'):
-            lines.append(f'↳ 資料更新：{stamp(row["updated_at"])}')
-        if weekly and row.get('source') == 'OKX':
-            lines.append('↳ OKX USDT現貨：最近七根完整UTC日線；非即時七日快照。')
-    lines.append('')
-    lines.append('七日區間；各來源截止時間可能不同。' if weekly else '近24小時漲跌；查詢快照，非即時報價。')
-    lines.append('')
-    lines.append('[CoinGecko](https://www.coingecko.com/) · [OKX現貨](https://www.okx.com/markets/prices)')
-    return '\n'.join(lines)
+            part += f'\n資料更新：{stamp(row["updated_at"])}'
+        if row.get('source_url'):
+            part += f'\n\n來源：[{row["source"]}現貨]({row["source_url"]})'
+        if row.get('fallback_reason'):
+            part += '\nBitget本輪未取得可核對資料，改用幣安。'
+        lines.append(part)
+    lines.append('最近七根完整UTC日線；非即時七日快照。' if weekly else '近24小時漲跌；查詢快照，非即時報價。')
+    return '\n\n'.join(lines)
 
 
 def etf_lines(data, weekly):
@@ -222,26 +221,42 @@ def contract_lines(data, now, weekly):
             lines.append(f'⚠️ {symbol}合約資料暫缺或未更新')
             continue
         days = 7 if weekly else 1
-        delta = row.get(f'oi_change_{days}d')
-        base = row.get(f'oi_base_{days}d')
-        lines.append(f'**{symbol}**\n未平倉名目額 {money(row["oi_usd"])}\n'
-                     + (f'數量較{stamp(base)} **{signed(delta)}**' if number(delta) else f'約{days}日前的數量比較暫缺'))
-        if weekly and number(row.get('funding_avg_7d')):
-            lines.append(f'七日已結算費率：每次平均 **{row["funding_avg_7d"]:+.4f}%**｜{row["samples"]}次\n'
-                         f'期間 {stamp(row["start_timestamp"])}～{stamp(row["end_timestamp"])}')
-        elif number(row.get('funding_rate')) and fresh(row.get('rate_timestamp'), now, .5) and instant(row.get('funding_time', 0) / 1000) and now < instant(row['funding_time'] / 1000):
-            lines.append(f'本期預估資金費率 **{row["funding_rate"]:+.4f}%**\n結算 {stamp(row["funding_time"] / 1000)}')
+        delta, base = row.get(f'oi_change_{days}d'), row.get(f'oi_base_{days}d')
+        venue = row.get('source') or str(row.get('scope', '')).split(' ')[0] or '來源暫缺'
+        amount = money(row['oi_usd'])
+        if row.get('quote_currency') == 'USDT':
+            amount = amount.replace('美元', ' USDT')
+        label = '未平倉估值' if row.get('oi_estimated') else '未平倉名目額'
+        parts = [f'**{symbol}｜{venue} USDT永續**\n{label} {amount}',
+                 f'數量較{stamp(base)} **{signed(delta)}**' if number(delta) else f'約{days}日前同交易所的數量比較暫缺']
+        if weekly:
+            if number(row.get('funding_avg_7d')):
+                parts.append(f'七日已結算費率：每次平均 **{row["funding_avg_7d"]:+.4f}%**｜{row["samples"]}次\n'
+                             f'期間 {stamp(row["start_timestamp"])}～{stamp(row["end_timestamp"])}')
+            else:
+                parts.append('七日已結算費率暫缺：歷史區間尚未核對完整。')
+        elif number(row.get('funding_rate')) and fresh(row.get('rate_timestamp'), now, .5) and instant(row.get('funding_time', 0)/1000) and now < instant(row['funding_time']/1000):
+            parts.append(f'目前資金費率 **{row["funding_rate"]:+.4f}%**（結算前可能更新）\n下次結算 {stamp(row["funding_time"]/1000)}')
         else:
-            lines.append('本期費率／結算時間尚未確認')
-        lines.append(f'未平倉資料：{stamp(row["timestamp"])}')
-    return '\n\n'.join(lines) + f'\n僅[OKX BTC／ETH USDT永續]({OKX_URL})；數量變化不代表多空方向。\n費率為每期數值，非年化；正值通常由多方支付空方。'
+            parts.append('本期費率／結算時間尚未確認')
+        if number(row.get('funding_interval_hours')):
+            prefix = '最近已結算間隔' if row.get('interval_observed') else '目前結算間隔'
+            parts.append(f'{prefix}：{row["funding_interval_hours"]:g}小時')
+        parts.append(f'未平倉資料：{stamp(row["timestamp"])}')
+        if row.get('source_url'):
+            parts.append(f'[來源：{venue}]({row["source_url"]})')
+        if row.get('fallback_reason'):
+            parts.append('Bitget本輪未取得可核對資料，改用幣安。')
+        lines.append('\n'.join(parts))
+    lines.append('僅列上述交易所合約；估值＝幣數×標記價格。\n數量變化不代表多空方向；費率非年化，正值通常由多方付空方。')
+    return '\n\n'.join(lines)
 
 
 def observations(data, weekly, now=None):
     coins = data.get('weekly_crypto' if weekly else 'crypto') or {}
     key = 'change_7d' if weekly else 'change_24h'
     changes = {s: r[key] for s, r in coins.items() if number(r.get(key))
-               and not (now and not weekly and r.get('source') == 'CoinGecko' and not fresh(r.get('updated_at'), now, 3))}
+               and not (now and not weekly and r.get('source') in ('CoinGecko', 'Bitget', 'Binance') and not fresh(r.get('updated_at'), now, .5))}
     rows = []
     if 'BTC' in changes and 'ETH' in changes:
         a, b = changes['BTC'], changes['ETH']
@@ -388,7 +403,7 @@ def build_card(period, now, market, market_error, events, event_error, data):
         fields.append(field('🌐 市場概況', global_lines(data, now)))
     fields.extend([field('🌡️ 一週情緒變化' if weekly else '🌡️ 市場情緒', sentiment_lines(data, now, weekly)),
                    field('💰 一週ETF資金' if weekly else '💰 ETF資金動向', etf_lines(data, weekly)),
-                   field('⚖️ 合約概況｜OKX', contract_lines(data, now, weekly))])
+                   field('⚖️ 合約概況｜Bitget優先・幣安備援', contract_lines(data, now, weekly))])
     if weekly:
         fields.append(field('📰 上週關鍵事件｜已推播紀錄', review_lines(data)))
         fields.append(field('🧩 一週統整與總結', '\n\n'.join('• ' + line for line in observations(data, True, now)) + '\n\n**本週總結**｜' + weekly_conclusion(data)))
@@ -396,7 +411,10 @@ def build_card(period, now, market, market_error, events, event_error, data):
     else:
         fields.append(field('📅 今日關注', events_lines(events, now, event_error, False, budget=650) + '\n\n**📌 市場觀察**\n' + '\n'.join('• ' + line for line in observations(data, False, now))))
     description = '用一週的變化做整理，再準備這週的行程。' if weekly else '價格、情緒、資金，一張掌握今天的市場狀態。'
-    if data.get('errors') or market_error:
+    if data.get('errors') or market_error or any(
+            row.get('error') or row.get('weekly_error')
+            for key in ('crypto', 'weekly_crypto', 'derivatives', 'weekly_derivatives')
+            for row in (data.get(key) or {}).values()):
         description += '\n⚠️ 部分資料暫缺；各區塊只顯示已取得的內容。'
     card = {'title': f'{"🧭 每週市場導航" if weekly else "📊 每日市場情報"}｜{now.astimezone(TZ):%m/%d}',
             'description': description, 'fields': fields, 'color': 0x8274B0 if weekly else 0x647FB5,

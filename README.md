@@ -151,3 +151,29 @@ python -m unittest discover -s tests -v
 - 首次啟用只建立基準，不會把舊公告洗進頻道
 - 正式頻道 secret：`DISCORD_EXCHANGE_ANNOUNCEMENT_WEBHOOK_URL`
 - 手動測試工作流程：`Exchange Announcement Radar`；正式監控由集中排程執行
+
+
+## 2026-11-03 交易所行情來源
+
+- BTC／ETH 現貨、日／週報、已收盤 UTC 日線與技術計算、USDT 永續未平倉量、目前及七日已結算資金費率：**Bitget 優先，幣安備援**。每幣各自判斷，公告標示實際來源；兩者皆失敗便顯示暫缺，不改回 OKX、不填零。
+- 價格與名目估值標示 **USDT**，不是美元。未平倉估值＝同交易所、同合約的幣數 × 標記價格；數量增減只比較同 scope 的歷史幣數。既有 OKX 歷史保留但不跨來源比較，累積新來源基準前會顯示比較暫缺。
+- 週價格使用最近七根完整 UTC 日線，排除未收盤 K 線、缺日、過時及衝突資料。七日費率僅用同交易所已結算紀錄；缺期或結算間隔變動不能驗證完整時，保留已確認 OI 並標示週費率暫缺，不拿目前費率代替。
+- Binance 資金費率欄 `lastFundingRate` 按官方定義列「目前資金費率」，不冒稱已結算；下一次時間另列。結算間隔優先採官方調整表，未列時只列最近已結算間隔，不硬填八小時。
+- 公開 GET，不需帳號、API Key 或付費方案。403／451 直接判定該來源不可用，使用另一核准來源；不換域名、代理或繞過地區限制。雲端與本機可用性分開驗收。
+
+### 必須保留的非幣安／Bitget來源
+
+| 資料 | 保留來源 | 原因 |
+| --- | --- | --- |
+| 美國 BTC／ETH 現貨 ETF 資金流 | Farside（第三方，非官方） | 基金分項與每日合計，不是交易所充提或成交量；交易所資料不能替代。 |
+| 全市場市值、BTC 市占 | CoinGecko | 跨市場統計，單一交易所不能代表全市場。 |
+| 恐慌貪婪指數 | Alternative.me | 原指數發布者；不以單一交易所多空比冒充。 |
+| 穩定幣脫鉤 | CoinGecko + Kraken 等既有美元來源 | 保留兩個獨立 USD 報價核對；USDT 交易對不能當作獨立美元錨定驗證。 |
+| 美國總經結果、日程 | Fed、BLS、BEA、DOL、Census 等既有官方來源 | 原始公布結果與修訂，交易所非發布機關。 |
+| 新聞、其他交易所安全與服務事件 | 既有媒體及各當事方官方來源 | 事件應查當事方，不能只讀推薦交易所公告或消除其他平台風險。 |
+| 美元指數、美股、黃金、美債（既有非精簡功能） | Yahoo／美國財政部 | 標的及官方利率不等於加密交易所合成產品。 |
+| OKX 清算資料（既有非精簡功能，正式精簡模式未啟用） | OKX 公開可觀測清算紀錄 | 尚無本次核對可等價替換的免費完整公開歷史；不拿帳戶個人強平或單筆大單冒充全市場清算。保留原範圍標示，不新增發送。 |
+
+本次不改推播頻率、正式去重／seen、歷史公告、路由或本機 Runtime；獨立技術及衍生品頻道維持既有停用／合併狀態。
+
+官方欄位文件：[Bitget現貨](https://www.bitget.com/zh-CN/docs/catalog/classic-spot-market/classic-spot-market)、[Bitget合約](https://www.bitget.com/docs/catalog/classic-contract-market/classic-contract-market)、[幣安現貨](https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/rest-api/market)、[幣安USDⓈ-M合約](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data)。

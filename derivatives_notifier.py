@@ -1,4 +1,4 @@
-"""Free Bybit derivatives snapshot notifier for Discord."""
+"""Bitget-first public derivatives snapshot notifier for Discord."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from notification_format import apply_delivery_format
 
-OKX_API = "https://openapi.okx.com"
+import exchange_market_data as exchange
 SYMBOLS = ("BTCUSDT", "ETHUSDT")
 TAIPEI = ZoneInfo("Asia/Taipei")
 STATE_FILE = Path(os.getenv("DERIVATIVES_STATE_FILE", ".state/derivatives.json"))
@@ -27,48 +27,26 @@ FUNDING_DANGER = 0.10
 COOLDOWN_HOURS = 2
 
 
-def get_json(url: str, params: dict[str, str]) -> dict[str, Any]:
-    request = Request(
-        f"{url}?{urlencode(params)}",
-        headers={"User-Agent": "macro-discord-notifier/derivatives-1.0"},
-    )
+def get_json(url: str, params=None):
+    request = Request(url + ('&' if '?' in url else '?') + urlencode(params or {}), headers={'User-Agent': 'derivatives/2.0'})
     with urlopen(request, timeout=25) as response:
-        return json.loads(response.read().decode("utf-8"))
+        return json.load(response)
 
 
 def fetch_ticker(symbol: str) -> dict[str, Any]:
-    inst_id = symbol.replace("USDT", "-USDT-SWAP")
-    ticker = get_json(f"{OKX_API}/api/v5/market/ticker", {"instId": inst_id})
-    interest = get_json(f"{OKX_API}/api/v5/public/open-interest", {"instType": "SWAP", "instId": inst_id})
-    funding = get_json(f"{OKX_API}/api/v5/public/funding-rate", {"instId": inst_id})
-    if ticker.get("code") != "0" or not ticker.get("data"):
-        raise RuntimeError(f"OKX 行情回傳異常：{ticker.get('msg', '沒有資料')}")
-    if interest.get("code") != "0" or not interest.get("data"):
-        raise RuntimeError(f"OKX OI 回傳異常：{interest.get('msg', '沒有資料')}")
-    if funding.get("code") != "0" or not funding.get("data"):
-        raise RuntimeError(f"OKX 資金費率回傳異常：{funding.get('msg', '沒有資料')}")
-    item = ticker["data"][0]
-    oi_item = interest["data"][0]
-    funding_item = funding["data"][0]
-    price = float(item["last"])
-    open_24h = float(item.get("open24h") or price)
-    return {
-        "symbol": symbol,
-        "price": price,
-        "price_24h_change": ((price / open_24h) - 1) * 100 if open_24h else 0,
-        "open_interest_usd": float(oi_item.get("oiUsd") or 0),
-        "funding_rate": float(funding_item.get("fundingRate") or 0) * 100,
-        "turnover_24h": float(item.get("volCcy24h") or 0),
-        "next_funding": int(funding_item.get("nextFundingTime") or 0),
-    }
+    if symbol not in SYMBOLS:
+        raise ValueError('Unsupported perpetual symbol')
+    row = exchange.prefer(lambda venue: exchange.contract(get_json, symbol[:-4], venue))
+    return {**row, 'symbol': symbol, 'price_24h_change': row['change_24h'],
+            'open_interest_usd': row['oi_usd'], 'turnover_24h': row['volume_24h']}
 
 
 def money(value: float) -> str:
     if value >= 1_000_000_000:
-        return f"${value / 1_000_000_000:,.2f}B"
+        return f"{value / 1_000_000_000:,.2f}B"
     if value >= 1_000_000:
-        return f"${value / 1_000_000:,.2f}M"
-    return f"${value:,.0f}"
+        return f"{value / 1_000_000:,.2f}M"
+    return f"{value:,.0f}"
 
 
 def percent_change(current: float, previous: float) -> float:
@@ -116,11 +94,11 @@ def alert_embed(item: dict[str, Any], price_change: float, oi_change: float, sev
         "description": f"### 約 {max(1, round(interval_minutes))} 分鐘變化\n**價格**　{price_change:+.2f}%\n**未平倉量（OI）**　{oi_change:+.2f}%\n**資金費率**　{item['funding_rate']:+.4f}%",
         "color": style[1],
         "fields": [
-            {"name": "📊 即時數據", "value": f"價格　${item['price']:,.2f}\nOI　{money(item['open_interest_usd'])}\n下次費率結算　{next_funding}", "inline": True},
+            {"name": "📊 即時數據", "value": f"價格　{item['price']:,.2f} USDT\nOI　{money(item['open_interest_usd'])} USDT（估值）\n下次費率結算　{next_funding}", "inline": True},
             {"name": "🧭 市場解讀", "value": interpretation(price_change, oi_change, item["funding_rate"]), "inline": False},
-            {"name": "🔗 官方資料", "value": "https://www.okx.com/markets/prices", "inline": False},
+            {"name": "🔗 官方資料", "value": item.get("source_url", "https://www.bitget.com"), "inline": False},
         ],
-        "footer": {"text": "OKX 公開市場資料｜即時數值不代表買賣訊號｜不構成投資建議"},
+        "footer": {"text": f"{item.get('source', 'Bitget／幣安')} USDT永續｜估值＝幣數×標記價格｜不構成投資建議"},
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -134,11 +112,11 @@ def snapshot_embed(items: list[dict[str, Any]]) -> dict[str, Any]:
             side = "多單" if item["funding_rate"] > 0 else "空單"
             interpretation = f"資金費率偏極端，{side}部位可能較為擁擠，留意反向擠壓風險。"
         fields.append({
-            "name": f"{item['symbol'].replace('USDT', '')} 永續合約",
+            "name": f"{item['symbol'].replace('USDT', '')}｜{item.get('source', '來源暫缺')} USDT永續",
             "value": (
-                f"**價格**　${item['price']:,.2f}\n"
+                f"**價格**　{item['price']:,.2f} USDT\n"
                 f"**24 小時漲跌**　{item['price_24h_change']:+.2f}%\n"
-                f"**未平倉量（OI）**　{money(item['open_interest_usd'])}\n"
+                f"**未平倉量（OI）**　{money(item['open_interest_usd'])} USDT（估值）\n"
                 f"**資金費率**　{item['funding_rate']:+.4f}%\n"
                 f"**下次結算（台灣）**　{next_funding}\n"
                 f"**解讀**　{interpretation}"
@@ -148,7 +126,7 @@ def snapshot_embed(items: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "author": {"name": "CRYPTO DERIVATIVES WATCH｜衍生品監控"},
         "title": "🧪 測試通知｜BTC／ETH 衍生品即時快照",
-        "description": "資料直接取自 OKX 公開市場 API，不需要 CoinGlass 付費方案。",
+        "description": "Bitget公開USDT永續資料優先、幣安備援；各幣標示實際來源，估值＝幣數×標記價格。",
         "color": 0xF7931A,
         "fields": fields,
         "footer": {"text": "官方市場資料｜僅供資訊參考，不構成投資建議"},
@@ -189,7 +167,7 @@ def run_monitor(webhook: str) -> None:
     for item in [fetch_ticker(symbol) for symbol in SYMBOLS]:
         history = snapshots.setdefault(item["symbol"], [])
         target = now - timedelta(minutes=55)
-        candidates = [row for row in history if datetime.fromisoformat(row["time"]) <= target]
+        candidates = [row for row in history if datetime.fromisoformat(row["time"]) <= target and row.get("scope") == item.get("scope") and item.get("scope")]
         if candidates:
             previous = candidates[-1]
             interval_minutes = (now - datetime.fromisoformat(previous["time"])).total_seconds() / 60
@@ -204,7 +182,7 @@ def run_monitor(webhook: str) -> None:
                     alert_embed(item, price_delta, oi_delta, severity, interval_minutes=interval_minutes),
                 )
                 cooldowns[item["symbol"]] = now.isoformat()
-        history.append({"time": now.isoformat(), "price": item["price"], "open_interest_usd": item["open_interest_usd"]})
+        history.append({"time": now.isoformat(), "scope": item.get("scope"), "price": item["price"], "open_interest_usd": item["open_interest_usd"]})
         cutoff = now - timedelta(hours=7)
         snapshots[item["symbol"]] = [row for row in history if datetime.fromisoformat(row["time"]) >= cutoff]
     save_state(state)
