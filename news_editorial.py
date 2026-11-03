@@ -69,6 +69,29 @@ def current_safety_evidence(item):
                for sentence in re.split(r'[.;!?]', text(item)))
 
 
+def commentary_only(item):
+    """Market opinions and hypothetical fallout are not fresh security incidents."""
+    title, body = str(item.get('title', '')), text(item)
+    opinion = re.search(
+        r'^\s*(?:morning minute|opinion|commentary)\s*[:：]|'
+        r'\bcalls?\b.{0,65}\b(?:bullish|bearish)\b|'
+        r'\bwarns?\s+of\s+more\b.{0,50}\b(?:hacks?|attacks?)\b|'
+        r'\basks?\b.{0,75}\bhow\b.{0,70}\b(?:hack|attack)\b.{0,25}\bwould\b',
+        title, re.I)
+    if not opinion:
+        return False
+    progress = re.search(
+        r'\b(?:new|active|ongoing)\s+(?:(?:exchange|wallet|crypto)\s+)?(?:hack|exploit|attack|breach|vulnerability)\b|'
+        r'\b(?:confirms?|confirmed)\s+(?:a\s+|new\s+)?(?:breach|exploit|hack)\b|'
+        r'\b(?:loss(?:es)?|victims?)\s+(?:estimate\s+|count\s+)?(?:rise\w*|revis\w*|increas\w*|updat\w*)\b|'
+        r'\b(?:additional|more|new)\s+(?:victims?|users?|wallets?|accounts?)\b|'
+        r'\b(?:withdrawals?|deposits?)\s+(?:resum\w*|halt\w*|suspend\w*)\b|'
+        r'\b(?:recall\w*|reimburse\w*|compensat\w*|recover\w*|freez\w*|froze|seiz\w*)\s+(?:\$|funds?\b|assets?\b|victims?\b|users?\b)|'
+        r'\b(?:fbi|police|authorities)\s+(?:begins?|launch\w*|open\w*)\s+(?:an?\s+)?investigat',
+        body, re.I)
+    return not (progress or current_safety_evidence(item))
+
+
 def retrospective(item):
     title = str(item.get('title', ''))
     period = re.search(r'\b(?:q[1-4]|quarter(?:ly)?|annual|year.end|year.in.review)\b', title, re.I)
@@ -80,6 +103,8 @@ def retrospective(item):
 def event_kind(item):
     """One shared urgency decision; background keywords cannot bypass review."""
     title = str(item.get('title', ''))
+    if commentary_only(item):
+        return 'ordinary'
     if retrospective(item):
         return 'retrospective'
     if safety_candidate(item):
@@ -94,6 +119,8 @@ def event_kind(item):
 def safety_candidate(item):
     """Protect current asset-safety candidates before generic relevance/exclusions."""
     title, body = str(item.get('title', '')), text(item)
+    if commentary_only(item):
+        return False
     if verified_etf_flow_reaction(item):
         return False
     if acquisition_with_only_old_incident(body):

@@ -218,6 +218,9 @@ def same_article(left, right):
     if abs(published_time(left['published']) - published_time(right['published'])) > timedelta(hours=24):
         return False
     a, b = str(left.get('title', '')), str(right.get('title', ''))
+    from news_editorial import commentary_only, INCIDENT
+    if (commentary_only(left) or commentary_only(right)) and re.search(INCIDENT, a+' '+b, re.I) and measures(a) != measures(b):
+        return False  # 同URL的評論也可能更正數字；不可吞掉不同金額。
     ka, kb = event_key(left), event_key(right)
     if ka and kb and ka != kb:
         return False
@@ -340,6 +343,13 @@ def route(items, state, now):
                 ignored[key] = {'at': now.isoformat(), 'reason': reason}
             retries.pop(key, None)
             continue
+        from crypto_news_notifier import canonical_url
+        item = dict(item)
+        item['source_update'] = any(
+            r.get('url') and item.get('url')
+            and canonical_url(r['url']) == canonical_url(item['url'])
+            and abs(published_time(item['published']) - published_time(r.get('published') or r['date'])) <= timedelta(hours=24)
+            for r in state.get('headline_history', []))
         retry = retries.get(key) or {}
         if retry.get('next_at') and published_time(retry['next_at']) > now:
             continue

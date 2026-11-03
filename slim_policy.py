@@ -37,6 +37,9 @@ def account_reserve_context(text):
     )
 
 def category(text, categories):
+    from news_editorial import commentary_only
+    if commentary_only({'title': text}):
+        return {'key': 'market', 'icon': '💬', 'label': '市場觀點', 'priority': 'normal'}
     # 已核對的ETF資金反應不可只因事故背景再走重大資安。
     from news_editorial import verified_etf_flow_reaction
     if verified_etf_flow_reaction({'title': text}):
@@ -155,6 +158,8 @@ def news_card(item, test=False, now=None):
         fact = "來源未提供可確認的中文摘要，請閱讀原文；不以分類模板補寫事實。"
     if item.get('summary_basis') == 'headline':
         fact += '\n-# 本則依原文標題整理；完整背景請見來源。'
+    if item.get('source_update'):
+        fact += '\n-# 同一來源先前已刊登，本次內容有變動；數字與進度以目前原文為準。'
     from news_editorial import short_context
     context = short_context(item)
     if context:
@@ -162,7 +167,7 @@ def news_card(item, test=False, now=None):
     local = item["published"].astimezone(TAIPEI)
     timing, late = time_copy(item['published'], now or item['published'])
     return {
-        "title": ("🧪 測試｜" if test else "") + ("🚨 快訊｜" if material_news(item) else "📰 ") + (f"{item['category'].get('label', '市場動態')}｜" if item.get('auto_copy_version') else '') + ("補發｜" if late else "") + headline,
+        "title": ("🧪 測試｜" if test else "") + ("🚨 快訊｜" if material_news(item) else "📰 ") + (f"{item['category'].get('label', '市場動態')}｜" if item.get('auto_copy_version') else '') + ("來源更新｜" if item.get('source_update') else "補發｜" if late else "") + headline,
         "description": fact,
         "url": item["url"],
         "color": 0xE74C3C if material_news(item) else 0x3498DB,
@@ -182,6 +187,8 @@ def digest_card(items, now):
         detail = f"\n{attribution}{points[0]}" if points else "\n中文摘要尚未確認，請閱讀原文。"
         if item.get('summary_basis') == 'headline':
             detail += '\n-# 依原文標題整理；完整背景請見來源。'
+        if item.get('source_update'):
+            detail += '\n-# 來源更新：同一來源先前已刊登，本次內容有變動；請對照目前原文。'
         if item.get('auto_copy_version'):
             detail = f"\n{item['category'].get('label', '市場動態')}" + detail
         links = [(item["source"], item["url"])] + [(r["source"], r["url"]) for r in item.get("related_sources", [])]

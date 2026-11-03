@@ -55,7 +55,7 @@ def wm_member_style(card, channel_key):
     else:
         color = 'blue'
     card['color'] = WM_COLORS[color]
-    card['author'] = {**(card.get('author') or {}), 'name': 'W先生｜WM Viewture'}
+    card['author'] = {**(card.get('author') or {}), 'name': 'W先生｜W Viewture'}
     labels = {'官方狀態': '📌 官方狀態', '需要留意': '⚠️ 需要留意', '來源': '🔗 資料來源',
               '查詢價格（美元）': '📊 查詢價格｜美元', '公布日期': '📅 公布日期', '台灣時間': '🕒 台灣時間'}
     for field in card.get('fields') or []:

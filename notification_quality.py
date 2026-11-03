@@ -60,12 +60,18 @@ def polish_chinese(source, translated):
     """Narrow source-led copy edits; never change figures or government entities."""
     from news_copy_terms import repair_translation
     translated = repair_translation(source, translated)
-    corporate = bool(re.search(r"\b(?:its|their|corporate|company'?s?|firm'?s?)\s+(?:(?:bitcoin|crypto|digital.asset)\s+)?treasur(?:y|ies)\b|\btreasury company\b|\b(?:bitcoin|crypto|digital.asset)\s+treasur(?:y|ies)\b", source, re.I))
+    corporate = bool(re.search(r"\b(?:its|their|corporate|company'?s?|firm'?s?)\s+(?:(?:bitcoin|crypto|digital.asset)\s+)?treasur(?:y|ies)\b|\btreasury\s+(?:compan(?:y|ies)|firms?)\b|\b(?:bitcoin|crypto|digital.asset)\s+treasur(?:y|ies)\b|\b(?:bitcoin|crypto)\s+(?:firm|company)\b.{0,70}\btreasury\s+(?:ranks|rankings)\b", source, re.I))
     government = bool(re.search(r'\b(?:(?:U\.?S\.?|United States)\s+Treasury|Treasury\s+(?:Department|Secretary))\b', source, re.I))
     if corporate and '財政部' in translated:
         if government:
             raise ValueError('ambiguous treasury translation')
         translated = translated.replace('財政部', '資產儲備')
+    # 資金流出不是交易虧損；只修明確的資金流語境，混合損益時交回核對。
+    if not re.search(r'\b(?:trading losses?|net loss|profits?|pnl)\b', source, re.I):
+        if re.search(r'\b(?:ETFs?|funds?)\b.{0,90}\b(?:outflows?|shed)\b', source, re.I):
+            translated = re.sub(r'((?:ETF|基金).{0,12}?)(?:淨虧損|淨損失|虧損)', r'\1資金淨流出', translated)
+        if re.search(r'\b(?:customers?|users?)\b.{0,65}\b(?:net outflows?|shed|lost)\b|\b(?:net outflows?)\b.{0,45}\b(?:customers?|users?)\b', source, re.I) and re.search(r'\b(?:outflows?|net)\b', source, re.I):
+            translated = re.sub(r'((?:Binance|幣安).{0,8}(?:客戶|用戶|使用者).{0,8}?)(?:淨虧損|淨損失)', r'\1資金淨流出', translated)
     if re.search(r'\bCapital B\b', source):
         translated = translated.replace('資本 B', 'Capital B').replace('資本B', 'Capital B')
     for old, new in (('芯片', '晶片'), ('硬件', '硬體'), ('在線', '線上')):
