@@ -21,7 +21,7 @@ class MarketBriefV2Tests(unittest.TestCase):
                      'global': {'market_cap': 2e12, 'market_cap_change_24h': 1, 'volume_24h': 1e11, 'btc_dominance': 55, 'timestamp': self.ts},
                      'sentiment': {'value': 50, 'classification': 'Neutral', 'timestamp': self.ts, 'previous_value': 45, 'previous_timestamp': self.ts-86400},
                      'derivatives': {s: {'oi_usd': 1e9, 'oi_ccy': 100, 'funding_rate': .01, 'funding_time': int((self.ts+3600)*1000), 'timestamp': self.ts,
-                                         'rate_timestamp': self.ts, 'scope': f'OKX {s}-USDT-SWAP'} for s in ('BTC', 'ETH')},
+                                         'rate_timestamp': self.ts, 'scope': f'Bitget {s}USDT USDT-PERP', 'source': 'Bitget', 'source_url': 'https://www.bitget.com', 'quote_currency': 'USDT', 'oi_estimated': True} for s in ('BTC', 'ETH')},
                      'etf': {'date': self.now-timedelta(days=1), 'net_flow_musd': 120},
                      'eth_etf': {'date': self.now-timedelta(days=1), 'net_flow_musd': -30}}
 
@@ -35,7 +35,7 @@ class MarketBriefV2Tests(unittest.TestCase):
         card = self.card()
         self.assertEqual(len(card['fields']), 6)
         text = self.text(card)
-        for expected in ('50/100', '中性', '+5.00分', 'Alternative.me', 'BTC市占', 'OKX BTC／ETH USDT永續', 'ETF', '市場觀察'):
+        for expected in ('50/100', '中性', '+5.00分', 'Alternative.me', 'BTC市占', 'Bitget USDT永續', 'ETF', '市場觀察'):
             self.assertIn(expected, text)
         self.assertNotIn('Neutral', text)
 
@@ -60,7 +60,7 @@ class MarketBriefV2Tests(unittest.TestCase):
         for row in self.data['crypto'].values():
             row.update(source='CoinGecko', updated_at=(self.now-timedelta(days=1)).isoformat())
         text = self.text(self.card())
-        self.assertNotIn('$80,000', text)
+        self.assertNotIn('80,000', text)
         self.assertNotIn('漲跌方向分化', text)
 
     def test_stale_sentiment_and_contracts_not_presented_as_current(self):
@@ -89,7 +89,7 @@ class MarketBriefV2Tests(unittest.TestCase):
         self.assertIn('+25.00%', brief.contract_lines(self.data, self.now, False))
 
     def test_oi_rejects_different_contract_or_wrong_interval(self):
-        for hours, scope in ((48, 'OKX BTC-USDT-SWAP'), (24, 'OTHER BTC-USDT-SWAP')):
+        for hours, scope in ((48, 'Bitget BTCUSDT USDT-PERP'), (24, 'OTHER BTC-USDT-SWAP')):
             data = copy.deepcopy(self.data)
             prior = {'derivatives': {'BTC': {'timestamp': self.ts-hours*3600, 'scope': scope, 'oi_ccy': 80}}}
             brief.add_context(data, [prior], self.now)
@@ -122,19 +122,29 @@ class MarketBriefV2Tests(unittest.TestCase):
         liq.assert_not_called()
 
     def test_weekly_funding_filters_to_seven_days_and_deduplicates(self):
-        rows = [{'fundingTime': int((self.ts-i*8*3600)*1000), 'fundingRate': '.0001', 'realizedRate': '.0002'} for i in range(22)]
-        rows += [rows[0], {'fundingTime': int((self.ts-9*86400)*1000), 'fundingRate': '1'}]
-        with patch.object(source, 'derivatives_snapshot', return_value={'BTC': {}, 'ETH': {}}), patch.object(source, 'get_json', return_value={'code': '0', 'data': rows}):
+        rows = [{'symbol': coin+'USDT', 'fundingTime': int((self.ts-i*8*3600)*1000), 'fundingRate': '.0002'} for coin in ('BTC', 'ETH') for i in range(22)]
+        def fake(url):
+            symbol = 'ETHUSDT' if 'ETHUSDT' in url else 'BTCUSDT'
+            matched = [r for r in rows if r['symbol'] == symbol]
+            return {'code': '00000', 'data': matched+[matched[0], {**matched[0], 'fundingTime': int((self.ts-9*86400)*1000)}]}
+        current = {c: {'source': 'Bitget', 'funding_interval_hours': 8} for c in ('BTC', 'ETH')}
+        with patch.object(source, 'derivatives_snapshot', return_value=current), patch.object(source, 'get_json', side_effect=fake):
             result = source.weekly_funding_snapshot(self.now)
         self.assertEqual(result['BTC']['samples'], 22)
         self.assertAlmostEqual(result['BTC']['funding_avg_7d'], .02)
 
     def test_weekly_funding_rejects_incomplete_window_and_internal_gaps(self):
+        current = {c: {'source': 'Bitget', 'funding_interval_hours': 8, 'oi_usd': 100} for c in ('BTC', 'ETH')}
         for missing in ('old', 'middle'):
-            rows = [{'fundingTime': int((self.ts-i*8*3600)*1000), 'fundingRate': '.0001'} for i in range(22) if (i < 10 if missing == 'old' else i != 10)]
-            with patch.object(source, 'derivatives_snapshot', return_value={'BTC': {}, 'ETH': {}}), patch.object(source, 'get_json', return_value={'code': '0', 'data': rows}):
-                with self.assertRaises(RuntimeError):
-                    source.weekly_funding_snapshot(self.now)
+            def fake(url):
+                symbol = 'ETHUSDT' if 'ETHUSDT' in url else 'BTCUSDT'
+                rows = [{'symbol': symbol, 'fundingTime': int((self.ts-i*8*3600)*1000), 'fundingRate': '.0001'} for i in range(22) if (i < 10 if missing == 'old' else i != 10)]
+                return {'code': '00000', 'data': rows}
+            with patch.object(source, 'derivatives_snapshot', return_value=current), patch.object(source, 'get_json', side_effect=fake):
+                result = source.weekly_funding_snapshot(self.now)
+            self.assertNotIn('funding_avg_7d', result['BTC'])
+            self.assertIn('weekly_error', result['BTC'])
+            self.assertEqual(result['BTC']['oi_usd'], 100)
 
     def test_weekly_sentiment_rejects_missing_exact_seven_day_baseline(self):
         with patch.object(source, 'get_json', return_value={'data': [{'value': '50', 'value_classification': 'Neutral', 'timestamp': self.ts}, {'value': '40', 'timestamp': self.ts-6*86400}]}):

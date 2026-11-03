@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import slim_policy
+import exchange_market_data as exchange
 
 import html
 import json
@@ -67,31 +68,22 @@ def finite_number(value: Any) -> float:
     return number
 
 
-def crypto_snapshot() -> tuple[dict[str, dict[str, float]], dict[str, float]]:
-    query = urlencode({
-        "vs_currency": "usd",
-        "ids": "bitcoin,ethereum,tether,usd-coin",
-        "price_change_percentage": "7d",
-        "sparkline": "false",
-    })
-    rows = get_json(f"{COINGECKO}/coins/markets?{query}")
-    by_id = {row["id"]: row for row in rows}
-    coins: dict[str, dict[str, float]] = {}
-    for symbol, coin_id in (("BTC", "bitcoin"), ("ETH", "ethereum")):
-        row = by_id[coin_id]
-        coins[symbol] = {
-            "price": float(row["current_price"]),
-            "change_24h": finite_number(row["price_change_percentage_24h"]) if row.get("price_change_percentage_24h") is not None else None,
-            "change_7d": finite_number(row["price_change_percentage_7d_in_currency"]) if row.get("price_change_percentage_7d_in_currency") is not None else None,
-            "source": "CoinGecko", "updated_at": row.get("last_updated"),
-            "high_24h": float(row.get("high_24h") or 0),
-            "low_24h": float(row.get("low_24h") or 0),
-            "volume_24h": float(row.get("total_volume") or 0),
-        }
-    stablecoins = {
-        "USDT": float(by_id["tether"]["current_price"]),
-        "USDC": float(by_id["usd-coin"]["current_price"]),
-    }
+def crypto_snapshot() -> tuple[dict, dict]:
+    coins = {}
+    for coin in ('BTC', 'ETH'):
+        try:
+            coins[coin] = exchange.prefer(lambda venue: exchange.spot(get_json, coin, venue))
+        except Exception as exc:
+            coins[coin] = {'error': str(exc)}
+    # A USDT pair is not an independent USD peg measurement. Keep USD quotes
+    # separate, and never discard valid exchange prices on stablecoin failure.
+    stablecoins = {}
+    try:
+        query = urlencode({'ids': 'tether,usd-coin', 'vs_currencies': 'usd'})
+        data = get_json(f'{COINGECKO}/simple/price?{query}')
+        stablecoins = {'USDT': finite_number(data['tether']['usd']), 'USDC': finite_number(data['usd-coin']['usd'])}
+    except Exception:
+        pass
     return coins, stablecoins
 
 
@@ -111,28 +103,13 @@ def global_snapshot() -> dict[str, float]:
     }
 
 
-def derivatives_snapshot() -> dict[str, dict[str, float]]:
-    result: dict[str, dict[str, float]] = {}
-    for coin in ("BTC", "ETH"):
-        inst_id = f"{coin}-USDT-SWAP"
-        interest = get_json(f"{OKX}/api/v5/public/open-interest?instType=SWAP&instId={inst_id}")
-        funding = get_json(f"{OKX}/api/v5/public/funding-rate?instId={inst_id}")
-        if interest.get("code") != "0" or not interest.get("data"):
-            raise RuntimeError(f"OKX {coin} OI 沒有資料")
-        if funding.get("code") != "0" or not funding.get("data"):
-            raise RuntimeError(f"OKX {coin} 資金費率沒有資料")
-        oi = interest["data"][0]
-        rate = funding["data"][0]
-        result[coin] = {
-            "oi_usd": finite_number(oi.get("oiUsd")),
-            "oi_ccy": finite_number(oi.get("oiCcy")),
-            "funding_rate": finite_number(rate.get("fundingRate")) * 100,
-            "funding_time": int(rate["fundingTime"]),
-            "next_funding": int(rate.get("nextFundingTime") or rate["fundingTime"]),
-            "timestamp": int(oi["ts"]) / 1000,
-            "rate_timestamp": int(rate["ts"]) / 1000,
-            "scope": f"OKX {inst_id}",
-        }
+def derivatives_snapshot() -> dict:
+    result = {}
+    for coin in ('BTC', 'ETH'):
+        try:
+            result[coin] = exchange.prefer(lambda venue: exchange.contract(get_json, coin, venue))
+        except Exception as exc:
+            result[coin] = {'error': str(exc)}
     return result
 
 
@@ -152,63 +129,18 @@ def fear_greed_snapshot() -> dict[str, Any]:
     }
 
 
-def weekly_crypto_snapshot() -> dict[str, dict[str, float | str]]:
-    result: dict[str, dict[str, float | str]] = {}
-    for symbol, coin_id in (("BTC", "bitcoin"), ("ETH", "ethereum")):
+def weekly_crypto_snapshot() -> dict:
+    result = {}
+    for coin in ('BTC', 'ETH'):
         try:
-            query = urlencode({"vs_currency": "usd", "days": "7", "interval": "daily"})
-            data = get_json(f"{COINGECKO}/coins/{coin_id}/market_chart?{query}")
-            prices = [float(point[1]) for point in data.get("prices", [])]
-            volumes = [float(point[1]) for point in data.get("total_volumes", [])]
-            if len(prices) < 2:
-                raise ValueError(f"{symbol} 七日價格資料不足")
-            result[symbol] = {
-                "price": prices[-1],
-                "change_7d": (prices[-1] / prices[0] - 1) * 100,
-                "high_7d": max(prices),
-                "low_7d": min(prices),
-                "volume_7d": sum(volumes[:7]),
-                "source": "CoinGecko",
-                "start_timestamp": float(data['prices'][0][0]) / 1000,
-                "end_timestamp": float(data['prices'][-1][0]) / 1000,
-            }
-            continue
-        except Exception as primary_error:
-            try:
-                result[symbol] = okx_weekly_crypto_snapshot(symbol)
-                continue
-            except Exception as fallback_error:
-                raise SourceFetchError(
-                    f"{symbol} CoinGecko {error_label(primary_error)}；"
-                    f"OKX {error_label(fallback_error)}"
-                ) from fallback_error
+            result[coin] = exchange.weekly_prices(get_json, coin)
+        except Exception as exc:
+            result[coin] = {'error': str(exc)}
     return result
 
 
-def okx_weekly_crypto_snapshot(symbol: str) -> dict[str, float | str]:
-    query = urlencode({"instId": f"{symbol}-USDT", "bar": "1Dutc", "limit": "8"})
-    payload = get_json(f"{OKX}/api/v5/market/history-candles?{query}")
-    if payload.get("code") != "0":
-        raise ValueError(f"API code {payload.get('code') or 'unknown'}")
-    rows = [row for row in payload.get("data", []) if len(row) >= 9 and row[8] == "1"]
-    rows.sort(key=lambda row: int(row[0]))
-    rows = rows[-7:]
-    if len(rows) < 7:
-        raise ValueError(f"{symbol} 已完成日線不足 7 根")
-    first_open = float(rows[0][1])
-    last_close = float(rows[-1][4])
-    if first_open <= 0:
-        raise ValueError(f"{symbol} 日線開盤價無效")
-    return {
-        "price": last_close,
-        "change_7d": (last_close / first_open - 1) * 100,
-        "high_7d": max(float(row[2]) for row in rows),
-        "low_7d": min(float(row[3]) for row in rows),
-        "volume_7d": sum(float(row[7]) for row in rows),
-        "source": "OKX",
-        "start_timestamp": int(rows[0][0]) / 1000,
-        "end_timestamp": int(rows[-1][0]) / 1000 + 86400,
-    }
+def exchange_weekly_crypto_snapshot(symbol):
+    return exchange.weekly_prices(get_json, symbol)
 
 
 def weekly_sentiment_snapshot() -> dict[str, Any]:
@@ -229,24 +161,15 @@ def weekly_sentiment_snapshot() -> dict[str, Any]:
     }
 
 
-def weekly_funding_snapshot(now: datetime | None = None) -> dict[str, dict[str, float]]:
-    result: dict[str, dict[str, float]] = {}
-    current = derivatives_snapshot()
-    now = now or datetime.now(timezone.utc)
-    end = int(now.timestamp() * 1000)
-    start = end - 7 * 86400000
-    for coin in ("BTC", "ETH"):
-        history = get_json(f"{OKX}/api/v5/public/funding-rate-history?instId={coin}-USDT-SWAP&limit=400")
-        rows = {int(r['fundingTime']): r for r in history.get('data', []) if start <= int(r['fundingTime']) <= end}
-        rates = [finite_number(r.get("realizedRate") or r.get("fundingRate")) * 100 for r in rows.values()]
-        times = sorted(rows)
-        if (history.get("code") != "0" or not rates or min(rows) > start + 8 * 3600000
-                or max(rows) < end - 8 * 3600000
-                or any(b - a > 8 * 3600000 + 60000 for a, b in zip(times, times[1:]))):
-            raise RuntimeError(f"OKX {coin} 資金費率歷史沒有資料")
-        result[coin] = {**current[coin], "funding_avg_7d": sum(rates) / len(rates),
-                        "funding_sum_7d": sum(rates), "samples": len(rates),
-                        "start_timestamp": start / 1000, "end_timestamp": end / 1000}
+def weekly_funding_snapshot(now: datetime | None = None) -> dict:
+    result = {}
+    for coin, current in derivatives_snapshot().items():
+        try:
+            result[coin] = exchange.settled_week(get_json, coin, current, now)
+        except Exception as exc:
+            # Keep confirmed current OI, but never silently use current rates as
+            # a seven-day settled history, or combine rates across exchanges.
+            result[coin] = {**current, 'weekly_error': error_label(exc)}
     return result
 
 

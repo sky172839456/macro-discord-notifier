@@ -25,8 +25,6 @@ from notification_format import apply_delivery_format
 
 TAIPEI = ZoneInfo(TAIPEI_ZONE)
 SCHEDULE_STATE = Path(os.getenv("MARKET_SUMMARY_STATE_FILE", ".state/market-summaries.json"))
-COINGECKO_SIMPLE = "https://api.coingecko.com/api/v3/simple/price"
-COINGECKO_HISTORY = "https://api.coingecko.com/api/v3/coins/{coin}/market_chart"
 BLS_CALENDAR_MIRRORS = (
     BLS_CALENDAR_URL,
     f"{BLS_CALENDAR_URL}?download=1",
@@ -170,29 +168,15 @@ def http_json(url: str) -> Any:
         return json.load(response)
 
 
-def current_market() -> dict[str, dict[str, float]]:
-    query = urlencode({
-        "ids": "bitcoin,ethereum",
-        "vs_currencies": "usd",
-        "include_24hr_change": "true",
-    })
-    data = http_json(f"{COINGECKO_SIMPLE}?{query}")
-    return {
-        "BTC": {"price": float(data["bitcoin"]["usd"]), "change": float(data["bitcoin"]["usd_24h_change"])},
-        "ETH": {"price": float(data["ethereum"]["usd"]), "change": float(data["ethereum"]["usd_24h_change"])},
-    }
+def current_market() -> dict:
+    from exchange_market_data import prefer, spot
+    return {coin: {**(row := prefer(lambda venue: spot(http_json, coin, venue))), 'change': row['change_24h']}
+            for coin in ('BTC', 'ETH')}
 
 
-def weekly_market() -> dict[str, dict[str, float]]:
-    results: dict[str, dict[str, float]] = {}
-    for symbol, coin in (("BTC", "bitcoin"), ("ETH", "ethereum")):
-        query = urlencode({"vs_currency": "usd", "days": "7", "interval": "daily"})
-        data = http_json(f"{COINGECKO_HISTORY.format(coin=coin)}?{query}")
-        prices = [float(point[1]) for point in data.get("prices", [])]
-        if len(prices) < 2:
-            raise ValueError(f"{symbol} 歷史價格資料不足")
-        results[symbol] = {"price": prices[-1], "change": (prices[-1] / prices[0] - 1) * 100}
-    return results
+def weekly_market() -> dict:
+    from exchange_market_data import weekly_prices
+    return {coin: {**(row := weekly_prices(http_json, coin)), 'change': row['change_7d']} for coin in ('BTC', 'ETH')}
 
 
 def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str | None]:
@@ -239,10 +223,10 @@ def market_lines(market: dict[str, dict[str, float]] | None, error: str | None) 
     for symbol in ("BTC", "ETH"):
         item = market[symbol]
         if item.get('change') is None:
-            lines.append(f"⚪ **{symbol}**　${item['price']:,.2f}　漲跌幅暫缺")
+            lines.append(f"⚪ **{symbol}**　{item['price']:,.2f} {item.get('quote_currency', 'USD')}　漲跌幅暫缺")
             continue
         marker = "🟢" if item["change"] >= 0 else "🔴"
-        lines.append(f"{marker} **{symbol}**　${item['price']:,.2f}　`{item['change']:+.2f}%`")
+        lines.append(f"{marker} **{symbol}**　{item['price']:,.2f} {item.get('quote_currency', 'USD')}　`{item['change']:+.2f}%`")
     return "\n".join(lines)
 
 
@@ -265,36 +249,13 @@ def unavailable(dashboard: dict[str, Any], key: str) -> str:
 
 
 def crypto_detail_lines(dashboard: dict[str, Any]) -> str:
-    coins = dashboard.get("crypto")
-    if not coins:
-        return unavailable(dashboard, "crypto")
-    lines = []
-    for symbol in ("BTC", "ETH"):
-        item = coins[symbol]
-        if item.get('change_24h') is None:
-            lines.append(f"⚪ **{symbol}**　${item['price']:,.2f}　漲跌幅暫缺")
-            continue
-        marker = "🟢" if item["change_24h"] >= 0 else "🔴"
-        lines.append(
-            f"{marker} **{symbol}**　${item['price']:,.2f}　`{item['change_24h']:+.2f}%`\n"
-            f"└ 24h 高／低 `${item['high_24h']:,.2f}`／`${item['low_24h']:,.2f}`　量 {money(item['volume_24h'])}"
-        )
-    return "\n".join(lines)
+    from market_brief_v2 import price_lines
+    return price_lines(dashboard, None, datetime.now(timezone.utc), False)
 
 
 def derivatives_lines(dashboard: dict[str, Any]) -> str:
-    data = dashboard.get("derivatives")
-    if not data:
-        return unavailable(dashboard, "derivatives")
-    lines = []
-    for symbol in ("BTC", "ETH"):
-        item = data[symbol]
-        funding_at = datetime.fromtimestamp(item["next_funding"] / 1000, TAIPEI).strftime("%m/%d %H:%M")
-        lines.append(
-            f"**{symbol}**　OI {money(item['oi_usd'])}　資金費率 `{item['funding_rate']:+.4f}%`\n"
-            f"└ 下次結算 {funding_at}"
-        )
-    return "\n".join(lines)
+    from market_brief_v2 import contract_lines
+    return contract_lines(dashboard, datetime.now(timezone.utc), False)
 
 
 def breadth_lines(dashboard: dict[str, Any]) -> str:
@@ -385,21 +346,8 @@ def flow_lines(dashboard: dict[str, Any]) -> str:
 
 
 def weekly_crypto_lines(dashboard: dict[str, Any]) -> str:
-    coins = dashboard.get("weekly_crypto")
-    if not coins:
-        return unavailable(dashboard, "weekly_crypto")
-    lines = []
-    for symbol in ("BTC", "ETH"):
-        item = coins[symbol]
-        marker = "🟢" if item["change_7d"] >= 0 else "🔴"
-        lines.append(
-            f"{marker} **{symbol}**　${item['price']:,.2f}　`{item['change_7d']:+.2f}%`\n"
-            f"└ 週高／週低 `${item['high_7d']:,.2f}`／`${item['low_7d']:,.2f}`　週量 {money(item['volume_7d'])}"
-        )
-    relative = coins["ETH"]["change_7d"] - coins["BTC"]["change_7d"]
-    leader = "ETH" if relative >= 0 else "BTC"
-    lines.append(f"**相對強弱**　{leader} 領先 `{abs(relative):.2f}` 個百分點")
-    return "\n".join(lines)
+    from market_brief_v2 import price_lines
+    return price_lines(dashboard, None, datetime.now(timezone.utc), True)
 
 
 def weekly_breadth_lines(dashboard: dict[str, Any]) -> str:
@@ -419,13 +367,8 @@ def weekly_breadth_lines(dashboard: dict[str, Any]) -> str:
 
 
 def weekly_derivatives_lines(dashboard: dict[str, Any]) -> str:
-    data = dashboard.get("weekly_derivatives")
-    if not data:
-        return unavailable(dashboard, "weekly_derivatives")
-    return "\n".join(
-        f"**{symbol}**　目前 OI {money(data[symbol]['oi_usd'])}　週平均資金費率 `{data[symbol]['funding_avg_7d']:+.4f}%`"
-        for symbol in ("BTC", "ETH")
-    )
+    from market_brief_v2 import contract_lines
+    return contract_lines(dashboard, datetime.now(timezone.utc), True)
 
 
 def weekly_traditional_lines(dashboard: dict[str, Any]) -> str:
@@ -459,11 +402,11 @@ def weekly_etf_lines(dashboard: dict[str, Any]) -> str:
 def weekly_outlook_lines(dashboard: dict[str, Any], events: list[dict[str, Any]], event_error: str | None) -> str:
     notes = []
     coins = dashboard.get("weekly_crypto") or {}
-    if coins:
+    if all((coins.get(c) or {}).get("change_7d") is not None for c in ("BTC", "ETH")):
         leader = "ETH" if coins["ETH"]["change_7d"] > coins["BTC"]["change_7d"] else "BTC"
         notes.append(f"{leader} 本週相對強勢，下週留意強弱是否延續。")
     derivatives = dashboard.get("weekly_derivatives") or {}
-    crowded = [s for s, item in derivatives.items() if abs(item["funding_avg_7d"]) >= 0.03]
+    crowded = [s for s, item in derivatives.items() if item.get("funding_avg_7d") is not None and abs(item["funding_avg_7d"]) >= 0.03]
     if crowded:
         notes.append(f"{'／'.join(crowded)} 週平均資金費率偏高，留意擁擠部位反向擠壓。")
     for key, symbol in (("weekly_btc_etf", "BTC"), ("weekly_eth_etf", "ETH")):
@@ -487,7 +430,7 @@ def risk_summary(dashboard: dict[str, Any], events: list[dict[str, Any]], event_
     elif sentiment and sentiment["value"] >= 75:
         notes.append("市場情緒處於極度貪婪區，追價與回撤風險提高。")
     derivatives = dashboard.get("derivatives") or {}
-    crowded = [symbol for symbol, item in derivatives.items() if abs(item["funding_rate"]) >= 0.05]
+    crowded = [symbol for symbol, item in derivatives.items() if item.get("funding_rate") is not None and abs(item["funding_rate"]) >= 0.05]
     if crowded:
         notes.append(f"{'／'.join(crowded)} 資金費率偏高，留意擁擠部位反向擠壓。")
     stablecoins = dashboard.get("stablecoins") or {}
@@ -572,7 +515,7 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
             if daily else "週報使用七日變化與最近五個 ETF 交易日；總市值、BTC 市占與 OI 為目前快照。"
         ), "inline": False},
         {"name": "🔗 原始資料", "value": (
-            "[CoinGecko](https://www.coingecko.com/)｜[OKX](https://www.okx.com/)｜"
+            "[Bitget](https://www.bitget.com/)｜[幣安](https://www.binance.com/)｜[CoinGecko全市場](https://www.coingecko.com/)｜"
             "[恐慌貪婪](https://alternative.me/crypto/fear-and-greed-index/)｜"
             "[美國財政部](https://home.treasury.gov/resource-center/data-chart-center/interest-rates/)｜"
             "[Yahoo Finance](https://finance.yahoo.com/)｜[Farside](https://farside.co.uk/btc/)｜"
@@ -614,14 +557,14 @@ def run(period: str, now: datetime, dry_run: bool = False, history=None):
     dashboard = collect_dashboard(now) if period == "daily" else collect_weekly_dashboard(now)
     if period == "daily" and dashboard.get("crypto"):
         market = {symbol: {"price": item["price"], "change": item["change_24h"]}
-                  for symbol, item in dashboard["crypto"].items()}
+                  for symbol, item in dashboard["crypto"].items() if item.get("price") is not None}
         market_error = None
     else:
         try:
             market = weekly_market() if period == "weekly" else current_market()
             market_error = None
         except Exception as exc:
-            market, market_error = None, f"CoinGecko 暫時無法取得（{type(exc).__name__}）"
+            market, market_error = None, f"Bitget／幣安暫時無法取得（{type(exc).__name__}）"
     events, event_error = upcoming_events(now, 3 if period == "daily" else 7)
     if slim_policy.enabled():
         from market_brief_v2 import add_context, news_review
@@ -647,8 +590,8 @@ def run(period: str, now: datetime, dry_run: bool = False, history=None):
                 item = technical_snapshot(symbol)
                 trend, momentum = technical_view(item)
                 lines.append(f"**{symbol}** {trend}｜RSI(14) {item['rsi']:.1f}（{momentum}）\n"
-                             f"SMA20 ${item['sma20']:,.2f}｜SMA50 ${item['sma50']:,.2f}\n"
-                             f"20 日區間 ${item['low20']:,.2f}～${item['high20']:,.2f}")
+                             f"SMA20 {item['sma20']:,.2f} USDT｜SMA50 {item['sma50']:,.2f} USDT\n"
+                             f"20 日區間 {item['low20']:,.2f}～{item['high20']:,.2f} USDT｜來源 {item.get('source') or '暫缺'}")
             except Exception:
                 lines.append(f"⚠️ {symbol} 技術資料暫缺，未使用推測值。")
         embed["fields"].insert(1, {"name": "📐 BTC／ETH 技術狀態（已收盤日線）", "value": "\n\n".join(lines), "inline": False})

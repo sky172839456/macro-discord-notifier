@@ -16,23 +16,19 @@ from summary_notifier import event_lines, upcoming_events
 
 TAIPEI = ZoneInfo("Asia/Taipei")
 STATE_FILE = Path(".state/channel-analysis.json")
-OKX_API = "https://www.okx.com"
+import exchange_market_data as exchange
 
 
-def get_json(url, params):
-    request = Request(f"{url}?{urlencode(params)}", headers={"User-Agent": "macro-analysis/1.0"})
+def get_json(url, params=None):
+    request = Request(url + ('&' if '?' in url else '?') + urlencode(params or {}), headers={'User-Agent': 'macro-analysis/1.0'})
     with urlopen(request, timeout=25) as response:
         return json.load(response)
 
 
 def candles(symbol):
-    payload = get_json(f"{OKX_API}/api/v5/market/candles", {
-        "instId": f"{symbol}-USDT", "bar": "1D", "limit": "60",
-    })
-    if payload.get("code") != "0":
-        raise RuntimeError(f"OKX candles: {payload.get('msg') or payload.get('code')}")
-    rows = sorted([row for row in payload.get("data", []) if len(row) > 8 and row[8] == "1"], key=lambda row: int(row[0]))
-    return [{"open": float(r[1]), "high": float(r[2]), "low": float(r[3]), "close": float(r[4])} for r in rows]
+    data = exchange.prefer(lambda venue: exchange.daily_candles(get_json, symbol, venue, 59))
+    return [{'open': r[1], 'high': r[2], 'low': r[3], 'close': r[4],
+             'source': data['source'], 'source_url': data['source_url']} for r in data['candles']]
 
 
 def rsi(values, period=14):
@@ -54,6 +50,7 @@ def technical_snapshot(symbol):
     current = closes[-1]
     return {
         "symbol": symbol,
+        "source": rows[-1].get("source"), "source_url": rows[-1].get("source_url"),
         "price": current,
         "change": (current / closes[-2] - 1) * 100,
         "sma20": sum(closes[-20:]) / 20,
@@ -80,10 +77,10 @@ def technical_embed(items, now):
     for item in items:
         trend, momentum = technical_view(item)
         lines.append(
-            f"### {item['symbol']}　`${item['price']:,.2f}`　`{item['change']:+.2f}%`\n"
+            f"### {item['symbol']}　`{item['price']:,.2f} USDT`　`{item['change']:+.2f}%`\n"
             f"趨勢：**{trend}**｜RSI(14)：`{item['rsi']:.1f}`（{momentum}）\n"
-            f"SMA20 `${item['sma20']:,.2f}`｜SMA50 `${item['sma50']:,.2f}`\n"
-            f"20 日區間 `${item['low20']:,.2f}` ～ `${item['high20']:,.2f}`"
+            f"SMA20 `{item['sma20']:,.2f} USDT`｜SMA50 `{item['sma50']:,.2f} USDT`\n"
+            f"20 日區間 `{item['low20']:,.2f} USDT` ～ `{item['high20']:,.2f} USDT`"
         )
     return {
         "author": {"name": "MARKET ANALYSIS｜技術分析"},
@@ -96,7 +93,7 @@ def technical_embed(items, now):
             "inline": False,
         }, {
             "name": "資料來源",
-            "value": "[OKX 公開日線](https://www.okx.com/markets/prices)",
+            "value": '；'.join(f"{r['symbol']}：[{r.get('source') or '來源暫缺'}]({r.get('source_url') or 'https://www.bitget.com'})" for r in items) + '｜USDT現貨完整UTC日線' ,
             "inline": False,
         }],
         "footer": {"text": "台灣時間｜每日更新｜不構成投資建議"},

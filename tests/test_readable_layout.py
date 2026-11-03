@@ -98,10 +98,10 @@ class ReadableLayoutTests(unittest.TestCase):
 
     def test_market_coin_groups_and_metadata_are_separate(self):
         now=datetime(2026,10,29,0,tzinfo=timezone.utc)
-        data={"crypto":{s:{"price":v,"change_24h":.2,"updated_at":now.timestamp()} for s,v in [("BTC",80000),("ETH",2500)]}}
+        data={"crypto":{s:{"price":v,"change_24h":.2,"updated_at":now.timestamp(),"source":"Bitget","source_url":"https://www.bitget.com","quote_currency":"USDT"} for s,v in [("BTC",80000),("ETH",2500)]}}
         text=brief.price_lines(data,None,now,False)
-        self.assertIn("資料更新：10/29 08:00\n\n**ETH**",text)
-        self.assertIn("\n\n[CoinGecko]",text)
+        self.assertIn("資料更新：10/29 08:00\n\n來源：[Bitget現貨]",text)
+        self.assertIn("(https://www.bitget.com)\n\n**ETH**",text)
 
     def test_market_cap_and_sentiment_keep_units_and_comparison(self):
         now=datetime(2026,10,29,0,tzinfo=timezone.utc)

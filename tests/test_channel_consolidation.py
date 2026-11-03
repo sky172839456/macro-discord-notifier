@@ -56,10 +56,10 @@ class ConsolidationRegressionTests(unittest.TestCase):
         self.assertFalse(any("槓桿" in line for line in details))
 
     def test_closed_candles_only(self):
-        row = ["1", "1", "2", "1", "2", "1", "1", "1", "1"]
-        open_row = ["2", "1", "9", "1", "9", "1", "1", "1", "0"]
-        with patch.object(analysis_notifier, "get_json", return_value={"code": "0", "data": [open_row, row]}):
-            self.assertEqual(analysis_notifier.candles("BTC"), [{"open": 1., "high": 2., "low": 1., "close": 2.}])
+        row = {'candles': [[86400000, 1., 2., 1., 2., 1.]], 'source': 'Bitget', 'source_url': 'https://www.bitget.com'}
+        with patch.object(analysis_notifier.exchange, 'daily_candles', return_value=row) as get:
+            self.assertEqual(analysis_notifier.candles('BTC'), [{'open': 1., 'high': 2., 'low': 1., 'close': 2., 'source': 'Bitget', 'source_url': 'https://www.bitget.com'}])
+        self.assertEqual(get.call_args.args[1:], ('BTC', 'Bitget', 59))
 
     def test_merged_mode_stops_duplicate_daily_analysis(self):
         with patch.dict(os.environ, {"CONSOLIDATED_CHANNELS": "1"}), patch.object(analysis_notifier, "run") as run:
