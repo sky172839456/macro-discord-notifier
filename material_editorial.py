@@ -59,7 +59,7 @@ def review(row, now, focus=None):
     useful = 2 if connection or _has(r'\b(?:how to|users?|customers?|workflow|fees?|costs?|access|withdrawals?|affected|security|privacy|open.source|can use)\b', value) else 1 if topic in ('ai', 'innovation', 'policy', 'research', 'business', 'security') else 0
     curiosity = 2 if _has(r'\b(?:world record|guinness|first.ever|unexpected|surprising|lost wallet|dormant|accidental\w*|breakthrough|million|billion)\b', value) else 1 if connection or topic == 'interesting' or _has(r'\b(?:robots?|humanoids?|flying cars?|prototypes?|experiments?)\b', value) else 0
     # Specific source content helps form a story; this is not a truth/confidence score.
-    detail = 2 if summary and (_has(r'\b\d[\d,.]*\s*(?:%|million|billion|hours?|minutes?|days?|users?|steps?|dollars?)\b|\bfrom\b.{1,55}\bto\b', summary) or (connection and _has(r'\b(?:servers?|connectors?|tasks?|read.only|read.write|preview|permissions?|files?|workflow|manual)\b', summary))) else 1 if len(summary) >= 60 else 0
+    detail = 2 if summary and (_has(r'(?<!\w)\d[\d,.]*\s*(?:%(?!\w)|(?:million|billion|hours?|minutes?|days?|users?|steps?|dollars?)\b)|\bfrom\b.{1,55}\bto\b', summary) or (connection and _has(r'\b(?:servers?|connectors?|tasks?|read.only|read.write|preview|permissions?|files?|workflow|manual)\b', summary))) else 1 if len(summary) >= 60 else 0
     recent = 0
     try:
         date = row.get('published')

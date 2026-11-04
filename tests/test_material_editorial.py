@@ -29,6 +29,15 @@ class EditorialReviewTests(unittest.TestCase):
         self.assertEqual(review(row, self.now), review({**row, 'official': True}, self.now))
         self.assertIn('高星不代表已完成查證', review(row, self.now)['basis'])
 
+    def test_financial_percent_detail_is_recognized_without_inventing_change(self):
+        row = {**self.row(), 'material_topic': 'policy',
+               'title': 'New policy approves fee schedule',
+               'summary': 'Users now pay 0.5%.'}
+        result = review(row, self.now)
+        self.assertIn('摘要有具體數字', result['reason'])
+        self.assertEqual(row['summary'], 'Users now pay 0.5%.')
+        self.assertNotIn('調降', result['concept'])
+
     def test_rich_interesting_story_can_get_five_without_finance_or_ai(self):
         row = {**self.row(), 'material_topic': 'interesting',
                'title': 'Museum unveils unexpected experiment',
