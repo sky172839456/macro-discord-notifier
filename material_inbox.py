@@ -49,13 +49,16 @@ ANGLES = {
     'policy': ('政策／監管', '制度或適用範圍有變化，適合說明誰受影響、何時生效。',
                '貼文比較變更前後；Reels用一個實際情境解說。',
                '核對地區、生效日、適用對象及草案／通過／生效階段；不把提議當已實施。'),
-    'ai': ('AI／研究', '有產品或研究進展，可轉成使用情境、方法或限制的解說。',
+    'ai': ('AI／新工具', 'AI模型、新工具、系統或研究進展，可轉成使用情境、方法與限制的解說，不限金融用途。',
            '限動介紹原始公告；Reels展示流程；輪播比較用途與限制。',
            '核對發布／開放時間、費用、實際可用範圍、研究條件；官方效能主張不等於獨立實測。'),
+    'innovation': ('科技／新發明', '新系統、產品、載具或發明有具體進展，適合說明解決什麼問題、如何運作與目前做到哪一步，不限金融用途。',
+                   '限動用有趣問題帶入；Reels解釋運作過程；輪播比較用途、現有做法與限制。',
+                   '核對原始展示、日期與實際能力；明列構想／展示／原型／測試／開賣階段，區分廠商主張與獨立實測，不把示意影片當已量產。'),
     'business': ('企業／交易所進展', '合作、收購或服務變更可整理成具體改變與用戶影響。',
                  '限動快訊；貼文整理雙方、合作內容與實際落地階段。',
                  '核對雙方公告、金額與範圍、洽談／簽約／交割／上線階段；不把意向當完成。'),
-    'interesting': ('趣聞／人物事件', '具體人物故事、反常事件或生活應用有敘事切入點，可做輕鬆但有知識點的內容。',
+    'interesting': ('趣聞／人物事件', '人物故事、反常事件、生活應用或文化趣事有具體敘事切入點，可做輕鬆但有知識點的內容，不限金融圈。',
                  '限動用一個問題帶出事件；Reels講故事；輪播補充背景與容易誤解的地方。',
                  '核對人物原話、原始日期與上下文；區分趣味、諷刺、傳聞與事實，不把轉帳等同買賣或替人物推測動機。'),
     'research': ('研究／市場知識', '有報告或研究可拆解方法、數據與限制，延伸成常青教材。',
@@ -124,6 +127,8 @@ def topic(row):
         return 'policy'
     if re.search(r'\b(?:study|research|paper|report finds|researchers)\b', title, re.I):
         return 'research'
+    if innovation_candidate(title):
+        return 'innovation'
     if re.search(r'\b(?:partnership|partners with|collaborat\w*|acquir\w*|acquisition|merger|launch\w*|expands?|investment)\b', title, re.I):
         return 'business'
     # Concrete story hooks from existing feeds, not a blanket catch-all for hype.
@@ -131,6 +136,7 @@ def topic(row):
         r'\b(?:bitcoin pizza|pizza day|solo miner|lottery miner|lost (?:bitcoin |crypto )?wallet|'
         r'dormant (?:bitcoin |crypto )?wallet|accidental(?:ly)?|mistaken(?:ly)?|'
         r'world record|guinness|meme culture|crypto wedding|bitcoin wedding|'
+        r'(?:museum|game|gaming|video game|artist|community|animal|pet)\w* .{0,65}(?:unexpected|unusual|surprising|experiment|record|discovery)|'
         r'(?:robot|humanoid)\w* .{0,65}(?:dance|dances|cook|cooks|play|plays|learn|learns|paint|paints)|'
         r'(?:weird|surprising|unexpected) .{0,65}(?:experiment|invention|discovery|technology)|'
         r'(?:buys?|bought|pays?|paid) .{0,65} (?:with|using|in) (?:bitcoin|crypto|btc)|'
@@ -138,6 +144,17 @@ def topic(row):
         title, re.I):
         return 'interesting'
     return None
+
+
+
+def innovation_candidate(title):
+    """Concrete developments from the approved tech feed, without a finance gate."""
+    subject = r'\b(?:robots?|humanoids?|flying cars?|eVTOLs?|air taxis?|drones?|wearables?|batter(?:y|ies)|chips?|quantum computers?|telescopes?|satellites?|fusion reactors?|solar cells?|smart glasses|3D print\w*|inventions?|prototypes?|open-source (?:apps?|tools?|systems?)|new (?:apps?|tools?|systems?|devices?))\b'
+    development = r'\b(?:unveil\w*|introduc\w*|reveal\w*|announc\w*|debut\w*|launch\w*|releas\w*|demonstrat\w*|invent\w*|develop\w*|test\w*|prototype\w*|builds?|built|can|first flight)\b'
+    # A named tech company alone or a share-price move is not a new invention.
+    if re.search(r'\b(?:stock|shares?) (?:price|rises?|falls?|gains?|drops?|surges?|rallies?)\b', title, re.I):
+        return False
+    return bool(re.search(subject, title, re.I) and re.search(development, title, re.I))
 
 
 def urgent(row):
