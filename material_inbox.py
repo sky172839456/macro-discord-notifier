@@ -226,12 +226,15 @@ def card(row, now):
         title = f'{label}候選｜原文標題待中文核對'
     points = chinese_points(row)
     facts = '\n'.join('• '+clean(p, 190) for p in points[:2]) if points else clean(row.get('summary') or row['title'], 430)
+    from material_editorial import review
+    editorial = review(row, now, focus=title if '原文標題待中文核對' not in title else row['title'])
     status = ('官方自行公布；效能、適用範圍與發布階段仍須讀原文核對。' if row['material_topic'] == 'ai' and row.get('official') else
               '官方來源候選；列示內容仍須核對範圍與實施階段。' if row.get('official') else
               '媒體報導候選；尚未以直接官方資料完成獨立核實。')
     fields = [
         {'name': '📌 來源內容'+('（中文未完整核對，保留原文片段）' if not points else ''), 'value': facts or '請開啟原文核對。', 'inline': False},
-        {'name': '💡 為什麼值得做', 'value': why, 'inline': False},
+        {'name': '💡 為什麼值得做', 'value': why+'\n\n**本則初評理由**　'+editorial['reason'], 'inline': False},
+        {'name': '🧩 初步內容構思', 'value': editorial['concept'], 'inline': False},
         {'name': '🎬 建議形式', 'value': formats, 'inline': False},
         {'name': '🔎 查證狀態／製作前要補', 'value': status+'\n\n'+checks, 'inline': False},
     ]
@@ -239,7 +242,7 @@ def card(row, now):
     refs = [r for r in refs if public_url(r.get('url'))][:3]
     links = '\n'.join(f'[{clean(r["source"], 60)}]({r["url"]})' for r in refs)
     fields.append({'name': '🔗 來源與時間', 'value': links+f'\n原文：{published_time(row["published"]).astimezone(TZ):%Y/%m/%d %H:%M}\n收錄：{now.astimezone(TZ):%Y/%m/%d %H:%M}（台灣）', 'inline': False})
-    result = {'title': '📝 素材候選｜'+title, 'description': f'分類：{label}\n\n【僅管理員】選題建議，不代表事實已全部核實或已製作發布。\n\n原文標題：'+clean(row['title'], 210),
+    result = {'title': '📝 素材候選｜'+title, 'description': f'分類：{label}\n\n**製作優先度　{editorial["display"]} {editorial["stars"]}/5｜{editorial["label"]}**\n{editorial["basis"]}\n\n【僅管理員】選題建議，不代表事實已全部核實或已製作發布。\n\n原文標題：'+clean(row['title'], 210),
               'fields': fields, 'color': 0xB99B66, 'timestamp': now.isoformat(),
               'footer': {'text': 'WV素材整理｜先查證再製作｜不會自動發布IG'}}
     if any(len(f['value']) > 1024 for f in fields) or sum(len(f['name'])+len(f['value']) for f in fields)+len(result['description']) > 5500:
