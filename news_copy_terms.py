@@ -58,6 +58,10 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        'Nothing teases a screen-free AI device ahead of launch next month':
+            'Nothing 預告無螢幕 AI 裝置，預計下月推出',
+        'Canton Coin Gets SEC Nod as Wall Street Tokenization Heats Up':
+            'Canton Coin 獲 SEC 點頭，華爾街代幣化發展升溫',
         'Crypto Docs Host GitBook Hit by AI Agent Security Breach, Urges Users to Rotate Keys': '加密專案文件託管平台 GitBook 遭 AI 代理相關資安入侵，敦促使用者更換金鑰',
         'CFTC clears stock perpetual futures for trading on US exchanges': 'CFTC 核准股票永續期貨在美國交易所交易',
         "Canada's Draft Stablecoin Rules Cap Redemption Fees at 1% and Ban Yield":
