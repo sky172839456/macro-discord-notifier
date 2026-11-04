@@ -116,7 +116,7 @@ def topic(row):
     from news_editorial import safety_candidate, retrospective, verified_security_explainer
     if verified_security_explainer(row):
         return "research"
-    if safety_candidate(row):
+    if safety_candidate(row) or mcp_incident(row):
         return 'security'
     if retrospective(row) or re.search(r'\b(?:weekly|monthly|daily) (?:recap|roundup|round-up|review)\b', title, re.I):
         return None
@@ -125,6 +125,11 @@ def topic(row):
     key = (row.get('category') or {}).get('key') if isinstance(row.get('category'), dict) else row.get('category')
     if key in ('regulation', 'finance_policy') or re.search(r'\b(?:law|regulation|regulator|legislation|monetary policy)\b', title, re.I):
         return 'policy'
+    if re.search(r'\bMCP\b', title, re.I) and re.search(r'\b(?:stocks?|shares?) (?:price|rises?|falls?|gains?|drops?|surges?|rallies?)\b', title, re.I):
+        return None  # A ticker reaction is not an MCP connection update.
+    capability = integration_topic(title)
+    if capability:
+        return capability
     if re.search(r'\b(?:study|research|paper|report finds|researchers)\b', title, re.I):
         return 'research'
     if innovation_candidate(title):
@@ -145,6 +150,38 @@ def topic(row):
         return 'interesting'
     return None
 
+
+
+
+
+def mcp_incident(row):
+    """Private tech-source candidates only; public asset-safety routing is unchanged."""
+    from news_editorial import INCIDENT, ACTION, EXPLAINER, retrospective, commentary_only, current_safety_evidence
+    title = str(row.get('title', ''))
+    context = re.search(r'\b(?:MCP|Model Context Protocol)\b', title, re.I)
+    if not context or retrospective(row) or commentary_only(row):
+        return False
+    if re.search(EXPLAINER, title, re.I) and not current_safety_evidence(row):
+        return False
+    body = title + ' ' + str(row.get('summary', ''))
+    return bool(re.search(INCIDENT, title, re.I) and re.search(ACTION, body, re.I))
+
+
+def integration_topic(title):
+    """A concrete new connection/workflow, not a keyword-only MCP mention."""
+    if re.search(r'\b(?:stocks?|shares?|price prediction)\b', title, re.I):
+        return None
+    action = r'\b(?:support\w*|connect\w*|integrat\w*|adds?|enable\w*|introduc\w*|launch\w*|releas\w*|rolls? out|now available|now works|compatible)\b'
+    if not re.search(action, title, re.I):
+        return None
+    protocol = re.search(r'\bModel Context Protocol\b', title, re.I)
+    mcp = re.search(r'\bMCP\b', title, re.I)
+    context = re.search(r'\b(?:servers?|clients?|support\w*|connect\w*|integrat\w*|compatible)\b', title, re.I)
+    if protocol or (mcp and context):
+        return 'ai'
+    product = re.search(r'\b(?:tools?|apps?|platforms?|editors?|browsers?|services?|software|SDKs?|APIs?)\b', title, re.I)
+    capability = re.search(r'\b(?:connectors?|plugins?|plug-ins?|extensions?|automation|automated workflows?|integrat\w*|connect\w*|interoperability)\b', title, re.I)
+    return 'innovation' if product and capability else None
 
 
 def innovation_candidate(title):
@@ -177,6 +214,10 @@ def equivalent(a, b):
 
 def card(row, now):
     label, why, formats, checks = ANGLES[row['material_topic']]
+    if row['material_topic'] in ('ai', 'innovation') and integration_topic(str(row.get('title', ''))):
+        why = '報導涉及既有工具新增串接或自動化能力，可用更新前後的具體任務比較，說明多做了什麼、誰用得到。'
+        formats = '限動說明新增能力；Reels對照原流程與串接流程；輪播整理用途、適用對象與使用條件。'
+        checks += '\n核對串接是否已開放、官方或第三方提供、適用版本、費用、讀寫權限與地區；範例流程不等於已實測，MCP支援不等於所有功能都可操作。'
     from notification_quality import checked_translation, chinese_points, published_time
     title = clean(row.get('title_zh', ''), 180)
     try:
