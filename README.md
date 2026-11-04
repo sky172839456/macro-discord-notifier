@@ -195,3 +195,11 @@ python -m unittest discover -s tests -v
 自動通知顯示名稱統一為「WV｜用途」，由sender_identity集中維護。各模組先沿原邏輯解析分類與路由，最後僅替換Webhook payload的username；不依新名稱重新選路由，不改Webhook、頻道、訊息內容、數值、頻率或去重。原Bot在此伺服器使用暱稱「WV｜幕後管家」，不改全域帳號或Runtime程式。頭像區分本人與自動通知，另依本人選擇套用，不預設全部改成相同Logo。測試仍保留虛構標示，停用模組不因改名重新啟用。
 
 自動資訊通知共用另外製作的深藍金色資訊卡＋WV頭像（assets/wv-information-avatar.png），和本人Logo、管家原頭像區別。手動WV Notification Display Branding工作須指定精確head，預設唯讀；apply才更新既有Webhook的name/avatar，所有目的地先核對、別名去重，更新後讀回，不發送或修改訊息、不改URL／頻道／權限。它不在一般排程執行。
+
+## 2026-11-04 區塊分隔與多元素材
+
+共用精簡卡片在主要區塊及來源／時間之間加細線，彙整新聞各件亦分隔；接近字數上限時略過可選線與留白，保留所有資料。入口與指南分隔按現有功能分組，不重發歷史卡。
+
+私人素材另加Google AI、Hugging Face官方RSS及The Verge科技媒體Atom，擴大AI工具／代理流程與機器人、科技生活的具體趣聞；媒體不稱官方。新來源各自從啟用時間起收錄，不補之前文章。原公開新聞分類與每日五件不變，素材每日不限／每輪兩則及來源、時效、去重與查證限制保留。
+
+Existing Guide Layout Maintenance僅手動執行，預設唯讀；指定精確head與前置plan hash後，才原地更新四個已核對訊息。驗guild/channel／Webhook／釘選與讀回，不新發送、擴權或寫正式state。

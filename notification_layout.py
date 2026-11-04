@@ -1,8 +1,14 @@
-"""Presentation-only spacing; source text and Discord limits take precedence."""
+"""Presentation-only boundaries; source text and Discord limits take precedence."""
 from __future__ import annotations
 import re
 
 SPACER = "\n\n\u200b"
+DIVIDER = "──────────────"
+
+
+def section_end(value):
+    base = value[:-len(SPACER)] if value.endswith(SPACER) else value
+    return base + ("" if base.endswith(DIVIDER) else "\n\n"+DIVIDER) + SPACER
 
 
 def text_size(card):
@@ -19,6 +25,11 @@ def paragraphs(text):
         return text
     lines = []
     for line in text.split("\n"):
+        if re.match(r"^\*\*\d{2}｜", line) and any(x.strip() for x in lines):
+            while lines and not lines[-1].strip():
+                lines.pop()
+            if lines[-1] != DIVIDER:
+                lines.extend(["", DIVIDER, ""])
         heading = bool(re.fullmatch(r"\s*(?:#{1,3} .+|\*\*[^*]+\*\*)\s*", line))
         bullet = bool(re.match(r"^\s*• ", line))
         if (heading or bullet) and lines and lines[-1].strip():
@@ -31,7 +42,7 @@ def paragraphs(text):
 
 
 def readable_card(card):
-    """Add whitespace only, without truncating facts or adding spacer fields."""
+    """Separate sections without truncating facts or adding spacer fields."""
     def update(target, key, candidate, limit):
         old = str(target.get(key) or "")
         if len(candidate) <= limit and text_size(card) + len(candidate) - len(old) <= 5900:
@@ -41,15 +52,15 @@ def readable_card(card):
     description = str(card.get("description") or "")
     if description:
         update(card, "description", paragraphs(description), 4096)
-        if fields and not str(card["description"]).endswith(SPACER):
-            update(card, "description", str(card["description"]) + SPACER, 4096)
+        if fields:
+            update(card, "description", section_end(str(card["description"])), 4096)
     for i, field in enumerate(fields):
         field["inline"] = False
         value = str(field.get("value") or "")
         if not value:
             continue
         update(field, "value", paragraphs(value), 1024)
-        if i < len(fields)-1 and not str(field["value"]).endswith(SPACER):
-            update(field, "value", str(field["value"]) + SPACER, 1024)
+        if i < len(fields)-1:
+            update(field, "value", section_end(str(field["value"])), 1024)
     return card
 
