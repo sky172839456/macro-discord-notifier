@@ -20,11 +20,16 @@ GUILD = '1524947809499877486'
 AI_SOURCES = (
     ('OpenAI News', 'https://openai.com/news/rss.xml', 'openai.com'),
     ('Google DeepMind', 'https://deepmind.google/blog/rss.xml', 'deepmind.google'),
+    ('Google AI', 'https://blog.google/technology/ai/rss/', 'blog.google'),
+    ('Hugging Face', 'https://huggingface.co/blog/feed.xml', 'huggingface.co'),
 )
+STORY_SOURCES = (('The Verge', 'https://www.theverge.com/rss/index.xml', 'theverge.com'),)
+MATERIAL_SOURCES = AI_SOURCES + STORY_SOURCES
+NEW_SOURCE_NAMES = {row[0] for row in AI_SOURCES[2:] + STORY_SOURCES}
 
 
 def fetch_feed(url, attempts=1):
-    if url not in {r[1] for r in AI_SOURCES}:
+    if url not in {r[1] for r in MATERIAL_SOURCES}:
         raise ValueError('unapproved material feed')
     request = Request(url, headers={'User-Agent': 'WV-material-inbox/1.0', 'Accept': 'application/rss+xml,application/xml', 'Accept-Encoding': 'identity'})
     with urlopen(request, timeout=15) as response:
@@ -75,20 +80,28 @@ def public_url(url, host=None):
     return True
 
 
-def parse_ai_feed(xml, name, host):
+def parse_ai_feed(xml, name, host, *, ai=True, official=True):
     rows = []
-    for entry in ElementTree.fromstring(xml).findall('.//item')[:30]:
-        title, summary = entry.findtext('title') or '', entry.findtext('description') or ''
-        url, date = entry.findtext('link') or '', entry.findtext('pubDate') or ''
+    tree = ElementTree.fromstring(xml)
+    atom = '{http://www.w3.org/2005/Atom}'
+    entries = tree.findall('.//item') or tree.findall('.//'+atom+'entry')
+    for entry in entries[:30]:
+        title = entry.findtext('title') or entry.findtext(atom+'title') or ''
+        summary = entry.findtext('description') or entry.findtext(atom+'summary') or entry.findtext(atom+'content') or ''
+        url = entry.findtext('link') or ''
+        if not url:
+            link = next((x for x in entry.findall(atom+'link') if x.get('rel', 'alternate') == 'alternate'), None)
+            url = link.get('href', '') if link is not None else ''
+        date = entry.findtext('pubDate') or entry.findtext(atom+'published') or entry.findtext(atom+'updated') or ''
         try:
-            published = parsedate_to_datetime(date)
+            published = parsedate_to_datetime(date) if ',' in date else datetime.fromisoformat(date.replace('Z', '+00:00'))
             if published.tzinfo is None or not public_url(url, host):
                 continue
         except (TypeError, ValueError, OverflowError):
             continue
         rows.append({'id': sha256(url.encode()).hexdigest()[:24], 'title': clean(title, 300),
                      'summary': clean(summary, 800), 'url': url, 'published': published,
-                     'source': name, 'official': True, 'material_ai': True})
+                     'source': name, 'official': official, 'material_ai': ai})
     return rows
 
 
@@ -104,7 +117,7 @@ def topic(row):
         return 'security'
     if retrospective(row) or re.search(r'\b(?:weekly|monthly|daily) (?:recap|roundup|round-up|review)\b', title, re.I):
         return None
-    if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI model|AI research)\b', title, re.I):
+    if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI|LLMs?|GPT|Copilot|machine learning|generative|agentic)\b', title, re.I):
         return 'ai'
     key = (row.get('category') or {}).get('key') if isinstance(row.get('category'), dict) else row.get('category')
     if key in ('regulation', 'finance_policy') or re.search(r'\b(?:law|regulation|regulator|legislation|monetary policy)\b', title, re.I):
@@ -118,6 +131,8 @@ def topic(row):
         r'\b(?:bitcoin pizza|pizza day|solo miner|lottery miner|lost (?:bitcoin |crypto )?wallet|'
         r'dormant (?:bitcoin |crypto )?wallet|accidental(?:ly)?|mistaken(?:ly)?|'
         r'world record|guinness|meme culture|crypto wedding|bitcoin wedding|'
+        r'(?:robot|humanoid)\w* .{0,65}(?:dance|dances|cook|cooks|play|plays|learn|learns|paint|paints)|'
+        r'(?:weird|surprising|unexpected) .{0,65}(?:experiment|invention|discovery|technology)|'
         r'(?:buys?|bought|pays?|paid) .{0,65} (?:with|using|in) (?:bitcoin|crypto|btc)|'
         r'(?:cz|changpeng zhao|vitalik buterin|elon musk) (?:says?|said|reveals?|responds?|jokes?|shares?))\b',
         title, re.I):
@@ -215,7 +230,7 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         return 0
     box = state.get('material_inbox_v1')
     if box is None:
-        state['material_inbox_v1'] = {'started_at': now.isoformat(), 'items': [], 'source_status': []}
+        state['material_inbox_v1'] = {'started_at': now.isoformat(), 'items': [], 'source_status': [], 'source_started_at': {n: now.isoformat() for n in NEW_SOURCE_NAMES}}
         persist()
         return 0  # New feature starts now; do not replay old feed entries.
     from notification_quality import published_time
@@ -226,11 +241,17 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         raise ValueError('material start timestamp invalid')
     combined = list(rows)
     statuses = []
-    for name, url, host in AI_SOURCES:
+    for name, url, host in MATERIAL_SOURCES:
         try:
-            parsed = parse_ai_feed(fetch(url, attempts=1), name, host)
+            parsed = parse_ai_feed(fetch(url, attempts=1), name, host, ai=name not in {r[0] for r in STORY_SOURCES}, official=name not in {r[0] for r in STORY_SOURCES})
             if not parsed:
                 raise ValueError('empty official AI feed')
+            if name in NEW_SOURCE_NAMES:
+                source_starts = box.setdefault('source_started_at', {})
+                if not isinstance(source_starts, dict):
+                    raise ValueError('material source ledger invalid')
+                source_start = source_starts.setdefault(name, now.isoformat())
+                parsed = [r for r in parsed if r['published'] >= published_time(source_start)]
             combined.extend(parsed)
             statuses.append({'source': name, 'readable': True})
         except Exception as exc:

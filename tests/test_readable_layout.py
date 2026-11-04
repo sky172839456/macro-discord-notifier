@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 from notification_format import apply_delivery_format
-from notification_layout import readable_card, text_size, paragraphs, SPACER
+from notification_layout import readable_card, text_size, paragraphs, SPACER, DIVIDER
 import slim_preview
 import market_brief_v2 as brief
 
@@ -24,7 +24,7 @@ class ReadableLayoutTests(unittest.TestCase):
                 "timestamp":"2026-10-28T23:04:00+00:00"}
 
     def normalized(self,text):
-        return re.sub(r"\s+","",text.replace("\u200b",""))
+        return re.sub(r"\s+","",text.replace("\u200b","").replace(DIVIDER, ""))
 
     def test_real_delivery_keeps_every_fact_link_time_and_input_unchanged(self):
         row=self.row();original=copy.deepcopy(row)

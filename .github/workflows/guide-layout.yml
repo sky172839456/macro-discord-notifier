@@ -1,0 +1,37 @@
+name: Existing Guide Layout Maintenance
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        type: boolean
+        default: false
+      expected_head:
+        type: string
+        required: true
+      plan_hash:
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  guides:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require reviewed commit
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+        run: python -c "import os; assert os.environ['GITHUB_SHA'] == os.environ['EXPECTED_HEAD']"
+      - name: Audit or update four original pinned guides
+        env:
+          APPLY_GUIDE_LAYOUT: ${{ inputs.apply }}
+          EXPECTED_GUIDE_PLAN_HASH: ${{ inputs.plan_hash }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_CRYPTO_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
+          DISCORD_FINANCE_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_FINANCE_NEWS_WEBHOOK_URL }}
+          DISCORD_DAILY_SUMMARY_WEBHOOK_URL: ${{ secrets.DISCORD_DAILY_SUMMARY_WEBHOOK_URL }}
+        run: python guide_layout.py
