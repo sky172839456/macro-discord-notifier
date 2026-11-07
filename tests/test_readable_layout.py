@@ -35,7 +35,8 @@ class ReadableLayoutTests(unittest.TestCase):
         for a,b in zip(card["fields"],row["fields"]):
             self.assertEqual(self.normalized(a["value"]),self.normalized(b["value"]))
             self.assertFalse(a["inline"])
-        self.assertTrue(card["fields"][0]["value"].endswith(SPACER))
+        self.assertTrue(card["fields"][0]["value"].endswith("\n"+DIVIDER))
+        self.assertNotIn("\u200b",card["fields"][0]["value"])
         self.assertIn("### 本次數值\n\n本次",card["description"])
 
     def test_layout_is_idempotent(self):

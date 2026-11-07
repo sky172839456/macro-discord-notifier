@@ -2,13 +2,17 @@
 from __future__ import annotations
 import re
 
-SPACER = "\n\n\u200b"
+SPACER = ""
 DIVIDER = "──────────────"
 
 
 def section_end(value):
-    base = value[:-len(SPACER)] if value.endswith(SPACER) else value
-    return base + ("" if base.endswith(DIVIDER) else "\n\n"+DIVIDER) + SPACER
+    # Discord already separates embed fields. Do not stack invisible spacer rows
+    # on top of that native gap; also compact previously formatted candidates.
+    base = value.rstrip("\n\u200b ")
+    if base.endswith(DIVIDER):
+        base = base[:-len(DIVIDER)].rstrip("\n\u200b ")
+    return base + "\n" + DIVIDER
 
 
 def text_size(card):

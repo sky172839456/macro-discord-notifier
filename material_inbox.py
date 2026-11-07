@@ -120,6 +120,8 @@ def topic(row):
         return 'security'
     if retrospective(row) or re.search(r'\b(?:weekly|monthly|daily) (?:recap|roundup|round-up|review)\b', title, re.I):
         return None
+    if exchange_access_notice(title):
+        return 'policy' if re.search(r'\b(?:regulator|regulatory|regulation|compliance|law)\b', body, re.I) else 'business'
     if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI|LLMs?|GPT|Copilot|machine learning|generative|agentic)\b', title, re.I):
         return 'ai'
     key = (row.get('category') or {}).get('key') if isinstance(row.get('category'), dict) else row.get('category')
@@ -149,6 +151,14 @@ def topic(row):
         title, re.I):
         return 'interesting'
     return None
+
+
+def exchange_access_notice(title):
+    """Service-access changes are private research leads, never signup advice."""
+    exchange = r'\b(?:Binance|Bitget|Bitfinex|Bybit|OKX|Coinbase|Kraken|crypto exchanges?)\b'
+    access = r'\b(?:registrations?|sign.?ups?|onboarding|verification|KYC|services?|accounts?)\b'
+    change = r'\b(?:restrict\w*|unavailable|suspend\w*|halt\w*|stop\w*|resume\w*|eligibility|no longer|not available)\b'
+    return bool(re.search(exchange, title, re.I) and re.search(access, title, re.I) and re.search(change, title, re.I))
 
 
 
@@ -214,6 +224,9 @@ def equivalent(a, b):
 
 def card(row, now):
     label, why, formats, checks = ANGLES[row['material_topic']]
+    if exchange_access_notice(str(row.get('title', ''))):
+        why = '交易所註冊、驗證或服務資格變動，會影響讀者能否使用服務，適合整理適用對象與生效階段。'
+        checks += '\n核對交易所原始公告、更新日期、國籍／居住地條件、新戶／既有帳戶、產品及生效範圍；截圖與推薦連結只作線索，不寫成全面禁用，也不建議搶註冊、虛報資格或規避限制。'
     if row['material_topic'] in ('ai', 'innovation') and integration_topic(str(row.get('title', ''))):
         why = '報導涉及既有工具新增串接或自動化能力，可用更新前後的具體任務比較，說明多做了什麼、誰用得到。'
         formats = '限動說明新增能力；Reels對照原流程與串接流程；輪播整理用途、適用對象與使用條件。'
