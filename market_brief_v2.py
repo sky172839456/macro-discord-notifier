@@ -395,6 +395,32 @@ def review_lines(data):
     return '\n\n'.join(lines)
 
 
+def daily_top_three(data, market, events, now, event_error=None):
+    """Summarize only checked values; missing, stale and partial inputs stay explicit."""
+    prices = []
+    for symbol in ('BTC', 'ETH'):
+        row = (data.get('crypto') or {}).get(symbol) or (market or {}).get(symbol) or {}
+        if (number(row.get('price')) and number(row.get('change_24h', row.get('change')))
+                and (not row.get('source') or fresh(row.get('updated_at'), now, .5))):
+            prices.append(f'{symbol} {row["price"]:,.2f} {row.get("quote_currency", "USD")}（{signed(row.get("change_24h", row.get("change")))}）')
+        else:
+            prices.append(f'{symbol}價格或漲跌待確認')
+    flows = []
+    for key, symbol in (('etf', 'BTC'), ('eth_etf', 'ETH')):
+        row = data.get(key) or {}
+        date = row.get('date')
+        if not row.get('source_issue') and number(row.get('net_flow_musd')) and hasattr(date, 'strftime'):
+            partial = '（初值）' if row.get('partial') else ''
+            flows.append(f'{date:%m/%d} {symbol} {money_musd(row["net_flow_musd"])}{partial}')
+        else:
+            flows.append(f'{symbol} ETF資料待核對')
+    calendar = ('行事曆未完整確認，請查看下方來源狀態。' if event_error else
+                events_lines(events, now, None, False, budget=650).split('\n')[0])
+    return '\n'.join(('**先看三件事**', '01｜價格：'+'；'.join(prices),
+                      '02｜ETF：'+'；'.join(flows), '03｜行程：'+calendar,
+                      '各資料期間、來源與完整度見下方；不據此推論漲跌原因。'))
+
+
 def build_card(period, now, market, market_error, events, event_error, data):
     data = data or {}
     weekly = period == 'weekly'
@@ -411,6 +437,8 @@ def build_card(period, now, market, market_error, events, event_error, data):
     else:
         fields.append(field('📅 今日關注', events_lines(events, now, event_error, False, budget=650) + '\n\n**📌 市場觀察**\n' + '\n'.join('• ' + line for line in observations(data, False, now))))
     description = '用一週的變化做整理，再準備這週的行程。' if weekly else '價格、情緒、資金，一張掌握今天的市場狀態。'
+    if not weekly:
+        description += '\n\n' + daily_top_three(data, market, events, now, event_error)
     if data.get('errors') or market_error or any(
             row.get('error') or row.get('weekly_error')
             for key in ('crypto', 'weekly_crypto', 'derivatives', 'weekly_derivatives')
