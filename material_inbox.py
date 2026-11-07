@@ -24,8 +24,24 @@ AI_SOURCES = (
     ('Hugging Face', 'https://huggingface.co/blog/feed.xml', 'huggingface.co'),
 )
 STORY_SOURCES = (('The Verge', 'https://www.theverge.com/rss/index.xml', 'theverge.com'),)
-MATERIAL_SOURCES = AI_SOURCES + STORY_SOURCES
-NEW_SOURCE_NAMES = {row[0] for row in AI_SOURCES[2:] + STORY_SOURCES}
+RESEARCH_SOURCES = (
+    ('Microsoft Research', 'https://www.microsoft.com/en-us/research/feed/', 'microsoft.com'),
+    ('MIT AI', 'https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml', 'news.mit.edu'),
+    ('MIT Robotics', 'https://news.mit.edu/topic/mitrobotics-rss.xml', 'news.mit.edu'),
+)
+MATERIAL_SOURCES = AI_SOURCES + STORY_SOURCES + RESEARCH_SOURCES
+NEW_SOURCE_NAMES = {row[0] for row in AI_SOURCES[2:] + STORY_SOURCES + RESEARCH_SOURCES}
+
+
+def parse_source_feed(xml, name, host):
+    """Share source identity/classification between production and no-send checks."""
+    research = name in {r[0] for r in RESEARCH_SOURCES}
+    rows = parse_ai_feed(xml, name, host,
+                         ai=name in {r[0] for r in AI_SOURCES},
+                         official=name not in {r[0] for r in STORY_SOURCES})
+    for row in rows:
+        row['material_research'] = research
+    return rows
 
 
 def fetch_feed(url, attempts=1):
@@ -150,7 +166,7 @@ def topic(row):
         r'(?:cz|changpeng zhao|vitalik buterin|elon musk) (?:says?|said|reveals?|responds?|jokes?|shares?))\b',
         title, re.I):
         return 'interesting'
-    return None
+    return 'research' if row.get('material_research') else None
 
 
 def exchange_access_notice(title):
@@ -317,7 +333,7 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
     statuses = []
     for name, url, host in MATERIAL_SOURCES:
         try:
-            parsed = parse_ai_feed(fetch(url, attempts=1), name, host, ai=name not in {r[0] for r in STORY_SOURCES}, official=name not in {r[0] for r in STORY_SOURCES})
+            parsed = parse_source_feed(fetch(url, attempts=1), name, host)
             if not parsed:
                 raise ValueError('empty official AI feed')
             if name in NEW_SOURCE_NAMES:
