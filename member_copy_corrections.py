@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import re
+import time
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 CHANNEL = '1524973208745279660'
@@ -22,6 +24,30 @@ def editable(card):
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',',':')).encode()).hexdigest()
+
+def checked_request(base, method, suffix='', body=None, opener=urlopen, sleeper=time.sleep):
+    if method not in ('GET','PATCH') or (method == 'PATCH' and suffix.split('/')[-1] not in TARGETS):
+        raise ValueError('Only original target reads/patches are allowed')
+    req = Request(base+suffix, method=method, data=json.dumps(body).encode() if body is not None else None,
+                  headers={'Content-Type':'application/json','User-Agent':'WV-checked-copy-correction/1.0'})
+    for attempt in range(4):
+        try:
+            with opener(req, timeout=20) as response:
+                result = json.load(response)
+                if response.headers.get('X-RateLimit-Remaining') == '0':
+                    delay = float(response.headers.get('X-RateLimit-Reset-After', '0'))
+                    if not 0 <= delay <= 30:
+                        raise ValueError('Rate-limit wait exceeds maintenance bound')
+                    sleeper(delay + 0.1)
+                return result
+        except HTTPError as exc:
+            if exc.code != 429 or attempt == 3:
+                raise
+            data = json.load(exc)
+            delay = float(exc.headers.get('Retry-After') or data.get('retry_after', 0))
+            if not 0 < delay <= 30:
+                raise ValueError('Rate-limit wait exceeds maintenance bound') from None
+            sleeper(delay + 0.1)
 
 def corrected(message):
     mid = message['id']
@@ -76,12 +102,7 @@ def main():
     if not re.fullmatch(r'https://(?:discord\.com|discordapp\.com)/api/webhooks/\d+/[\w.-]+', base):
         raise ValueError('Unexpected configured webhook endpoint')
     def request(method, suffix='', body=None):
-        if method not in ('GET','PATCH') or (method == 'PATCH' and suffix.split('/')[-1] not in TARGETS):
-            raise ValueError('Only original target reads/patches are allowed')
-        req = Request(base+suffix, method=method, data=json.dumps(body).encode() if body is not None else None,
-                      headers={'Content-Type':'application/json','User-Agent':'WV-checked-copy-correction/1.0'})
-        with urlopen(req,timeout=20) as response:
-            return json.load(response)
+        return checked_request(base, method, suffix, body)
     meta = request('GET')
     if meta.get('channel_id') != CHANNEL or meta.get('guild_id') != '1524947809499877486':
         raise ValueError('Configured webhook has wrong destination')
