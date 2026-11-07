@@ -96,7 +96,7 @@ class QualityTests(unittest.TestCase):
     def test_news_time_marks_late_original_without_claiming_official(self):
         item = self.article('Exchange confirms withdrawals halted after breach')
         card = policy.news_card(item, now=self.now)
-        self.assertIn('補發', card['title'])
+        self.assertIn('延後整理', card['title'])
         self.assertIn('媒體報導', card['fields'][0]['value'])
         self.assertIn('來源發布時間', card['fields'][0]['value'])
 

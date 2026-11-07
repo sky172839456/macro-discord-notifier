@@ -1,0 +1,189 @@
+[
+  {
+    "id": "b64f3d1a08b2cf380abc41ae",
+    "title": "Greece approves 10% tax on crypto gains and 15% levy on DeFi income",
+    "summary": "Investors will have 12 months to declare past crypto gains without late-filing penalties, though questions remain over crypto-to-crypto swaps.",
+    "url": "https://www.coindesk.com/policy/2026/11/06/greece-approves-10-tax-on-crypto-gains-and-15-levy-on-defi-income",
+    "published": "2026-11-06T08:47:42+00:00",
+    "source": "CoinDesk",
+    "official": false,
+    "category": {
+      "key": "regulation",
+      "icon": "🏛️",
+      "label": "監管／政策",
+      "priority": "normal",
+      "keywords": [
+        "sec ",
+        "cftc",
+        "regulation",
+        "regulator",
+        "lawsuit",
+        "court",
+        "legislation",
+        "sanction",
+        "license",
+        "ban "
+      ]
+    }
+  },
+  {
+    "id": "83598ae89c8380964abea335",
+    "title": "Gate CEO says crypto exchanges must prove they can survive a hack like Binance’s",
+    "summary": "Lin Han says Gate holds enough assets in cold storage to cover customer balances even if its hot wallets are emptied. An independent audit is underway.",
+    "url": "https://www.coindesk.com/business/2026/11/05/gate-ceo-says-crypto-exchanges-must-prove-they-can-survive-a-hack-like-binance-s",
+    "published": "2026-11-05T14:21:50+00:00",
+    "source": "CoinDesk",
+    "official": false,
+    "category": {
+      "key": "market",
+      "icon": "💬",
+      "label": "市場觀點",
+      "priority": "normal"
+    }
+  },
+  {
+    "id": "4b8c618da93697d6918857c0",
+    "title": "Greece Passes Crypto Tax Law With 10% Gains Levy, 15% on Staking and DeFi",
+    "summary": "Greece has approved a crypto tax framework with a €500 ($557) annual gains threshold and new rules for staking and DeFi income, but lawmakers left important questions about token swaps unresolved.",
+    "url": "https://decrypt.co/382756/greece-passes-crypto-tax-law-staking-defi",
+    "published": "2026-11-06T20:36:03+00:00",
+    "source": "Decrypt",
+    "official": false,
+    "category": {
+      "key": "regulation",
+      "icon": "🏛️",
+      "label": "監管／政策",
+      "priority": "critical",
+      "keywords": [
+        "sec ",
+        "cftc",
+        "regulation",
+        "regulator",
+        "lawsuit",
+        "court",
+        "legislation",
+        "sanction",
+        "license",
+        "ban "
+      ]
+    }
+  },
+  {
+    "id": "a9ce8729e0c50aae8d4f166b",
+    "title": "Mercado Bitcoin Said Its Hack Was Contained, But Blockchain Data Tells a Different Story",
+    "summary": "Fresh forensic analysis traces $48.6 million across 11 blockchains and finds thousands of customer deposit addresses drained hours after the Brazilian exchange said it had stopped the breach on Monday.",
+    "url": "https://decrypt.co/382670/mercado-bitcoin-hack-contained-blockchain-data",
+    "published": "2026-11-05T20:16:03+00:00",
+    "source": "Decrypt",
+    "official": false,
+    "category": {
+      "key": "security",
+      "icon": "🚨",
+      "label": "資安事件",
+      "priority": "critical",
+      "keywords": [
+        "hack",
+        "hacked",
+        "exploit",
+        "breach",
+        "stolen",
+        "attack",
+        "vulnerability",
+        "drain",
+        "phishing"
+      ]
+    }
+  },
+  {
+    "id": "ce7eadf2ab88bc4712b8edc7",
+    "title": "Bitcoin Erases Election Rally as AI Stocks Plunge, $428 Million in Crypto Longs Get Wiped Out",
+    "summary": "Bitcoin plunged nearly 5% as AI stocks sank, Democratic midterm wins raised fresh policy questions, and forced liquidations erased a Wednesday rally that had been fueled partly by short covering.",
+    "url": "https://decrypt.co/382612/bitcoin-erases-election-rally-ai-stocks-plunge-428-million-crypto-longs",
+    "published": "2026-11-05T16:29:11+00:00",
+    "source": "Decrypt",
+    "official": false,
+    "category": {
+      "key": "market",
+      "icon": "📊",
+      "label": "市場結構",
+      "priority": "normal",
+      "keywords": [
+        "liquidation",
+        "whale",
+        "open interest",
+        "token unlock",
+        "market structure",
+        "funding rate"
+      ]
+    }
+  },
+  {
+    "id": "203ab92d6c2c48dde5be2d2d",
+    "title": "Binance hack is ‘cyber war,’ TRM Labs executive says",
+    "summary": "TRM Labs executive Ari Redbord called for governments to take offensive action against North Korean hackers following the record $6.3 billion Binance theft.",
+    "url": "https://cointelegraph.com/interview/trm-labs-binance-hack-interview",
+    "published": "2026-11-06T20:36:25+00:00",
+    "source": "Cointelegraph",
+    "official": false,
+    "category": {
+      "key": "market",
+      "icon": "💬",
+      "label": "市場觀點",
+      "priority": "normal"
+    }
+  },
+  {
+    "id": "feca5efd4475c7b6f45199be",
+    "title": "Bitcoin holds $75K as AI regulation fears see KOSPI halted after 8% crash",
+    "summary": "Bitcoin consolidated as fears over US AI regulation spread to Asia, causing South Korea to announce measures to calm stock-market volatility.",
+    "url": "https://cointelegraph.com/markets/bitcoin-holds-ai-regulation-fears-kospi-halted",
+    "published": "2026-11-06T11:16:53+00:00",
+    "source": "Cointelegraph",
+    "official": false,
+    "category": {
+      "key": "regulation",
+      "icon": "🏛️",
+      "label": "監管／政策",
+      "priority": "normal",
+      "keywords": [
+        "sec ",
+        "cftc",
+        "regulation",
+        "regulator",
+        "lawsuit",
+        "court",
+        "legislation",
+        "sanction",
+        "license",
+        "ban "
+      ]
+    }
+  },
+  {
+    "id": "f04ae926a2a648e23390f064",
+    "title": "Greece approves 10% tax on crypto gains starting in 2027",
+    "summary": "Greece has approved a 10% tax on cryptocurrency gains starting in 2027, with an exemption for investors whose annual net gains do not exceed 500 euros.",
+    "url": "https://cointelegraph.com/news/greece-approves-10-tax-crypto-gains-2027",
+    "published": "2026-11-06T11:05:36+00:00",
+    "source": "Cointelegraph",
+    "official": false,
+    "category": {
+      "key": "regulation",
+      "icon": "🏛️",
+      "label": "監管／政策",
+      "priority": "normal",
+      "keywords": [
+        "sec ",
+        "cftc",
+        "regulation",
+        "regulator",
+        "lawsuit",
+        "court",
+        "legislation",
+        "sanction",
+        "license",
+        "ban "
+      ]
+    }
+  }
+]

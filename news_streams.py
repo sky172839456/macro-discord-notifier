@@ -170,7 +170,10 @@ def run(now):
             r'\b(?:imposes? tariffs?|enacts?|announces? emergency|bank collapse|capital controls?|halts? withdrawals?)\b', row['title'], re.I)))
         if urgent and immediate_count < news.MAX_IMMEDIATE_PER_RUN:
             card = slim_policy.news_card(row, now=now)
-            card['title'] = ('【金融快訊】 ' if stream == 'finance' else '【重大快訊】 ') + card['title']
+            from notification_quality import time_copy
+            _, delayed = time_copy(row['published'], now)
+            prefix = ('【金融事件整理】 ' if stream == 'finance' else '【重大事件整理】 ') if delayed else ('【金融快訊】 ' if stream == 'finance' else '【重大快訊】 ')
+            card['title'] = prefix + card['title']
             if stream == 'finance':
                 # Ignore generic transmission copy still present in pending caches.
                 card.setdefault('fields', []).append({'name': '閱讀提示', 'value': FINANCE_READING_NOTE, 'inline': False})

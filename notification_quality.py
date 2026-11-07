@@ -148,7 +148,7 @@ def time_copy(published, observed, *, scheduled=False):
     minutes = max(0, int((observed - published).total_seconds() // 60))
     base = '官方排定時間' if scheduled else '來源發布時間'
     rows = [f'📅 {base}：{published.astimezone(TAIPEI):%Y/%m/%d %H:%M}',
-            f'🕒 機器人發現：{observed.astimezone(TAIPEI):%Y/%m/%d %H:%M}']
+            f'🕒 {"機器人發現" if scheduled else "本次整理時間"}：{observed.astimezone(TAIPEI):%Y/%m/%d %H:%M}']
     late = minutes >= DELAY_MINUTES
     if late:
         rows.append(f'⏳ 補發｜距{base}約{minutes}分鐘；請留意原始時間。')

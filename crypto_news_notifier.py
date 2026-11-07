@@ -345,6 +345,9 @@ def similar_title(left: str, right: str) -> bool:
 
 def same_news_event(left, right):
     if slim_policy.enabled():
+        from news_entry_audit import unverified_greece_variant
+        if unverified_greece_variant(left, right):
+            return False  # 未核對的新條件不能被一般標題相似度吞掉。
         import news_auto_recovery as auto
         if auto.enabled():
             from news_verified_context import same_verified_event, same_swiss_launch_version

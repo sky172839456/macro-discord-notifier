@@ -83,6 +83,10 @@ def category(text, categories):
     tax_policy = (re.search(r'\b(?:stablecoins?|crypto|cryptocurrency|digital assets?)\b', lowered)
                   and re.search(r'\b(?:tax|taxes|taxation)\b', lowered)
                   and re.search(r'\b(?:assembly|parliament|amendments?|proposals?|legislation|tax laws?|tax rules?)\b', lowered))
+    tax_policy = tax_policy or (re.search(r'\b(?:greece|greek)\b', lowered)
+                               and re.search(r'\b(?:approves?|approved|passes|passed)\b', lowered)
+                               and re.search(r'\b(?:crypto|cryptocurrency|defi)\b', lowered)
+                               and re.search(r'\b(?:tax|levy)\b', lowered))
     # 主題優先於公司名；Fidelity 的網路研究不等同 ETF 公告。
     network_research = (re.search(r'\b(?:report|research|study)\b', lowered)
                         and re.search(r'\b(?:mainnet outages?|network health|network resilience|stake concentration|client software)\b', lowered)
@@ -166,8 +170,11 @@ def news_card(item, test=False, now=None):
         fact += f"\n\n**{context[0]}**\n{context[1]}"
     local = item["published"].astimezone(TAIPEI)
     timing, late = time_copy(item['published'], now or item['published'])
+    urgent = material_news(item)
+    lead = ('⏳ 延後整理｜' if late else '🚨 快訊｜') if urgent else '📰 '
+    update = '來源更新｜' if item.get('source_update') else '延後整理｜' if late and not urgent else ''
     return {
-        "title": ("🧪 測試｜" if test else "") + ("🚨 快訊｜" if material_news(item) else "📰 ") + (f"{item['category'].get('label', '市場動態')}｜" if item.get('auto_copy_version') else '') + ("來源更新｜" if item.get('source_update') else "補發｜" if late else "") + headline,
+        "title": ("🧪 測試｜" if test else "") + lead + (f"{item['category'].get('label', '市場動態')}｜" if item.get('auto_copy_version') else '') + update + headline,
         "description": fact,
         "url": item["url"],
         "color": 0xE74C3C if material_news(item) else 0x3498DB,
@@ -246,6 +253,8 @@ def merge_pending(rows):
                 if digest_exclusion_reason(primary) and not digest_exclusion_reason(secondary):
                     primary, secondary = secondary, primary
             merged = dict(primary)
+            from news_entry_audit import merge_greece_context
+            merge_greece_context(primary, secondary, merged)
             merged['merged_ids'] = [key for key in dict.fromkeys(member_ids(primary) + member_ids(secondary)) if key != primary['id']]
             merged['event_context'] = list(dict.fromkeys([*primary.get('event_context', []), str(secondary.get('summary', '')), *secondary.get('event_context', [])]))[:12]
             refs, seen = [], {primary.get('url')}
