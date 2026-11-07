@@ -1,0 +1,34 @@
+name: Checked Member Copy Corrections
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        type: boolean
+        default: false
+      expected_head:
+        type: string
+        required: true
+      plan_hash:
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  corrections:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require reviewed commit
+        env:
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+        run: python -c "import os; assert os.environ['GITHUB_SHA'] == os.environ['EXPECTED_HEAD']"
+      - name: Audit or correct six checked original messages
+        env:
+          APPLY_CHECKED_COPY: ${{ inputs.apply }}
+          EXPECTED_COPY_PLAN_HASH: ${{ inputs.plan_hash }}
+          DISCORD_CRYPTO_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_CRYPTO_NEWS_WEBHOOK_URL }}
+        run: python member_copy_corrections.py

@@ -70,6 +70,9 @@ class EntryAuditNewsTests(unittest.TestCase):
         self.assertIn('期中選舉勝選', result)
         self.assertIn('空頭回補', result)
         self.assertEqual(quality.checked_translation('Students prepare for midterm exams', '學生準備期中考試'), '學生準備期中考試')
+        title = '1inch lawyer sees agencies driving US crypto regulation as midterms unfold'
+        self.assertIn('期中選舉', auto.checked_copy(title, '隨著期中考試的展開，1 英寸律師認為機構推動美國加密監管'))
+        self.assertNotIn('英寸', auto.checked_copy(title, '隨著期中考試的展開，1 英寸律師認為機構推動美國加密監管'))
 
     def test_hack_and_drained_addresses_are_not_a_hacker_or_data_leak(self):
         row = self.find('Mercado Bitcoin')
