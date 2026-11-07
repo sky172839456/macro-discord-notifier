@@ -9,7 +9,7 @@ def check():
     results = []
     for name, url, host in inbox.MATERIAL_SOURCES:
         try:
-            rows = inbox.parse_ai_feed(inbox.fetch_feed(url, attempts=1), name, host, ai=name not in {r[0] for r in inbox.STORY_SOURCES}, official=name not in {r[0] for r in inbox.STORY_SOURCES})
+            rows = inbox.parse_source_feed(inbox.fetch_feed(url, attempts=1), name, host)
             if not rows:
                 raise ValueError('empty official feed')
             results.append({'source': name, 'readable': True, 'parsed_entries': len(rows), 'latest_publication': max(r['published'] for r in rows).isoformat()})
