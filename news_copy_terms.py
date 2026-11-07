@@ -8,11 +8,13 @@ from decimal import Decimal
 
 def repair_translation(source, translated):
     if (re.search(r'\bmidterms?\b', source, re.I)
-            and re.search(r'\b(?:elections?|democratic|democrats?|republicans?|congress|senate)\b', source, re.I)
+            and re.search(r'\b(?:elections?|democratic|democrats?|republicans?|congress|senate|agencies|regulators?)\b', source, re.I)
             and not re.search(r'\b(?:exams?|semester|school|college)\b', source, re.I)):
         translated = translated.replace('中期考試', '期中選舉').replace('期中考試', '期中選舉')
         if re.search(r'\bmidterm wins\b', source, re.I):
             translated = translated.replace('中期勝利', '期中選舉勝選')
+    if re.search(r'\b1inch\b', source, re.I):
+        translated = translated.replace('1 英寸', '1inch').replace('1英寸', '1inch')
     if (re.search(r'\bBitcoin consolidated\b', source, re.I)
             and re.search(r'\b(?:price|market|volatility|trading|stock.market)\b', source, re.I)):
         for old in ('Bitcoin 得到了整合', 'Bitcoin得到了整合', '比特幣得到了整合', '比特幣進行整合'):
@@ -73,6 +75,10 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        '1inch lawyer sees agencies driving US crypto regulation as midterms unfold':
+            '期中選舉進行之際，1inch律師認為監管機關將主導美國加密規則制定',
+        "Bitcoin Shrugs Off Midterms as Experts Say Democratic Sweep Was 'Priced In'":
+            '比特幣淡化期中選舉影響；專家稱民主黨全面勝選已反映於價格',
         'Gate CEO says crypto exchanges must prove they can survive a hack like Binance’s':
             'Gate執行長：加密交易所應證明能承受類似幣安的駭客攻擊',
         'Binance hack is ‘cyber war,’ TRM Labs executive says':
