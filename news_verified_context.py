@@ -21,6 +21,9 @@ def core_policy_text(value):
 CFTC_EQUITY_REPORTS = (('CFTC Lets Traders Bet on Stocks With Crypto-Style Perpetual Futures', 'Chairman Michael Selig said “equity perpetual futures” can now trade on CFTC-registered exchanges, extending a crypto-native instrument to traditional stocks.'), ('CFTC clears stock perpetual futures for trading on US exchanges', 'US regulators are opening the door to stock-based perpetual futures, extending a popular crypto trading product into traditional markets amid ongoing legal disputes.'))
 
 def verified_key(row):
+    from news_entry_audit import checked_greece_report
+    if checked_greece_report(row) is not None:
+        return 'greece-crypto-tax-approval-20261106'
     title = norm(row.get("title", ""))
     body = norm(row.get("summary", ""))
     text = title + " " + body

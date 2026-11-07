@@ -7,6 +7,21 @@ from decimal import Decimal
 
 
 def repair_translation(source, translated):
+    if (re.search(r'\bmidterms?\b', source, re.I)
+            and re.search(r'\b(?:elections?|democratic|democrats?|republicans?|congress|senate)\b', source, re.I)
+            and not re.search(r'\b(?:exams?|semester|school|college)\b', source, re.I)):
+        translated = translated.replace('中期考試', '期中選舉').replace('期中考試', '期中選舉')
+        if re.search(r'\bmidterm wins\b', source, re.I):
+            translated = translated.replace('中期勝利', '期中選舉勝選')
+    if (re.search(r'\bBitcoin consolidated\b', source, re.I)
+            and re.search(r'\b(?:price|market|volatility|trading|stock.market)\b', source, re.I)):
+        for old in ('Bitcoin 得到了整合', 'Bitcoin得到了整合', '比特幣得到了整合', '比特幣進行整合'):
+            translated = translated.replace(old, '比特幣呈現盤整')
+    if re.search(r'\bshort covering\b', source, re.I):
+        translated = translated.replace('空頭補償', '空頭回補')
+    if (re.search(r'\bcold storage\b', source, re.I)
+            and re.search(r'\b(?:wallets?|crypto|assets|Gate)\b', source, re.I)):
+        translated = translated.replace('冷藏庫', '冷錢包儲存')
     # 已核對的 CFTC／CME 原文：perps 是永續合約，may 與未證明均須保留。
     from news_streak_guard import TITLE, COPY
     if source.strip() == TITLE:
@@ -58,6 +73,14 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        'Gate CEO says crypto exchanges must prove they can survive a hack like Binance’s':
+            'Gate執行長：加密交易所應證明能承受類似幣安的駭客攻擊',
+        'Binance hack is ‘cyber war,’ TRM Labs executive says':
+            'TRM Labs高管稱幣安駭侵事件是「網路戰」',
+        'Mercado Bitcoin Said Its Hack Was Contained, But Blockchain Data Tells a Different Story':
+            'Mercado Bitcoin稱駭侵事件已受控制，但鏈上數據顯示不同情況',
+        'Fresh forensic analysis traces $48.6 million across 11 blockchains and finds thousands of customer deposit addresses drained hours after the Brazilian exchange said it had stopped the breach on Monday.':
+            '最新鏈上鑑識追蹤了跨11條區塊鏈的4860萬美元資金，發現巴西交易所稱週一已控制入侵後數小時，仍有數千個客戶入金地址的資金遭轉走。',
         'Nothing teases a screen-free AI device ahead of launch next month':
             'Nothing 預告無螢幕 AI 裝置，預計下月推出',
         'Canton Coin Gets SEC Nod as Wall Street Tokenization Heats Up':

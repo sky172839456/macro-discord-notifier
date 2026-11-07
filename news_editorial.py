@@ -75,6 +75,9 @@ def commentary_only(item):
     opinion = re.search(
         r'^\s*(?:morning minute|opinion|commentary)\s*[:：]|'
         r'\bcalls?\b.{0,65}\b(?:bullish|bearish)\b|'
+        r'\b(?:ceo|executive)\s+says\b.{0,70}\bmust prove\b.{0,70}\bsurvive a hack\b|'
+        r'\bhack\s+is\b.{0,20}\bcyber war\b|'
+        r'\braises? questions\b.{0,50}\b(?:wallet|security|risk controls)\b|'
         r'\bwarns?\s+of\s+more\b.{0,50}\b(?:hacks?|attacks?)\b|'
         r'\basks?\b.{0,75}\bhow\b.{0,70}\b(?:hack|attack)\b.{0,25}\bwould\b',
         title, re.I)
@@ -414,6 +417,10 @@ def review_card(rows, now):
 
 def short_context(item):
     """Deterministic reading guidance, not generated investment conclusions."""
+    from news_entry_audit import greece_context
+    checked_tax = greece_context(item)
+    if checked_tax:
+        return checked_tax
     body = text(item)
     from news_policy_context import policy_context
     policy = policy_context(item)

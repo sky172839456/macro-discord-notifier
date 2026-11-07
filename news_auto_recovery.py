@@ -218,6 +218,11 @@ def same_article(left, right):
     if abs(published_time(left['published']) - published_time(right['published'])) > timedelta(hours=24):
         return False
     a, b = str(left.get('title', '')), str(right.get('title', ''))
+    if re.search(r'\b(?:greece|greek)\b', a+' '+b, re.I) and re.search(r'\b(?:tax|levy)\b', a+' '+b, re.I):
+        from news_editorial import dated_terms
+        full_a, full_b = a+' '+str(left.get('summary', '')), b+' '+str(right.get('summary', ''))
+        if any(extract(full_a) != extract(full_b) for extract in (measures, dated_terms, progress_terms, stage)):
+            return False
     from news_editorial import commentary_only, INCIDENT
     if (commentary_only(left) or commentary_only(right)) and re.search(INCIDENT, a+' '+b, re.I) and measures(a) != measures(b):
         return False  # 同URL的評論也可能更正數字；不可吞掉不同金額。
