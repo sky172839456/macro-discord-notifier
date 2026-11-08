@@ -56,6 +56,7 @@ jobs:
         if: inputs.audit_only == true
         run: |
           python material_inbox_check.py
+          python material_selection_check.py
           python exchange_market_check.py
           python source_quality_check.py
           python macro_scope_check.py

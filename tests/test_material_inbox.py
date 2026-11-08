@@ -93,7 +93,7 @@ class MaterialInboxTests(unittest.TestCase):
             'Elon Musk shares a crypto story',
             'CZ reveals why he bought a pizza',
         ]
-        rows = [self.row(t, url='https://example.com/story/'+str(i)) for i, t in enumerate(titles)]
+        rows = [self.row(t, summary=t+'. The documented experiment involved 100 users over 30 days and reports specific findings.', url='https://example.com/story/'+str(i)) for i, t in enumerate(titles)]
         with patch.object(inbox, 'equivalent', side_effect=lambda a,b: a['url'] == b['url']):
             self.assertEqual([self.run_box(rows) for _ in range(4)], [2, 2, 2, 0])
         self.assertEqual(self.send.call_count, 6)

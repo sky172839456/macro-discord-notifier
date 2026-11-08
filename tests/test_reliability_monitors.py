@@ -49,7 +49,7 @@ class ReliabilityMonitorTests(unittest.TestCase):
                 )
             send.assert_called_once()
             card = send.call_args.args[1]
-            self.assertIn("已啟用流程完成", card["title"])
+            self.assertIn("內容待核", card["title"])
             for name in realtime_health.MONITOR_LABELS:
                 self.assertIn(realtime_health.MONITOR_DISPLAY[name], card["description"])
 

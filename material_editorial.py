@@ -58,6 +58,12 @@ def editorial_angle(title, summary=''):
     synthetic = r'\b(?:AI|robot|agent|assistant|model|tool)\s+(?:is\s+)?(?:appointed|named|joins?|becomes?)\b'
     if _has(role, title) and _has(move, title) and not _has(synthetic, title):
         return 'people'
+    if (_has(r'\b(?:Democrats?|Republicans?|congress(?:ional)?|senators?|lawmakers?|Rep\.|parliament|election)\b', title)
+            and _has(r'\b(?:policy|ban|vot\w*|disclos\w*|bought|purchases?|trading|regulat\w*)\b', title+' '+summary)):
+        return 'politics'
+    if (_has(r'\b(?:small business|business owners?|entrepreneurs?|solo founders?|one.person business|startups?|start-ups?)\b', title)
+            and _has(r'\b(?:formation|no employees|finance|marketing|design|automat\w*|grow|founded|funding|raises?)\b', title+' '+summary)):
+        return 'startup'
     if _has(r'\b(?:AI|artificial intelligence)\b', title):
         if (_has(r'\b(?:recruitment|recruiters?|candidate screening|placement fees?)\b', title)
                 and _has(r'\b(?:speed\w*|screen\w*|reshap\w*|fees?|automat\w*)\b', title+' '+summary)):
@@ -119,12 +125,22 @@ def review(row, now, focus=None):
         hook = '這次高層異動是誰離開哪家公司、轉去哪裡，原文確認了哪些職責？'
         outline = '原任職位與公司 → 新公司、職位及已公布時間 → 已確認事實與尚未證實的策略影響分開'
         method = '做任職前後對照，不以跳槽推論公司前景、內幕或股價方向。'
+    elif angle == 'startup':
+        tasks = [label for pattern, label in ((r'\bfinance\b','財務'), (r'\bmarketing\b','行銷'), (r'\bdesign\b','設計')) if _has(pattern, summary)]
+        hook = ('原文中的創業者把'+ '、'.join(tasks) +'哪些工作交給AI，與不僱員工有何關係？') if tasks and _has(r'\bAI\b', value) and _has(r'no employees|no.employee|without employees', value) else '這則創業消息的新進展是什麼，原文提供了哪些營運或資金證據？'
+        outline = '創業者／公司與來源所述進展 → 已交代的工作做法或資金用途 → 規模、成本、資料期間與未說明的限制'
+        method = '用原文支持的工作分工或資金用途做圖解，不把成立數增加當獲利保證，也不宣稱AI能取代所有員工。'
+    elif angle == 'politics':
+        disclosure = _has(r'\b(?:disclos\w*|bought|purchases?)\b', value) and _has(r'\b(?:stocks?|shares?|trading)\b', value) and _has(r'\b(?:ban|restrictions?|limits?)\b', value)
+        hook = '議員的持股揭露與其支持的交易限制，時間、適用範圍和法律階段如何對照？' if disclosure else '這位政治人物提出或支持什麼變動，原文確認到了哪個政策階段？'
+        outline = '人物與原文已揭露事實 → 表決／提案／規則的時間與範圍 → 已生效規定、政治主張與待核指控分開'
+        method = '用時間線與規則範圍對照，不把支持禁令寫成禁令已生效，不由持股推定違法、內線或動機。'
     elif angle == 'recruiting':
-        hook = 'AI加快了招募的哪一步，為什麼招募服務費也受到討論？'
+        hook = 'AI加快了招募的哪一步，為什麼招募服務費也受到討論？' if _has(r'\bfees?\b', value) else 'AI介入了招募的哪個步驟，原文提供了什麼效率證據？'
         outline = '原文描述的篩選／招募流程 → AI介入的環節 → 招募業者對收費的說法及仍待驗證的影響'
         method = '用流程前後對照，效率、費用與當事人觀點分欄，不自行宣稱已取代招募人員。'
     elif angle == 'market':
-        hook = 'AI相關股價反彈，與來源提出的泡沫／融資疑慮，是同一件事嗎？'
+        hook = 'AI相關股價反彈，與來源提出的泡沫／融資疑慮，是同一件事嗎？' if _has(r'\b(?:bubble|financing|funding)\b',value) else '這次AI相關股價變動，原文提供了哪些時點、幅度與背景？'
         outline = '原文報價與時間 → 作者提出的風險及證據 → 哪些是行情事實、哪些仍是判斷'
         method = '做行情與風險的雙欄對照，不自行判定泡沫已破裂或行情將延續。'
     elif angle == 'research_review':

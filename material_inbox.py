@@ -126,6 +126,20 @@ def parse_ai_feed(xml, name, host, *, ai=True, official=True):
     return rows
 
 
+def collect_feed(xml, cfg, rows, audit=None):
+    """Collect raw private candidates before member relevance/budget gates."""
+    result = {'source': cfg['name']}
+    try:
+        host = (urlparse(cfg['url']).hostname or '').removeprefix('www.')
+        parsed = parse_ai_feed(xml, cfg['name'], host, ai=False, official=cfg['official'])
+        rows.extend(parsed)
+        result.update(parsed=len(parsed), error=None)
+    except Exception as exc:
+        result.update(parsed=0, error=type(exc).__name__)
+    if audit is not None:
+        audit.append(result)
+
+
 def topic(row):
     title = str(row.get('title', ''))
     body = title+' '+str(row.get('summary', ''))
@@ -146,17 +160,21 @@ def topic(row):
         return 'policy'
     from material_editorial import editorial_angle
     angle = editorial_angle(title, str(row.get('summary', '')))
-    if angle == 'people':
+    if angle in ('people', 'startup'):
         return 'business'
+    if angle == 'politics':
+        return 'policy'
     if angle in ('market', 'research_review', 'security_review'):
         return 'research'
     if angle == 'usage_review':
         return 'interesting'
-    if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI|LLMs?|GPT|Copilot|machine learning|generative|agentic)\b', title, re.I):
-        return 'ai'
     key = (row.get('category') or {}).get('key') if isinstance(row.get('category'), dict) else row.get('category')
     if key in ('regulation', 'finance_policy') or re.search(r'\b(?:law|regulation|regulator|legislation|monetary policy)\b', title, re.I):
         return 'policy'
+    if re.search(r'\b(?:partnership|partners with|acquir\w*|acquisition|merger)\b', title, re.I):
+        return 'business'
+    if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI|LLMs?|GPT|Copilot|machine learning|generative|agentic)\b', title, re.I):
+        return 'ai'
     if re.search(r'\bMCP\b', title, re.I) and re.search(r'\b(?:stocks?|shares?) (?:price|rises?|falls?|gains?|drops?|surges?|rallies?)\b', title, re.I):
         return None  # A ticker reaction is not an MCP connection update.
     capability = integration_topic(title)
@@ -266,6 +284,16 @@ def card(row, now):
         why = '這則是企業高層人事異動，可整理原任職與新職責、已公布時程，不當成新工具發布。'
         formats = '限動列已確認異動；輪播做原公司／新公司及職位對照。'
         checks = '核對原公司、新公司、姓名、職位、宣布與到任時間；未公布的離職動機、策略影響及股價方向不自行推測。'
+    elif angle == 'startup':
+        label = '企業／創業應用'
+        why = '聚焦創業者的營運做法、工作分工或資金進展，依原文細節評估能否做成實例。'
+        formats = '輪播拆解工作分工；Reels用原文案例說明做法與限制。'
+        checks = '核對公司／創業者、資料期間、樣本、實際工作、成本及收入證據；成立數、融資額不等於獲利。'
+    elif angle == 'politics':
+        label = '政治／公共治理'
+        why = '人物的政策立場與公開行為可作事實對照，重點是時間與規則階段，而非以AI字眼當新工具。'
+        formats = '輪播對照已揭露事實與政策時程；限動標清來源及仍待查證項目。'
+        checks = '核對人物身分、揭露文件與時間、提案／表決／生效階段；持股不直接代表違法或內線交易。'
     elif angle == 'recruiting':
         why = '這則聚焦AI在招募流程的應用與收費討論，可拆解改變了哪個工作環節，而不是泛稱AI更新。'
         formats = 'Reels圖解篩選流程；輪播區分效率、服務費及業者觀點。'
@@ -385,23 +413,42 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
                 source_start = source_starts.setdefault(name, now.isoformat())
                 parsed = [r for r in parsed if r['published'] >= published_time(source_start)]
             combined.extend(parsed)
-            statuses.append({'source': name, 'readable': True})
+            statuses.append({'source': name, 'readable': True, 'parsed': len(parsed)})
         except Exception as exc:
             statuses.append({'source': name, 'readable': False, 'reason': type(exc).__name__})
     box['source_status'] = statuses
     box['items'] = [r for r in box['items'] if published_time(r['published']) >= now-timedelta(days=30)]
+    decisions = []
+    from material_quality import selection, hint, card_issues
     for raw in combined:
+        evidence = {'key': key(raw), 'source': raw.get('source', ''), 'recall_hint': hint(raw)}
+        decisions.append(evidence)
         try:
             date = published_time(raw['published'])
             if date.tzinfo is None:
+                evidence['decision'] = 'invalid_source'
                 continue
         except (KeyError, ValueError, TypeError):
+            evidence['decision'] = 'invalid_source'
             continue
         selected = topic(raw)
-        if not selected or date < max(started, now-timedelta(hours=24)) or date > now+timedelta(minutes=5) or not public_url(raw.get('url')):
+        if date < max(started, now-timedelta(hours=24)) or date > now+timedelta(minutes=5):
+            evidence['decision'] = 'outside_window'
             continue
+        if not public_url(raw.get('url')):
+            evidence['decision'] = 'invalid_source'
+            continue
+        if not selected:
+            evidence['decision'] = 'no_topic'
+            continue
+        evidence['decision'] = 'accepted'
+
         old = next((r for r in box['items'] if equivalent(raw, r)), None)
         if old:
+            evidence['key'] = old.get('material_key', key(old))
+            if old.get('status') in ('queued', 'quality_hold') and old.get('url') == raw.get('url') and old.get('title') == raw.get('title'):
+                if raw.get('summary'):
+                    old['summary'] = raw['summary']
             refs = old.setdefault('related_sources', [])
             if raw['url'] != old['url'] and all(r['url'] != raw['url'] for r in refs) and len(refs) < 2:
                 refs.append({'source': raw.get('source', '來源'), 'url': raw['url']})
@@ -409,16 +456,35 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         row = {k: raw.get(k) for k in ('id', 'title', 'summary', 'url', 'source', 'official', 'title_zh', 'summary_zh_points', 'event_context') if raw.get(k) is not None}
         row.update(published=date.isoformat(), material_key=key(raw), material_topic=selected, status='queued', collected_at=now.isoformat())
         box['items'].append(row)
+    # Re-evaluate only unsent candidates; never reopen delivered/unknown items.
+    for item in box['items']:
+        if item.get('status') in ('queued', 'quality_hold'):
+            selected = topic(item)
+            if selected:
+                item['material_topic'] = selected
+            reason = selection(item, now) if selected else 'no_longer_relevant'
+            item['status'] = 'quality_hold' if reason else 'queued'
+            item['quality_hold_reason'] = reason
+    by_key = {r.get('material_key'):r for r in box['items']}
+    for evidence in decisions:
+        item = by_key.get(evidence['key'])
+        if evidence['decision']=='accepted' and item and item.get('status')=='quality_hold':
+            evidence.update(decision='quality_hold', reason=item.get('quality_hold_reason'))
+    box['selection_audit'] = {'version': 1, 'started_at': now.isoformat(), 'decisions': decisions}
     box['items'] = box['items'][-500:]
     persist()  # Outbox is durable before a send can fail.
     waiting = [r for r in box['items'] if r.get('status') == 'queued' and published_time(r['published']) >= now-timedelta(hours=24)]
     waiting.sort(key=lambda r: (urgent(r), r['published']), reverse=True)
     print(json.dumps({'material_diagnostics': {
         'eligible_queued': len(waiting),
+        'quality_held': sum(r.get('status') == 'quality_hold' for r in box['items']),
+        'raw_candidates': len(decisions),
         'delivery_unknown': sum(r.get('status') == 'delivery_unknown' for r in box['items']),
         'notified_retained': sum(r.get('status') == 'notified' for r in box['items']),
         'sources': statuses}}, ensure_ascii=True))
     if not waiting:
+        box['selection_audit']['completed_at'] = now.isoformat()
+        persist()
         return 0
     verify(webhook)
     count = 0
@@ -426,15 +492,25 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         if count >= 2:
             break  # Batch only; no daily quota. Remaining candidates wait for the next scan.
         if enrich:
-            # Title-only translation through the existing checked free provider.
-            # Do not invent Chinese summaries or consume a new paid AI service.
+            # Reuse the existing checked free provider; no generated facts or new paid API.
             try:
                 from notification_quality import checked_translation
                 row['title_zh'] = checked_translation(row['title'], enrich(row['title']))
+                if row.get('summary') and not row.get('summary_zh_points'):
+                    summary = clean(row['summary'], 430)
+                    row['summary_check_source'] = summary
+                    row['summary_zh_points'] = [checked_translation(summary, enrich(summary))]
             except Exception:
                 pass
         try:
-            message_id = send(webhook, card(row, now), 'WV素材整理｜私人選題')
+            rendered = card(row, now)
+            row['render_audit'] = {'checked_at': now.isoformat(), 'issues': card_issues(row, rendered)}
+            blockers = set(row['render_audit']['issues']) - {'translation_pending'}
+            if blockers:
+                row['status'], row['quality_hold_reason'] = 'quality_hold', 'render_quality'
+                persist()
+                continue
+            message_id = send(webhook, rendered, 'WV素材整理｜私人選題')
         except DeliveryUncertain:
             row['status'], row['delivery_checked_at'] = 'delivery_unknown', now.isoformat()
             persist()
@@ -445,4 +521,7 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         row['status'], row['notified_at'] = 'notified', now.isoformat()
         persist()  # A later failed send must not replay an already confirmed item.
         count += 1
+    box['selection_audit']['completed_at'] = now.isoformat()
+    box['selection_audit']['sent'] = count
+    persist()
     return count
