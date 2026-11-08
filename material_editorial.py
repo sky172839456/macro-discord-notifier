@@ -53,7 +53,15 @@ PLANS = {
 
 def editorial_angle(title, summary=''):
     """Match the kind of evidence, not every mention of AI to a tool release."""
+    role = r'\b(?:CEO|CFO|CTO|COO|chief (?:\w+ ){0,3}officer|executives?|presidents?|founders?)\b'
+    move = r'\b(?:leaves?|left|steps? down|resigns?|joins?|joined|appoints?|appointed|named|becomes?)\b'
+    synthetic = r'\b(?:AI|robot|agent|assistant|model|tool)\s+(?:is\s+)?(?:appointed|named|joins?|becomes?)\b'
+    if _has(role, title) and _has(move, title) and not _has(synthetic, title):
+        return 'people'
     if _has(r'\b(?:AI|artificial intelligence)\b', title):
+        if (_has(r'\b(?:recruitment|recruiters?|candidate screening|placement fees?)\b', title)
+                and _has(r'\b(?:speed\w*|screen\w*|reshap\w*|fees?|automat\w*)\b', title+' '+summary)):
+            return 'recruiting'
         if (_has(r'\b(?:stocks?|equities|trade)\b', title)
                 and _has(r'\b(?:bounce|rebound|rout|meltdown|selloff|sell-off|bubble|rall\w*|falls?|drops?)\b', title)):
             return 'market'
@@ -107,7 +115,15 @@ def review(row, now, focus=None):
     hook, outline, method = PLANS.get(plan_key, PLANS['research'])
     anchor = _text(focus or title, 135)
     angle = editorial_angle(title, summary)
-    if angle == 'market':
+    if angle == 'people':
+        hook = '這次高層異動是誰離開哪家公司、轉去哪裡，原文確認了哪些職責？'
+        outline = '原任職位與公司 → 新公司、職位及已公布時間 → 已確認事實與尚未證實的策略影響分開'
+        method = '做任職前後對照，不以跳槽推論公司前景、內幕或股價方向。'
+    elif angle == 'recruiting':
+        hook = 'AI加快了招募的哪一步，為什麼招募服務費也受到討論？'
+        outline = '原文描述的篩選／招募流程 → AI介入的環節 → 招募業者對收費的說法及仍待驗證的影響'
+        method = '用流程前後對照，效率、費用與當事人觀點分欄，不自行宣稱已取代招募人員。'
+    elif angle == 'market':
         hook = 'AI相關股價反彈，與來源提出的泡沫／融資疑慮，是同一件事嗎？'
         outline = '原文報價與時間 → 作者提出的風險及證據 → 哪些是行情事實、哪些仍是判斷'
         method = '做行情與風險的雙欄對照，不自行判定泡沫已破裂或行情將延續。'
