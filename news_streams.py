@@ -202,7 +202,7 @@ def run(now):
             selected = [r for r in retained if r['id'] not in seen and stream_for(r) == stream][:max(0, 5-len(progress['ids']))]
             for group in slim_policy.digest_groups(selected, now):
                 card = slim_policy.digest_card(group, now)
-                card['title'] = ('【金融新聞】 🌐 金融風向' if stream == 'finance' else '【加密新聞】 🪙 幣圈有事') + f'｜{local:%m/%d}'
+                card['title'] = ('【金融新聞】 🌐 全球錢線' if stream == 'finance' else '【加密新聞】 🪙 幣圈有事') + f'｜{local:%m/%d}'
                 if stream == 'finance':
                     # Article-specific facts stay in the checked title/summary;
                     # do not infer a crypto impact from the topic category.
