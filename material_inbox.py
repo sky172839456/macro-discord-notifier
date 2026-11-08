@@ -140,6 +140,10 @@ def topic(row):
         return None
     if exchange_access_notice(title):
         return 'policy' if re.search(r'\b(?:regulator|regulatory|regulation|compliance|law)\b', body, re.I) else 'business'
+    if (re.search(r'\b(?:U\.?S\.? Treasury|SEC|regulators?)\b', title, re.I)
+            and re.search(r'\b(?:crypto exchange|exchange)\b', title, re.I)
+            and re.search(r'\b(?:cut off|sanctions?|ban\w*|restrict\w*|charges?)\b', title, re.I)):
+        return 'policy'
     from material_editorial import editorial_angle
     angle = editorial_angle(title, str(row.get('summary', '')))
     if angle in ('market', 'research_review', 'security_review'):
@@ -180,8 +184,8 @@ def topic(row):
 def exchange_access_notice(title):
     """Service-access changes are private research leads, never signup advice."""
     exchange = r'\b(?:Binance|Bitget|Bitfinex|Bybit|OKX|Coinbase|Kraken|crypto exchanges?)\b'
-    access = r'\b(?:registrations?|sign.?ups?|onboarding|verification|KYC|services?|accounts?)\b'
-    change = r'\b(?:restrict\w*|unavailable|suspend\w*|halt\w*|stop\w*|resume\w*|eligibility|no longer|not available)\b'
+    access = r'\b(?:registrations?|sign.?ups?|onboarding|verification|KYC|services?|accounts?|withdrawals?)\b'
+    change = r'\b(?:restrict\w*|unavailable|suspend\w*|halt\w*|stop\w*|resume\w*|eligibility|no longer|not available|clos(?:e|es|ing)|pull crypto)\b'
     return bool(re.search(exchange, title, re.I) and re.search(access, title, re.I) and re.search(change, title, re.I))
 
 
