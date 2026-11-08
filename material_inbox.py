@@ -8,6 +8,7 @@ import gzip
 import io
 import os
 import re
+import html
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -84,6 +85,7 @@ ANGLES = {
 
 
 def clean(value, limit):
+    value = html.unescape(html.unescape(str(value)))
     value = re.sub(r'<[^>]*>', ' ', str(value))
     value = re.sub(r'[@`*\[\]<>]', '', value)
     return re.sub(r'\s+', ' ', value).strip()[:limit]
@@ -138,6 +140,12 @@ def topic(row):
         return None
     if exchange_access_notice(title):
         return 'policy' if re.search(r'\b(?:regulator|regulatory|regulation|compliance|law)\b', body, re.I) else 'business'
+    from material_editorial import editorial_angle
+    angle = editorial_angle(title, str(row.get('summary', '')))
+    if angle in ('market', 'research_review', 'security_review'):
+        return 'research'
+    if angle == 'usage_review':
+        return 'interesting'
     if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI|LLMs?|GPT|Copilot|machine learning|generative|agentic)\b', title, re.I):
         return 'ai'
     key = (row.get('category') or {}).get('key') if isinstance(row.get('category'), dict) else row.get('category')
@@ -239,7 +247,27 @@ def equivalent(a, b):
 
 
 def card(row, now):
+    # Reclassify only this unsent rendering, without reopening delivered history.
+    row = dict(row)
+    selected = topic(row)
+    from material_editorial import editorial_angle
+    if selected and row.get('material_topic') == 'ai' and editorial_angle(str(row.get('title', '')), str(row.get('summary', ''))):
+        row['material_topic'] = selected
     label, why, formats, checks = ANGLES[row['material_topic']]
+    from material_editorial import editorial_angle
+    angle = editorial_angle(str(row.get('title', '')), str(row.get('summary', '')))
+    if angle == 'market':
+        why = '這則是市場價格與風險討論，可拆解股價表現、融資壓力及來源觀點，不當成新工具發布。'
+        formats = '輪播對照行情、背景與證據；Reels解釋市場疑問，不把反彈當作風險解除。'
+        checks = '核對報價時間、統計期間與消息歸屬；泡沫疑問或受訪者判斷不是已證實結論。'
+    elif angle in ('research_review', 'security_review'):
+        why = '這則討論研究發現或專家觀點，適合拆解證據、方法與反例，不當成新功能上線。'
+        formats = '輪播區分原研究、受訪者說法及尚待驗證的部分。'
+        checks = '回查原報告、研究方法與受訪上下文；不把評論、研究警訊當成已發生的新攻擊。'
+    elif angle == 'usage_review':
+        why = '這則是生活使用經驗，適合以成功與出錯的對照帶出工具的能力邊界。'
+        formats = '限動提問；Reels比較同一工具的成功與失敗案例，明示為來源作者經驗。'
+        checks = '核對原作者測試條件與產品版本；個案經驗不等於所有人都會得到相同結果。'
     if exchange_access_notice(str(row.get('title', ''))):
         why = '交易所註冊、驗證或服務資格變動，會影響讀者能否使用服務，適合整理適用對象與生效階段。'
         checks += '\n核對交易所原始公告、更新日期、國籍／居住地條件、新戶／既有帳戶、產品及生效範圍；截圖與推薦連結只作線索，不寫成全面禁用，也不建議搶註冊、虛報資格或規避限制。'
@@ -371,6 +399,11 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
     persist()  # Outbox is durable before a send can fail.
     waiting = [r for r in box['items'] if r.get('status') == 'queued' and published_time(r['published']) >= now-timedelta(hours=24)]
     waiting.sort(key=lambda r: (urgent(r), r['published']), reverse=True)
+    print(json.dumps({'material_diagnostics': {
+        'eligible_queued': len(waiting),
+        'delivery_unknown': sum(r.get('status') == 'delivery_unknown' for r in box['items']),
+        'notified_retained': sum(r.get('status') == 'notified' for r in box['items']),
+        'sources': statuses}}, ensure_ascii=True))
     if not waiting:
         return 0
     verify(webhook)

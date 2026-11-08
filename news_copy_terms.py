@@ -75,6 +75,14 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        'Why a new report on Anthropic automating AI development is alarming researchers':
+            '為何一份關於 Anthropic 自動化 AI 開發的新報告，讓研究者感到憂心',
+        "AI broke the cybersecurity world. What's next?":
+            'AI 打亂了資安領域，接下來會如何發展？',
+        "NYT Cooking's AI assistant saved my weeknight chicken, but almost ruined my cake":
+            '《紐約時報》Cooking 的 AI 助手幫我搞定平日晚餐雞肉，卻差點毀了蛋糕',
+        'AI Chip Stocks Bounce After Global Rout—But Is the Bubble Starting to Burst?':
+            'AI 晶片股在全球市場重挫後反彈，但泡沫開始破裂了嗎？',
         '1inch lawyer sees agencies driving US crypto regulation as midterms unfold':
             '期中選舉進行之際，1inch律師認為監管機關將主導美國加密規則制定',
         "Bitcoin Shrugs Off Midterms as Experts Say Democratic Sweep Was 'Priced In'":

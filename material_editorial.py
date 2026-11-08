@@ -1,9 +1,11 @@
 """Source-bounded editorial first pass. Pure rules, no network or publication."""
 from datetime import datetime
 import re
+import html
 
 
 def _text(value, limit=150):
+    value = html.unescape(html.unescape(str(value or '')))
     value = re.sub(r'<[^>]*>', ' ', str(value or ''))
     value = re.sub(r'[@`*\[\]<>]', '', value)
     return re.sub(r'\s+', ' ', value).strip()[:limit]
@@ -49,6 +51,21 @@ PLANS = {
 }
 
 
+def editorial_angle(title, summary=''):
+    """Match the kind of evidence, not every mention of AI to a tool release."""
+    if _has(r'\b(?:AI|artificial intelligence)\b', title):
+        if (_has(r'\b(?:stocks?|equities|trade)\b', title)
+                and _has(r'\b(?:bounce|rebound|rout|meltdown|selloff|sell-off|bubble|rall\w*|falls?|drops?)\b', title)):
+            return 'market'
+        if _has(r'\b(?:report|study|research)\b', title) and _has(r'\b(?:researchers|alarming|findings|finds|investigation)\b', title+' '+summary):
+            return 'research_review'
+        if _has(r'\bcybersecurity\b', title) and _has(r'\b(?:talking with|episode|interview|expert)\b', summary):
+            return 'security_review'
+        if _has(r'\b(?:saved my|ruined my|my experience|I tried)\b', title):
+            return 'usage_review'
+    return None
+
+
 def review(row, now, focus=None):
     """Rank content-making potential, independently of source-verification status."""
     title, summary = _text(row.get('title'), 400), _text(row.get('summary'), 1000)
@@ -89,10 +106,27 @@ def review(row, now, focus=None):
     plan_key = 'connection' if connection and topic in ('ai', 'innovation') else topic
     hook, outline, method = PLANS.get(plan_key, PLANS['research'])
     anchor = _text(focus or title, 135)
+    angle = editorial_angle(title, summary)
+    if angle == 'market':
+        hook = 'AI相關股價反彈，與來源提出的泡沫／融資疑慮，是同一件事嗎？'
+        outline = '原文報價與時間 → 作者提出的風險及證據 → 哪些是行情事實、哪些仍是判斷'
+        method = '做行情與風險的雙欄對照，不自行判定泡沫已破裂或行情將延續。'
+    elif angle == 'research_review':
+        hook = 'AI協助開發AI的報告，究竟量到了什麼，研究者又在擔心什麼？' if _has(r'automat\w* AI development', title) else '這份AI研究的結論，能由哪些資料支持？'
+        outline = '原研究問題 → 測量方法與發現 → 限制、反例與評論者的疑慮'
+        method = '分開畫出研究觀察與推論，未回查原報告前不下定論。'
+    elif angle == 'security_review':
+        hook = 'AI改變了哪些資安攻防環節，哪些只是受訪者的預期？'
+        outline = '受訪者討論的攻防問題 → 提出的例子 → 建議、預測與已確認事件分開'
+        method = '做觀點與證據對照，不把訪談當成新入侵警報。'
+    elif angle == 'usage_review':
+        hook = '同一個料理AI為何能幫上晚餐，卻差點搞砸蛋糕？' if _has(r'\b(?:cooking|chicken|cake)\b', title) else '來源作者的AI使用經驗，哪些成功、哪些出錯？'
+        outline = '作者交給AI的任務 → 成功與出錯的環節 → 測試條件及不能類推的部分'
+        method = '用一成一敗講能力邊界，作者經驗與自行實測分開。'
     return {
         'stars': stars, 'display': '★'*stars+'☆'*(5-stars), 'label': labels[stars],
         'reason': '；'.join(reasons)+'。',
         'concept': f'**本則焦點**　{anchor}\n\n**切入問題**　{hook}\n\n**內容骨架**　{outline}\n\n**表現方式**　{method}',
         'basis': '依標題／摘要作規則初評；星等是製作優先度，高星不代表已完成查證。',
-        'version': 1,
+        'version': 2,
     }
