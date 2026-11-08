@@ -75,6 +75,10 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        'Meta chief strategy officer Dave Wehner leaves to join AI infrastructure startup Fireworks as CFO':
+            'Meta 策略長 Dave Wehner 離職，轉任 AI 基礎設施新創 Fireworks 財務長',
+        'AI is speeding up recruitment — and putting agency fees under pressure':
+            'AI 加快招募流程，招募服務費也面臨壓力',
         'Why a new report on Anthropic automating AI development is alarming researchers':
             '為何一份關於 Anthropic 自動化 AI 開發的新報告，讓研究者感到憂心',
         "AI broke the cybersecurity world. What's next?":

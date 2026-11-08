@@ -146,6 +146,8 @@ def topic(row):
         return 'policy'
     from material_editorial import editorial_angle
     angle = editorial_angle(title, str(row.get('summary', '')))
+    if angle == 'people':
+        return 'business'
     if angle in ('market', 'research_review', 'security_review'):
         return 'research'
     if angle == 'usage_review':
@@ -260,7 +262,15 @@ def card(row, now):
     label, why, formats, checks = ANGLES[row['material_topic']]
     from material_editorial import editorial_angle
     angle = editorial_angle(str(row.get('title', '')), str(row.get('summary', '')))
-    if angle == 'market':
+    if angle == 'people':
+        why = '這則是企業高層人事異動，可整理原任職與新職責、已公布時程，不當成新工具發布。'
+        formats = '限動列已確認異動；輪播做原公司／新公司及職位對照。'
+        checks = '核對原公司、新公司、姓名、職位、宣布與到任時間；未公布的離職動機、策略影響及股價方向不自行推測。'
+    elif angle == 'recruiting':
+        why = '這則聚焦AI在招募流程的應用與收費討論，可拆解改變了哪個工作環節，而不是泛稱AI更新。'
+        formats = 'Reels圖解篩選流程；輪播區分效率、服務費及業者觀點。'
+        checks = '核對測試或受訪對象、候選人篩選環節、費用口徑、資料權限及適用範圍；不把個別經驗當成整體就業結論。'
+    elif angle == 'market':
         why = '這則是市場價格與風險討論，可拆解股價表現、融資壓力及來源觀點，不當成新工具發布。'
         formats = '輪播對照行情、背景與證據；Reels解釋市場疑問，不把反彈當作風險解除。'
         checks = '核對報價時間、統計期間與消息歸屬；泡沫疑問或受訪者判斷不是已證實結論。'
