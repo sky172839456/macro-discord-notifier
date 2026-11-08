@@ -35,7 +35,8 @@ class HealthChannelSyncTests(unittest.TestCase):
         self.assertIn('已整併', card['description'])
         self.assertIn('已停用的獨立通知', card['description'])
         self.assertIn('獨立衍生品警報', card['description'])
-        self.assertNotIn('異常', card['title'])
+        self.assertIn('內容待核', card['title'])
+        self.assertEqual(card['color'], 0xF1C40F)
 
     def test_missing_failed_and_unconfigured_work_remain_visible(self):
         for status in ('missing', 'failed', 'skipped'):

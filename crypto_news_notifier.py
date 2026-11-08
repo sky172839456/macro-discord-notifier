@@ -480,11 +480,15 @@ def save_state(state: dict[str, Any]) -> None:
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def fetch_all() -> tuple[list[dict[str, Any]], list[tuple[str, int, str | None]]]:
+def fetch_all(material_rows=None, material_audit=None) -> tuple[list[dict[str, Any]], list[tuple[str, int, str | None]]]:
     items, statuses = [], []
     for source_config in SOURCES:
         try:
-            parsed = parse_feed(http_text(source_config["url"]), source_config)
+            xml = http_text(source_config["url"])
+            parsed = parse_feed(xml, source_config)
+            if material_rows is not None:
+                from material_inbox import collect_feed
+                collect_feed(xml, source_config, material_rows, material_audit)
             items.extend(parsed)
             statuses.append((source_config["name"], len(parsed), None))
         except Exception as exc:

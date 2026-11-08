@@ -67,7 +67,7 @@ def categories():
     return rows
 
 
-def fetch_finance(material_rows=None):
+def fetch_finance(material_rows=None, material_audit=None):
     import crypto_news_notifier as news
     rows, statuses = [], []
     for cfg in FINANCE_SOURCES:
@@ -79,13 +79,8 @@ def fetch_finance(material_rows=None):
             if material_rows is not None:
                 # Private topics have their own relevance gate; reuse this fetch,
                 # never feed these extra rows to the member news stream.
-                try:
-                    from urllib.parse import urlparse
-                    from material_inbox import parse_ai_feed
-                    host = (urlparse(cfg['url']).hostname or '').removeprefix('www.')
-                    material_rows.extend(parse_ai_feed(xml, cfg['name'], host, ai=False, official=cfg['official']))
-                except Exception as error:
-                    print(f'素材原文解析暫缺：{cfg["name"]} / {type(error).__name__}')
+                from material_inbox import collect_feed
+                collect_feed(xml, cfg, material_rows, material_audit)
         except Exception as error:
             statuses.append((cfg['name'], -1, type(error).__name__))
     return rows, statuses
@@ -112,9 +107,12 @@ def run(now):
     if not all(destinations.values()):
         raise RuntimeError('兩類新聞目的地尚未完整設定；未改送其他頻道')
     state = news.load_state()
-    rows, statuses = news.fetch_all()
-    finance_material = []
-    financial, finance_status = fetch_finance(material_rows=finance_material)
+    crypto_material, finance_material, material_parse_audit = [], [], []
+    rows, statuses = news.fetch_all(material_rows=crypto_material, material_audit=material_parse_audit)
+    financial, finance_status = fetch_finance(material_rows=finance_material, material_audit=material_parse_audit)
+    state['content_source_audit'] = {'checked_at': now.isoformat(), 'raw_material_finance': len(finance_material), 'raw_material_crypto': len(crypto_material),
+        'private_parsers': material_parse_audit,
+        'sources': [{'source': n, 'count': c, 'error': e} for n, c, e in statuses + finance_status]}
     state['finance_source_status'] = [{'source': n, 'count': c, 'error': e} for n, c, e in finance_status]
     if not any(c >= 0 for _, c, _ in finance_status):
         print('警告：本輪金融新聞來源皆暫缺；不宣稱沒有金融事件。')
@@ -140,7 +138,7 @@ def run(now):
     # Private editorial inbox is independent of member gates, budgets and seen.
     try:
         import material_inbox
-        material_inbox.run(all_rows + finance_material, state, now, fetch=material_inbox.fetch_feed, send=material_inbox.send_card,
+        material_inbox.run(all_rows + finance_material + crypto_material, state, now, fetch=material_inbox.fetch_feed, send=material_inbox.send_card,
                            persist=lambda: news.save_state(state), enrich=news.translate_title)
     except Exception as exc:
         print(f'素材整理暫未完成（{type(exc).__name__}）；未改送成員，原新聞流程繼續。')

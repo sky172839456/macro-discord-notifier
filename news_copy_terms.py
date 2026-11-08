@@ -75,6 +75,11 @@ def repair_translation(source, translated):
 
     # 已核對的完整來源定稿；日期、語氣、角色及資格一變，不套固定譯文。
     exact_copy = {
+        "America's newest small business owners with no employees are off to a hot start in AI era":
+            'AI時代，不僱員工的新一批美國小企業主起步熱絡',
+        'Democrat shaping AI policy bought chip stocks despite backing congressional trading ban':
+            '參與制定AI政策的民主黨議員，雖支持國會交易禁令，仍買進晶片股',
+
         'Meta chief strategy officer Dave Wehner leaves to join AI infrastructure startup Fireworks as CFO':
             'Meta 策略長 Dave Wehner 離職，轉任 AI 基礎設施新創 Fireworks 財務長',
         'AI is speeding up recruitment — and putting agency fees under pressure':

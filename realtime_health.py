@@ -141,6 +141,13 @@ def daily_health_embed(
     if disabled:
         lines.append("**⏸️ 已停用的獨立通知**\n" + "、".join(disabled))
 
+    audit = state.get('content_audit') or {'warnings': ['尚無來源與內容對帳證據'], 'metrics': {}, 'scope': '待核對'}
+    content_pending = bool(audit['warnings'])
+    metrics = audit['metrics']
+    content_field = {'name': '🔎 漏收與內容品質（自動規則）', 'inline': False,
+        'value': (f"本輪原始候選 {metrics.get('raw','待核')}｜低價值暫留 {metrics.get('held','待核')}｜排除 {metrics.get('excluded','待核')}\n"
+                  f"待送 {metrics.get('queued','待核')}｜送達不明 {metrics.get('unknown','待核')}｜近24小時已送 {metrics.get('delivered24h','待核')}\n"
+                  + ('\n'.join('⚠️ '+v for v in audit['warnings']) if content_pending else '本輪來源、候選對帳與已保存卡面規則未發現異常；不等於完整語意驗收。') + '\n'+audit['scope'])[:1024]}
     gap = state.get("last_gap_minutes")
     gap_text = f"{gap} 分鐘" if isinstance(gap, int) else "首次建立基準"
     title = (
@@ -148,13 +155,15 @@ def daily_health_embed(
         if failures
         else f"🟡 每日執行巡檢｜{skipped} 個監控未設定"
         if skipped
-        else "🟢 每日執行巡檢｜已啟用流程完成"
+        else "🟡 每日執行巡檢｜流程完成，內容待核" if content_pending
+        else "🟢 每日執行巡檢｜流程與內容規則檢查完成"
     )
     return {
         "title": title,
         "description": "\n".join(lines),
-        "color": 0xF1C40F if failures or skipped else 0x2ECC71,
+        "color": 0xF1C40F if failures or skipped or content_pending else 0x2ECC71,
         "fields": [
+            content_field,
             {"name": "最近排程間隔", "value": gap_text, "inline": True},
             {
                 "name": "延遲判定",
@@ -222,6 +231,13 @@ def finish(
     path: Path = STATE_FILE,
 ) -> bool:
     state = load_state(path)
+    from material_quality import inspect
+    news_state = load_state(Path(os.getenv('CRYPTO_NEWS_STATE_FILE', '.state/crypto-news.json')))
+    try:
+        state['content_audit'] = inspect(news_state, now)
+    except (ValueError, TypeError, KeyError, AttributeError):
+        state['content_audit'] = {'warnings': ['來源／內容證據格式無法判讀，需核對'], 'metrics': {}, 'scope': '未完成內容檢查，不標為正常。'}
+    print(json.dumps({'content_quality_audit': state['content_audit']}, ensure_ascii=True))
     state["last_completed_at"] = now.isoformat()
     state["last_results"] = {
         name: {"status": status, "detail": detail}
