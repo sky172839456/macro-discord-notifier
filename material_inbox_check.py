@@ -15,6 +15,9 @@ def check():
             results.append({'source': name, 'readable': True, 'parsed_entries': len(rows), 'latest_publication': max(r['published'] for r in rows).isoformat()})
         except Exception as exc:
             results.append({'source': name, 'readable': False, 'reason': type(exc).__name__})
+    from datetime import datetime, timezone
+    from official_material_sources import probe
+    results.extend(probe(datetime.now(timezone.utc)))
     print(json.dumps({'read_only': True, 'discord_sends': 0, 'production_state_access': False, 'material_sources': results}, ensure_ascii=False))
     return 0 if all(r['readable'] for r in results) else 1
 

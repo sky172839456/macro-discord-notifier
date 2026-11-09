@@ -23,6 +23,8 @@ AI_SOURCES = (
     ('Google DeepMind', 'https://deepmind.google/blog/rss.xml', 'deepmind.google'),
     ('Google AI', 'https://blog.google/technology/ai/rss/', 'blog.google'),
     ('Hugging Face', 'https://huggingface.co/blog/feed.xml', 'huggingface.co'),
+    ('Claude Platform Updates', 'https://platform.claude.com/docs/en/release-notes/feed.xml', 'platform.claude.com'),
+    ('Claude Code Releases', 'https://github.com/anthropics/claude-code/releases.atom', 'github.com'),
 )
 STORY_SOURCES = (('The Verge', 'https://www.theverge.com/rss/index.xml', 'theverge.com'),)
 RESEARCH_SOURCES = (
@@ -42,10 +44,17 @@ def parse_source_feed(xml, name, host):
                          official=name not in {r[0] for r in STORY_SOURCES})
     for row in rows:
         row['material_research'] = research
+    if name == 'Claude Code Releases':
+        rows = [r for r in rows if r['url'].startswith('https://github.com/anthropics/claude-code/releases/tag/')]
+        for row in rows:
+            row['title'] = 'Claude Code '+row['title']
     return rows
 
 
 def fetch_feed(url, attempts=1):
+    from official_material_sources import allowed, fetch
+    if allowed(url):
+        return fetch(url, attempts=attempts)
     if url not in {r[1] for r in MATERIAL_SOURCES}:
         raise ValueError('unapproved material feed')
     request = Request(url, headers={'User-Agent': 'WV-material-inbox/1.0', 'Accept': 'application/rss+xml,application/xml', 'Accept-Encoding': 'identity'})
@@ -121,7 +130,7 @@ def parse_ai_feed(xml, name, host, *, ai=True, official=True):
         except (TypeError, ValueError, OverflowError):
             continue
         rows.append({'id': sha256(url.encode()).hexdigest()[:24], 'title': clean(title, 300),
-                     'summary': clean(summary, 800), 'url': url, 'published': published,
+                     'summary': clean(summary, 6000 if name in ('Claude Platform Updates', 'Claude Code Releases') else 800), 'url': url, 'published': published,
                      'source': name, 'official': official, 'material_ai': ai})
     return rows
 
@@ -143,7 +152,8 @@ def collect_feed(xml, cfg, rows, audit=None):
 def topic(row):
     title = str(row.get('title', ''))
     body = title+' '+str(row.get('summary', ''))
-    if re.search(r'\b(?:sponsored|presale|giveaway|airdrop|price prediction|stocks? to buy|hiring|webinar|podcast|live updates?)\b', title, re.I):
+    from official_material_sources import promotional_title
+    if promotional_title(title) or re.search(r'\b(?:sponsored|presale|giveaway|airdrop|price prediction|stocks? to buy|hiring|webinar|podcast|live updates?)\b', title, re.I):
         return None
     from news_editorial import safety_candidate, retrospective, verified_security_explainer
     if verified_security_explainer(row):
@@ -183,6 +193,8 @@ def topic(row):
     capability = integration_topic(title)
     if capability:
         return capability
+    if row.get('source') == 'TradingView Blog' and re.search(r'\b(?:adds?|now|new|introduc\w*|support\w*|available|updates?)\b', title, re.I):
+        return 'innovation'  # Product updates still require concrete source detail.
     if re.search(r'\b(?:study|research|paper|report finds|researchers)\b', title, re.I):
         return 'research'
     if innovation_candidate(title):
@@ -428,6 +440,10 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         except Exception as exc:
             statuses.append({'source': name, 'readable': False, 'reason': type(exc).__name__})
     box['source_status'] = statuses
+    from official_material_sources import collect
+    official_rows, official_statuses = collect(now, box.setdefault('official_sources_v1', {}), fetch=fetch)
+    combined.extend(official_rows)
+    statuses.extend(official_statuses)
     box['items'] = [r for r in box['items'] if published_time(r['published']) >= now-timedelta(days=30)]
     decisions = []
     from material_quality import selection, hint, card_issues, VERSION

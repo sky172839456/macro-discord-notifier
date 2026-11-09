@@ -23,7 +23,8 @@ class MaterialExpansion(unittest.TestCase):
         state={'seen':{'public':'kept'},'material_inbox_v1':{'started_at':(now-timedelta(days=1)).isoformat(),'items':[]}}
         def feed(url,attempts=1):
             host=next(h for n,u,h in m.MATERIAL_SOURCES if u==url)
-            return '<rss><channel><item><title>AI drawing tool</title><description>Draws pictures.</description><link>https://'+host+'/one</link><pubDate>Wed, 04 Nov 2026 07:50:00 GMT</pubDate></item></channel></rss>'
+            path='/anthropics/claude-code/releases/tag/v1' if host=='github.com' else '/one'
+            return '<rss><channel><item><title>AI drawing tool</title><description>Draws pictures.</description><link>https://'+host+path+'</link><pubDate>Wed, 04 Nov 2026 07:50:00 GMT</pubDate></item></channel></rss>'
         with patch.dict(os.environ,{'MATERIAL_INBOX_ENABLED':'1','DISCORD_MATERIAL_WEBHOOK_URL':'https://discord.com/api/webhooks/123/TEST'}):
             m.run([],state,now,fetch=feed,send=Mock(return_value='123'),persist=Mock(),verify=Mock())
         self.assertEqual(set(state['material_inbox_v1']['source_started_at']),m.NEW_SOURCE_NAMES)
