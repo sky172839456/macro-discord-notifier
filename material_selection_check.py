@@ -33,6 +33,19 @@ def check():
             return {'source':name,'error':type(exc).__name__}
     with ThreadPoolExecutor(max_workers=4) as pool:
         result=list(pool.map(read,sources))
+    from official_material_sources import collect, SOURCES
+    # Isolated empty baselines allow a historical diagnostic sample, never sends.
+    ledger={s['name']:{'started_at':(now-timedelta(hours=24)).isoformat(),'known':[], 'pending':[], 'cache':[]} for s in SOURCES}
+    rows,statuses=collect(now,ledger,fetch=m.fetch_feed)
+    for status in statuses:
+        values=[]
+        for row in rows:
+            if row['source']!=status['source']: continue
+            kind=m.topic(row)
+            row['material_topic']=kind
+            values.append({'title':row['title'],'source':row['source'],'topic':kind,'stars':review(row,now)['stars'],
+                'hold':selection(row,now) if kind else 'no_topic','value_evidence':assess(row)['details'],'url':row['url']})
+        result.append(dict(status,candidates=values,diagnostic_sample_only=True))
     print(json.dumps({'read_only':True,'discord_sends':0,'production_state_access':False,'sources':result},ensure_ascii=False))
 
 if __name__=='__main__':

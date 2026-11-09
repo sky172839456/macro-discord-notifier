@@ -34,7 +34,9 @@ TASK_NAMES = ((r'\bwatchlists?\b','觀察清單'), (r'\balerts?\b','提醒'),
 
 
 def assess(row):
-    title, summary = _text(row.get('title'),400), _text(row.get('summary'),1000)
+    # Bounded official bodies may put eligibility/permissions after the lead.
+    # Read those actual details; do not reduce the usefulness requirements.
+    title, summary = _text(row.get('title'),400), _text(row.get('summary'),6000)
     body = title+' '+summary
     kind = row.get('material_topic')
     details = [name for name, pattern in DETAILS.items() if has(pattern, summary)]

@@ -74,6 +74,10 @@ def inspect(state, now):
         unreadable = sum(not r.get('readable') for r in box.get('source_status', []))
         if unreadable or not box.get('source_status'):
             warnings.append(f'素材來源讀取待核：{unreadable}個失敗' if unreadable else '素材來源狀態缺漏')
+        pending_details = sum(r.get('detail_pending',0) for r in box.get('source_status',[]))
+        metrics['official_detail_pending'] = pending_details
+        if pending_details:
+            warnings.append(f'官方素材正文尚待讀取：{pending_details}筆（不以標題代替正文）')
     items = box.get('items', [])
     metrics['queued'] = sum(r.get('status')=='queued' for r in items)
     metrics['unknown'] = sum(r.get('status')=='delivery_unknown' for r in items)
