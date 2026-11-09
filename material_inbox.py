@@ -173,6 +173,9 @@ def topic(row):
         return 'policy'
     if re.search(r'\b(?:partnership|partners with|acquir\w*|acquisition|merger)\b', title, re.I):
         return 'business'
+    from material_share_value import activity_kind
+    if activity_kind(title):
+        return 'business'
     if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI|LLMs?|GPT|Copilot|machine learning|generative|agentic)\b', title, re.I):
         return 'ai'
     if re.search(r'\bMCP\b', title, re.I) and re.search(r'\b(?:stocks?|shares?) (?:price|rises?|falls?|gains?|drops?|surges?|rallies?)\b', title, re.I):
@@ -310,6 +313,14 @@ def card(row, now):
         why = '這則是生活使用經驗，適合以成功與出錯的對照帶出工具的能力邊界。'
         formats = '限動提問；Reels比較同一工具的成功與失敗案例，明示為來源作者經驗。'
         checks = '核對原作者測試條件與產品版本；個案經驗不等於所有人都會得到相同結果。'
+    from material_share_value import assess, value_copy, activity_kind
+    value_result = assess(row)
+    if value_result['eligible']:
+        why = value_copy(value_result)
+    if activity_kind(str(row.get('title',''))):
+        label = '活動／產品條件'
+        formats = '輪播拆解產品、資格、時程與資金限制；限動附原始公告及截止時間。'
+        checks = '核對實際產品是Launchpool、IPO認購或代幣化權益，不能混稱；確認發行方、標的關係、地區／資格、費用、資金限制與風險，不承諾配發或收益。'
     if exchange_access_notice(str(row.get('title', ''))):
         why = '交易所註冊、驗證或服務資格變動，會影響讀者能否使用服務，適合整理適用對象與生效階段。'
         checks += '\n核對交易所原始公告、更新日期、國籍／居住地條件、新戶／既有帳戶、產品及生效範圍；截圖與推薦連結只作線索，不寫成全面禁用，也不建議搶註冊、虛報資格或規避限制。'
@@ -419,7 +430,7 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
     box['source_status'] = statuses
     box['items'] = [r for r in box['items'] if published_time(r['published']) >= now-timedelta(days=30)]
     decisions = []
-    from material_quality import selection, hint, card_issues
+    from material_quality import selection, hint, card_issues, VERSION
     for raw in combined:
         evidence = {'key': key(raw), 'source': raw.get('source', ''), 'recall_hint': hint(raw)}
         decisions.append(evidence)
@@ -470,7 +481,7 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         item = by_key.get(evidence['key'])
         if evidence['decision']=='accepted' and item and item.get('status')=='quality_hold':
             evidence.update(decision='quality_hold', reason=item.get('quality_hold_reason'))
-    box['selection_audit'] = {'version': 1, 'started_at': now.isoformat(), 'decisions': decisions}
+    box['selection_audit'] = {'version': VERSION, 'started_at': now.isoformat(), 'decisions': decisions}
     box['items'] = box['items'][-500:]
     persist()  # Outbox is durable before a send can fail.
     waiting = [r for r in box['items'] if r.get('status') == 'queued' and published_time(r['published']) >= now-timedelta(hours=24)]
@@ -504,7 +515,7 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
                 pass
         try:
             rendered = card(row, now)
-            row['render_audit'] = {'checked_at': now.isoformat(), 'issues': card_issues(row, rendered)}
+            row['render_audit'] = {'checked_at': now.isoformat(), 'issues': card_issues(row, rendered), 'curation_version': VERSION}
             blockers = set(row['render_audit']['issues']) - {'translation_pending'}
             if blockers:
                 row['status'], row['quality_hold_reason'] = 'quality_hold', 'render_quality'

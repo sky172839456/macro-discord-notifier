@@ -6,6 +6,7 @@ import crypto_news_notifier as news
 import material_inbox as m
 from material_quality import selection
 from material_editorial import review
+from material_share_value import assess
 from news_streams import FINANCE_SOURCES
 
 
@@ -26,7 +27,7 @@ def check():
                 if not kind: continue
                 row['material_topic']=kind
                 values.append({'title':row['title'],'source':name,'topic':kind,'stars':review(row,now)['stars'],
-                    'hold':selection(row,now),'url':row['url']})
+                    'hold':selection(row,now),'value_evidence':assess(row)['details'],'url':row['url']})
             return {'source':name,'parsed':len(rows),'current':len(current),'candidates':values}
         except Exception as exc:
             return {'source':name,'error':type(exc).__name__}

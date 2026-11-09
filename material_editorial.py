@@ -155,6 +155,15 @@ def review(row, now, focus=None):
         hook = '同一個料理AI為何能幫上晚餐，卻差點搞砸蛋糕？' if _has(r'\b(?:cooking|chicken|cake)\b', title) else '來源作者的AI使用經驗，哪些成功、哪些出錯？'
         outline = '作者交給AI的任務 → 成功與出錯的環節 → 測試條件及不能類推的部分'
         method = '用一成一敗講能力邊界，作者經驗與自行實測分開。'
+    from material_share_value import activity_kind, assess
+    if activity_kind(title):
+        hook = '這個活動的標的究竟是什麼，資格、時程與資金限制怎麼影響參加？'
+        outline = '原文所述產品與發行關係 → 資格、投入資產、時程與費用 → 配發方式、資金限制及風險'
+        method = '做條件表與時間線；Launchpool、IPO認購和代幣化權益分清，不把公司名稱當官方背書或保證收益。'
+    elif plan_key=='connection':
+        tasks=assess(row)['tasks']
+        if tasks:
+            hook='這次串接能對'+ '、'.join(tasks) +'做哪些操作，適用方案與權限有哪些限制？'
     return {
         'stars': stars, 'display': '★'*stars+'☆'*(5-stars), 'label': labels[stars],
         'reason': '；'.join(reasons)+'。',
