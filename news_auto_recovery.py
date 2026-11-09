@@ -32,6 +32,8 @@ def checked_copy(source, translated):
     if re.search(r'\bhave until\b.+\bto (?:buy|sell|trade)\b', source, re.I):
         translated = translated.replace('必須在', '仍可在')
     result = checked_translation(source, translated)
+    from news_copy_terms import validate_identifiers
+    validate_identifiers(source,result)
     if not numeric_values(source).issubset(numeric_values(result)):
         raise ValueError('translation dropped numeric facts')
     from news_streak_guard import validate

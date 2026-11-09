@@ -85,7 +85,9 @@ def review(row, now, focus=None):
     title, summary = _text(row.get('title'), 400), _text(row.get('summary'), 1000)
     value = title + ' ' + summary
     topic = row.get('material_topic', '')
-    connection = _has(r'\b(?:MCP|Model Context Protocol|connectors?|plugins?|plug-ins?|automated workflows?|automation|integrat\w*)\b', value)
+    from material_source_copy import new_connection, release_features
+    release = release_features(row)
+    connection = new_connection(title, summary) and not release
     novelty = 2 if _has(r'\b(?:new|first|unveil\w*|introduc\w*|releas\w*|launch\w*|adds?|now supports?|approv\w*|enact\w*|confirms?|hack(?:ed)?|discovers?|breakthrough)\b', title) else 0
     useful = 2 if connection or _has(r'\b(?:how to|users?|customers?|workflow|fees?|costs?|access|withdrawals?|affected|security|privacy|open.source|can use)\b', value) else 1 if topic in ('ai', 'innovation', 'policy', 'research', 'business', 'security') else 0
     curiosity = 2 if _has(r'\b(?:world record|guinness|first.ever|unexpected|surprising|lost wallet|dormant|accidental\w*|breakthrough|million|billion)\b', value) else 1 if connection or topic == 'interesting' or _has(r'\b(?:robots?|humanoids?|flying cars?|prototypes?|experiments?)\b', value) else 0
@@ -156,7 +158,12 @@ def review(row, now, focus=None):
         outline = '作者交給AI的任務 → 成功與出錯的環節 → 測試條件及不能類推的部分'
         method = '用一成一敗講能力邊界，作者經驗與自行實測分開。'
     from material_share_value import activity_kind, assess
-    if activity_kind(title):
+    if release:
+        features = [label for key,label in (('model','模型與預設選擇'),('settings','--settings 與 claude remote-control 設定檔'),('fixes','安全與相容性修補')) if release[key]]
+        hook = '這次版本更新的'+ '、'.join(features or ['實際變更']) +'各改了什麼，誰需要更新？'
+        outline = '版本與發布時間 → 原文新增功能、模型條件及費用 → 修補項目、影響範圍與使用限制分開'
+        method = '做新增／修補對照；命令與產品名保留原文，不將修補MCP問題說成新增串接，也不把版本公告當已自行實測。'
+    elif activity_kind(title):
         hook = '這個活動的標的究竟是什麼，資格、時程與資金限制怎麼影響參加？'
         outline = '原文所述產品與發行關係 → 資格、投入資產、時程與費用 → 配發方式、資金限制及風險'
         method = '做條件表與時間線；Launchpool、IPO認購和代幣化權益分清，不把公司名稱當官方背書或保證收益。'
