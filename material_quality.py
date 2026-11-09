@@ -9,6 +9,9 @@ VERSION = 2
 
 def selection(row, now):
     """All private categories must supply a reader takeaway and source detail."""
+    from material_source_copy import RELEASE_SOURCES, excerpt_parts
+    if row.get('source') in RELEASE_SOURCES and not excerpt_parts(row):
+        return 'complete_excerpt_unavailable'
     from material_share_value import assess
     return assess(row)['reason']
 

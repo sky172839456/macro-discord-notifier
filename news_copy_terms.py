@@ -7,6 +7,34 @@ from decimal import Decimal
 
 
 def repair_translation(source, translated):
+    # Product-only release titles are not prose: retain the actual name/version.
+    version = re.fullmatch(r'Claude Code\s+(v\d+\.\d+\.\d+(?:[-.][A-Za-z0-9]+)*)',source.strip())
+    if version:
+        translated_versions = re.findall(r'v\d+\.\d+\.\d+(?:[-.][A-Za-z0-9]+)*',translated)
+        if translated_versions != [version[1]]:
+            raise ValueError('release version identity changed or missing')
+        translated = 'Claude Code 版本更新 '+version[1]
+    elif re.search(r'\bClaude Code\b',source):
+        translated = re.sub(r'Claude\s*(?:代碼|代码|程式碼)', 'Claude Code', translated)
+    if re.search(r'\bClaude Fable\b',source) and re.search(r'claude-fable-|\bmodel\b',source,re.I):
+        translated = re.sub(r'克勞德\s*寓言|Claude\s*寓言','Claude Fable',translated)
+        translated = translated.replace('默認寓言模型','預設 Fable 模型').replace('預設寓言模型','預設 Fable 模型')
+    if re.search(r'\bclaude remote-control\b',source,re.I):
+        translated = re.sub(r'claude\s*(?:遙控器|遥控器|遠端控制|远程控制)', 'claude remote-control', translated,flags=re.I)
+    if re.match(r'^Added --settings\s+〈file〉 to claude remote-control,',source):
+        if re.search(r'--settings\s*〈[^〉]+〉.{0,8}claude remote-control',translated,re.I):
+            translated = re.sub(r'^.*?claude remote-control\s*[，,]?',
+                'claude remote-control 新增 --settings〈file〉參數，',translated,count=1,flags=re.I)
+    quantity = re.search(r'(?<![\w$])([\d,]+(?:\.\d+)?)\s+NEAR\b',source)
+    if quantity:
+        translated = re.sub(re.escape(quantity[1])+r'\s*(?:附近|接近)',quantity[1]+'枚 NEAR',translated)
+        from notification_quality import numeric_values
+        if numeric_values(quantity[1]) & numeric_values(translated) and not re.search(r'\bNEAR\b',translated):
+            raise ValueError('NEAR token denomination missing')
+    if re.search(r'\bpre-hack balances?\b',source,re.I):
+        translated = translated.replace('預先破解餘額','遭駭前的餘額').replace('破解前的餘額','遭駭前的餘額')
+    if source.strip() == 'Binance Hack Launderers Mint Elon Musk and Animal Meme Coins to Move Stolen Crypto':
+        translated = '幣安失竊資金洗錢者鑄造Elon Musk與動物主題迷因幣，轉移被盜加密資產'
     if (re.search(r'\bmidterms?\b', source, re.I)
             and re.search(r'\b(?:elections?|democratic|democrats?|republicans?|congress|senate|agencies|regulators?)\b', source, re.I)
             and not re.search(r'\b(?:exams?|semester|school|college)\b', source, re.I)):
@@ -238,3 +266,20 @@ def repair_translation(source, translated):
             display = format(amount, 'f').rstrip('0').rstrip('.') if '.' in format(amount, 'f') else str(amount)
             translated = re.sub(r'\b' + re.escape(number) + r'M\s+CYS\b', display + '萬枚 CYS', translated, flags=re.I)
     return translated
+
+
+def validate_identifiers(source,translated):
+    """Full segment validation, not a requirement on each partial display point."""
+    if re.search(r'\bClaude Code\b',source) and not re.search(r'(?<![A-Za-z])Claude Code(?![A-Za-z])',translated):
+        raise ValueError('Claude Code product identity missing')
+    if re.search(r'\bClaude Fable\b',source) and not re.search(r'(?<![A-Za-z])Claude Fable(?![A-Za-z])',translated):
+        raise ValueError('Claude Fable model identity missing')
+    if re.search(r'\bclaude remote-control\b',source,re.I) and not re.search(r'(?<![A-Za-z])claude remote-control(?![A-Za-z])',translated,re.I):
+        raise ValueError('CLI command identity missing')
+    for flag in re.findall(r'(?<!\w)--[a-z][a-z-]*\b',source):
+        if flag not in translated:
+            raise ValueError('CLI option identity missing')
+    if re.search(r'--settings\s+〈file〉',source) and not re.search(r'--settings\s*〈file〉',translated):
+        raise ValueError('CLI argument syntax missing')
+    if re.search(r'\bpre-hack balances?\b',source,re.I) and not re.search(r'(?:遭駭|駭客攻擊|被駭|遭入侵)前.{0,8}餘額',translated):
+        raise ValueError('pre-hack balance meaning missing')

@@ -129,9 +129,13 @@ def parse_ai_feed(xml, name, host, *, ai=True, official=True):
                 continue
         except (TypeError, ValueError, OverflowError):
             continue
-        rows.append({'id': sha256(url.encode()).hexdigest()[:24], 'title': clean(title, 300),
+        row = {'id': sha256(url.encode()).hexdigest()[:24], 'title': clean(title, 300),
                      'summary': clean(summary, 6000 if name in ('Claude Platform Updates', 'Claude Code Releases') else 800), 'url': url, 'published': published,
-                     'source': name, 'official': official, 'material_ai': ai})
+                     'source': name, 'official': official, 'material_ai': ai}
+        from material_source_copy import RELEASE_SOURCES, release_parts
+        if name in RELEASE_SOURCES:
+            row['summary_parts'] = release_parts(summary)
+        rows.append(row)
     return rows
 
 
@@ -347,7 +351,8 @@ def card(row, now):
     except ValueError:
         title = f'{label}候選｜原文標題待中文核對'
     points = chinese_points(row)
-    facts = '\n'.join('• '+clean(p, 190) for p in points[:2]) if points else clean(row.get('summary') or row['title'], 430)
+    from material_source_copy import excerpt_parts, display_points
+    facts = display_points(points or excerpt_parts(row))
     from material_editorial import review
     editorial = review(row, now, focus=title if '原文標題待中文核對' not in title else row['title'])
     status = ('官方自行公布；效能、適用範圍與發布階段仍須讀原文核對。' if row['material_topic'] == 'ai' and row.get('official') else
@@ -476,11 +481,13 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
             if old.get('status') in ('queued', 'quality_hold') and old.get('url') == raw.get('url') and old.get('title') == raw.get('title'):
                 if raw.get('summary'):
                     old['summary'] = raw['summary']
+                if raw.get('summary_parts'):
+                    old['summary_parts'] = raw['summary_parts']
             refs = old.setdefault('related_sources', [])
             if raw['url'] != old['url'] and all(r['url'] != raw['url'] for r in refs) and len(refs) < 2:
                 refs.append({'source': raw.get('source', '來源'), 'url': raw['url']})
             continue
-        row = {k: raw.get(k) for k in ('id', 'title', 'summary', 'url', 'source', 'official', 'title_zh', 'summary_zh_points', 'event_context') if raw.get(k) is not None}
+        row = {k: raw.get(k) for k in ('id', 'title', 'summary', 'summary_parts', 'url', 'source', 'official', 'title_zh', 'summary_zh_points', 'event_context') if raw.get(k) is not None}
         row.update(published=date.isoformat(), material_key=key(raw), material_topic=selected, status='queued', collected_at=now.isoformat())
         box['items'].append(row)
     # Re-evaluate only unsent candidates; never reopen delivered/unknown items.
@@ -522,11 +529,20 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
             # Reuse the existing checked free provider; no generated facts or new paid API.
             try:
                 from notification_quality import checked_translation
-                row['title_zh'] = checked_translation(row['title'], enrich(row['title']))
-                if row.get('summary') and not row.get('summary_zh_points'):
-                    summary = clean(row['summary'], 430)
-                    row['summary_check_source'] = summary
-                    row['summary_zh_points'] = [checked_translation(summary, enrich(summary))]
+                from material_source_copy import release_title
+                row['title_zh'] = checked_translation(row['title'], release_title(row) or enrich(row['title']))
+                from material_source_copy import excerpt_parts, VERSION
+                from news_auto_recovery import checked_copy
+                if row.get('material_copy_version') != VERSION:
+                    row['summary_zh_points'] = []
+                    parts = excerpt_parts(row)
+                    row['summary_check_source'] = '\n'.join(parts)
+                    for part in parts:
+                        try:
+                            row['summary_zh_points'].append(checked_copy(part, enrich(part)))
+                        except Exception:
+                            continue
+                    row['material_copy_version'] = VERSION
             except Exception:
                 pass
         try:

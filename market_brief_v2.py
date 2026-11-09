@@ -361,18 +361,24 @@ def news_review(path, now):
     start = now - timedelta(days=7)
     selected = []
     from crypto_news_notifier import same_news_event
+    from news_checked_episodes import same_recap_episode
     for row in sorted(state.get('weekly_journal', []), key=lambda r: (news_score(r), str(r.get('published', ''))), reverse=True):
         time = instant(row.get('published'))
         if not time or not start <= time <= now or not str(row.get('url', '')).startswith('https://'):
             continue
         title = headline(row)
-        if '中文標題待確認' in title or any(same_news_event(row, prior) for prior in selected):
+        if '中文標題待確認' in title:
             continue
-        selected.append(row)
-        if len(selected) == 3:
-            break
+        previous = next((prior for prior in selected if same_news_event(row, prior) or same_recap_episode(row,prior)),None)
+        if previous:
+            if row['url']!=previous['url']:
+                refs=previous.setdefault('recap_related_sources',[])
+                if all(r['url']!=row['url'] for r in refs) and len(refs)<2:
+                    refs.append({'source':row['source'],'url':row['url'],'published':row['published']})
+            continue
+        selected.append({**row,'recap_related_sources':[dict(ref) for ref in row.get('recap_related_sources',[])]})
     since = instant(state.get('weekly_journal_started_at'))
-    return {'items': selected, 'complete_window': bool(since and since <= start)}
+    return {'items': selected[:3], 'complete_window': bool(since and since <= start)}
 
 
 def review_lines(data):
@@ -383,6 +389,10 @@ def review_lines(data):
         points = chinese_points(row)
         detail = ('\n' + points[0][:120]) if points else ''
         part = f'**{i+1:02d}｜{title}**{detail}\n{stamp(row["published"])}｜[{str(row["source"])[:50]}]({row["url"]})'
+        for ref in row.get('recap_related_sources',[])[:2]:
+            related=f'\n同事件其他報導｜[{str(ref["source"])[:50]}]({ref["url"]})'
+            if len('\n\n'.join(lines+[part+related]))<=850:
+                part+=related
         if len('\n\n'.join(lines + [part])) > 850:
             part = f'**{i+1:02d}｜{title}**\n[{str(row["source"])[:50]}]({row["url"]})'
         if len('\n\n'.join(lines + [part])) <= 850:
