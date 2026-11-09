@@ -27,6 +27,10 @@ SOURCES = tuple(
 MAX_DETAILS = 6
 
 
+def promotional_title(title):
+    return bool(re.search(r'\b(?:word of the day|WOTD|quiz|learn (?:and|&) earn|trade to win|trading competition|referral challenge)\b',title,re.I))
+
+
 def allowed(url):
     p = urlparse(url)
     if p.scheme != 'https' or p.username or p.password or p.port or p.fragment:
@@ -253,7 +257,7 @@ def collect(now, ledger, *, fetch=fetch, sources=SOURCES, max_details=MAX_DETAIL
         state=ledger.setdefault(source['name'],{})
         if not isinstance(state,dict):
             raise ValueError('official source cache invalid')
-        status={'source':source['name'],'readable':not error,'parsed':len(rows),'detail_pending':0}
+        status={'source':source['name'],'readable':not error,'parsed':len(rows),'detail_pending':0,'excluded_promotions':0}
         statuses.append(status)
         if error:
             status['reason']=error
@@ -267,7 +271,10 @@ def collect(now, ledger, *, fetch=fetch, sources=SOURCES, max_details=MAX_DETAIL
         known=set(state['known'])|{r['url'] for r in state['pending']}
         for item in rows:
             if item['url'] not in known:
-                if item.get('published') and stamp(item['published'])<max(stamp(state['started_at']),now-timedelta(hours=24)):
+                if promotional_title(item['title']):
+                    state['known'].append(item['url'])
+                    status['excluded_promotions']+=1
+                elif item.get('published') and stamp(item['published'])<max(stamp(state['started_at']),now-timedelta(hours=24)):
                     state['known'].append(item['url'])
                 else:
                     state['pending'].append(dict(item,discovered_at=now.isoformat()))
@@ -275,13 +282,16 @@ def collect(now, ledger, *, fetch=fetch, sources=SOURCES, max_details=MAX_DETAIL
         state['pending']=[r for r in state['pending'] if stamp(r['discovered_at'])>=now-timedelta(hours=24)]
         state['cache']=[r for r in state['cache'] if stamp(r['published'])>=now-timedelta(hours=24)]
         available=[r for r in state['pending'] if not r.get('retry_at') or stamp(r['retry_at'])<=now]
+        available.sort(key=lambda r:stamp(r.get('published') or r.get('created') or r['discovered_at']),reverse=True)
         tasks.append((source,state,status,available))
     # Round-robin: one busy exchange cannot consume every detail read.
+    tasks.sort(key=lambda task:task[1].get('last_detail_at',''))
     chosen=[]
     for i in range(max_details):
         for source,state,status,available in tasks:
             if i<len(available) and len(chosen)<max_details:
                 chosen.append((source,state,status,available[i]))
+                state['last_detail_at']=now.isoformat()
     def detail(task):
         source,state,status,item=task
         url=BN+'detail/query?articleCode='+item['url'].rsplit('/',1)[-1] if source['kind']=='binance' else item['url']

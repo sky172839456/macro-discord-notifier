@@ -152,7 +152,8 @@ def collect_feed(xml, cfg, rows, audit=None):
 def topic(row):
     title = str(row.get('title', ''))
     body = title+' '+str(row.get('summary', ''))
-    if re.search(r'\b(?:sponsored|presale|giveaway|airdrop|price prediction|stocks? to buy|hiring|webinar|podcast|live updates?|word of the day|WOTD|quiz|learn (?:and|&) earn|trade to win|trading competition|referral challenge)\b', title, re.I):
+    from official_material_sources import promotional_title
+    if promotional_title(title) or re.search(r'\b(?:sponsored|presale|giveaway|airdrop|price prediction|stocks? to buy|hiring|webinar|podcast|live updates?)\b', title, re.I):
         return None
     from news_editorial import safety_candidate, retrospective, verified_security_explainer
     if verified_security_explainer(row):

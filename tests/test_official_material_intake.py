@@ -66,6 +66,19 @@ class OfficialIntake(unittest.TestCase):
         fetch=Mock(side_effect=lambda url,**k:self.index()+self.index(extra) if url==self.tv['url'] else self.detail())
         rows,status=o.collect(self.now,self.state(),fetch=fetch,sources=[self.tv],max_details=1)
         self.assertEqual(len(rows),1);self.assertEqual(status[0]['detail_pending'],1);self.assertEqual(fetch.call_count,2)
+    def test_busy_sources_cannot_permanently_starve_the_last_source(self):
+        sources=[dict(self.tv,name='Source '+str(i)) for i in range(7)]
+        ledger={s['name']:{'started_at':(self.now-timedelta(hours=1)).isoformat(),'known':[], 'pending':[], 'cache':[]} for s in sources}
+        fetch=Mock(side_effect=lambda url,**k:self.index()+self.index('https://www.tradingview.com/blog/en/another-456/') if url==self.tv['url'] else self.detail())
+        _,first=o.collect(self.now,ledger,fetch=fetch,sources=sources)
+        self.assertEqual(first[-1]['cached'],0)
+        _,second=o.collect(self.now+timedelta(minutes=5),ledger,fetch=fetch,sources=sources)
+        self.assertEqual(second[-1]['cached'],1)
+    def test_promotional_game_does_not_use_new_announcement_detail_budget(self):
+        fetch=Mock(return_value=self.index(title='Word of the Day: Choose Your Binance AI'))
+        rows,status=o.collect(self.now,self.state(),fetch=fetch,sources=[self.tv])
+        self.assertEqual(rows,[]);fetch.assert_called_once();self.assertEqual(status[0]['excluded_promotions'],1)
+        self.assertEqual(status[0]['detail_pending'],0)
     def test_empty_login_wrong_title_missing_date_and_date_modified_fail_closed(self):
         item={'url':self.url,'title':self.title,'published':None}
         for raw in (self.detail(title='Sign in'),self.detail().replace('article:published_time','article:modified_time'),'<h1>'+self.title+'</h1>',self.detail(body='tiny')):
