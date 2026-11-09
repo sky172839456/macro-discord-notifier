@@ -29,3 +29,9 @@
 `python material_selection_check.py`：全部來源試篩；新索引正文採最多6篇診斷樣本，保留pending／錯誤數與diagnostic_sample_only標記，不能把樣本當全量驗收。不發送、不寫正式來源基準或seen。
 
 測試fixture是虛構資料；歷史TV MCP文章只能驗證解析與條件判斷，不列為今天新內容或補發。合併及自然採版、未來自然新卡送達與內容品質分開記錄。
+
+## Census完整驗收相容性修正
+
+2026-11-09同址對照重現：原HTTP_HEADERS的Referer帶到Census零售頁時404，僅移除Referer後200且同篇官方標題／日期／季調數值可讀。Census首頁仍連至原sales.html，原文和官方PDF均有2026-10-15發布、2026/09本次+0.8%／2026/08修訂後+1.3%，不屬已確認網址遷移。外部證據不足以斷言Census內部邊緣伺服器原因。
+
+`notifier.source_headers`只針對實際census.gov及其子網域移除Referer，文字與二進位讀取沿用；其他供應商標頭不變。沒有換代理／IP、登入、放寬404／500／403、替換零售原始網址或拿PDF補數。原macro_scope_check完整跑過才可合併，數字／日期／時效與季調驗證保持。

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from zoneinfo import ZoneInfo
@@ -72,12 +72,26 @@ HTTP_HEADERS = {
 }
 
 
+def source_headers(url: str) -> dict[str, str]:
+    """Do not send the BLS navigation referrer to Census publications.
+
+    The official Census retail URL returns 404 with that header while the same
+    public URL serves the dated release without it. Other providers keep their
+    existing headers. This is not a proxy, identity or access-control fallback.
+    """
+    headers = dict(HTTP_HEADERS)
+    host = (urlparse(url).hostname or '').lower()
+    if host == 'census.gov' or host.endswith('.census.gov'):
+        headers.pop('Referer', None)
+    return headers
+
+
 def http_text(url: str, attempts: int = 3) -> str:
     """Read an official source with browser-like headers and bounded retries."""
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            request = Request(url, headers=HTTP_HEADERS)
+            request = Request(url, headers=source_headers(url))
             with urlopen(request, timeout=30) as response:
                 return response.read().decode(
                     response.headers.get_content_charset() or "utf-8", errors="replace"
@@ -95,7 +109,7 @@ def http_bytes(url: str, attempts: int = 3) -> bytes:
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            request = Request(url, headers=HTTP_HEADERS)
+            request = Request(url, headers=source_headers(url))
             with urlopen(request, timeout=30) as response:
                 return response.read()
         except Exception as exc:
