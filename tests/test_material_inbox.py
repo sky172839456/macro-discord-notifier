@@ -27,7 +27,10 @@ class MaterialInboxTests(unittest.TestCase):
     def run_box(self, rows, **kwargs):
         args = dict(fetch=Mock(side_effect=OSError('source unavailable')), send=self.send, persist=self.persist, verify=self.verify)
         args.update(kwargs)
-        return inbox.run(rows, self.state, self.now, **args)
+        # These tests isolate delivery/ledger behavior; editorial admission is covered
+        # by test_material_selection_health and test_material_share_value end to end.
+        with patch('material_quality.selection', return_value=None):
+            return inbox.run(rows, self.state, self.now, **args)
 
     def test_initial_activation_does_not_replay_old_feed_or_touch_member_seen(self):
         self.state.pop('material_inbox_v1')

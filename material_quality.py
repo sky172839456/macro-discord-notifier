@@ -4,26 +4,13 @@ import json
 import re
 from material_editorial import editorial_angle, review, _text
 
-VERSION = 1
+VERSION = 2
 
 
 def selection(row, now):
-    """Editorial usefulness is separate from factual verification and urgency."""
-    title, summary = _text(row.get('title'), 400), _text(row.get('summary'), 1000)
-    body = title+' '+summary
-    kind = row.get('material_topic')
-    angle = editorial_angle(title, summary)
-    if kind == 'security':
-        return None  # Existing incident evidence gate and urgency remain intact.
-    if len(summary) < 45 or summary.casefold() == title.casefold():
-        return 'thin_source'
-    if kind == 'ai' and not angle and not re.search(
-            r'\b(?:introduc\w*|launch\w*|releas\w*|unveil\w*|adds?|supports?|connect\w*|integrat\w*|can |enabl\w*|open.source|develop\w*|demonstrat\w*|tests?|research|study)\b', body, re.I):
-        return 'no_concrete_ai_change'
-    concrete_life_case = angle == 'usage_review' and bool(re.search(r'\b(?:saved|helped)\b.+\bbut\b.+\b(?:ruined|failed|wrong)\b', title, re.I))
-    if review(row, now)['stars'] < 3 and not concrete_life_case:
-        return 'low_editorial_value'
-    return None
+    """All private categories must supply a reader takeaway and source detail."""
+    from material_share_value import assess
+    return assess(row)['reason']
 
 
 def card_issues(row, card):
