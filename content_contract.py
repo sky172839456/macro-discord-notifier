@@ -178,6 +178,13 @@ def article_issues(row, now=None, required=None):
         return ['source_copy_evidence_missing'] if required else []
     errors=[]
     if proof.get('version')!=VERSION or proof.get('source_hash')!=source_hash(row):errors.append('stale_source_evidence')
+    if required and not row.get('material_topic'):
+        from content_interpretation import classify_news
+        expected=classify_news(row)
+        current=row.get('category') or {}
+        current=current.get('key') if isinstance(current,dict) else current
+        if not expected:errors.append('source_category_unresolved')
+        elif current!=expected.get('key'):errors.append('source_category_mismatch')
     try:
         parsed=urlsplit(str(row.get('url') or ''))
         if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password:errors.append('invalid_source_url')

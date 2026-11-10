@@ -6,6 +6,17 @@ def has(pattern,value):
     return bool(re.search(pattern,str(value),re.I))
 
 
+def classify_news(row):
+    """Re-evaluate the current source, including unsent legacy cache entries."""
+    import crypto_news_notifier as news
+    from news_streams import finance_topic,CRYPTO
+    title=str(row.get('title') or '')
+    if row.get('stream')=='finance' and not has(CRYPTO,title):
+        selected=finance_topic(row)
+        return selected['category'] if selected else None
+    return news.category_for(title+' '+str(row.get('summary') or ''))
+
+
 def connection_claim(title,summary):
     # Mentioning a technology, a patch or a research topic is not a new capability.
     clauses=re.split(r'(?<=[.!?])\s+(?=[A-Z])|[\n;]',str(title)+'\n'+str(summary))

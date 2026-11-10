@@ -90,6 +90,12 @@ class ContentContractTests(TestCase):
             fixed=auto.enrich(row,{},self.now)
         self.assertEqual(c.article_issues(fixed,self.now),[])
         self.assertEqual(fixed['content_contract']['pairs'][0]['source'],row['summary'])
+        stale=dict(fixed,category={'key':'market'},auto_copy_version=2)
+        self.assertIn('source_category_mismatch',c.article_issues(stale,self.now))
+        with patch.object(news,'translate_text',side_effect=AssertionError('verified copy needs no provider')):
+            refreshed=news.add_translated_title(stale,{},self.now)
+        self.assertEqual(refreshed['category']['key'],'regulation')
+        self.assertEqual(c.article_issues(refreshed,self.now),[])
     def test_failed_translation_does_not_turn_source_body_into_headline_success(self):
         row=self.row();row.pop('content_contract')
         def translate(value):
