@@ -156,6 +156,11 @@ class ContentContractTests(TestCase):
         self.assertFalse(interpretation.same_structured_event(a,dict(b,summary='OCC confirms the decision for $50.')))
         a={'title':'Ledger releases Nano X v1.2.3','summary':'The release is available.','published':self.now}
         self.assertFalse(interpretation.same_structured_event(a,dict(a,title='Ledger releases Nano S v1.2.3')))
+        for title in ('Ledger plans to release Nano X v1.2.3','Ledger cancels release Nano X v1.2.3','Ledger releases Nano S v1.2.3'):
+            changed=dict(a,title=title)
+            self.assertFalse(interpretation.same_structured_event(a,changed))
+            self.assertFalse(news.same_news_event(a,changed))
+        self.assertFalse(news.same_news_event(a,dict(a,summary='The release fixes a vulnerability.')))
     def test_untranslated_prose_or_extraneous_expansion_is_not_a_chinese_summary(self):
         with self.assertRaises(ValueError):auto.checked_copy('The bank approves the charter for users.','銀行approves the charter for users。')
         with self.assertRaises(ValueError):auto.checked_copy('The tool is available.','工具已開放。'+'來源說明。'*60)

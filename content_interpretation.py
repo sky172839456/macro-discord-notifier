@@ -116,6 +116,7 @@ def event_profile(row):
 
 
 def same_structured_event(left,right):
+    if declared_conflict(left,right):return False
     a,b=event_profile(left),event_profile(right)
     if not a or a!=b:return False
     from datetime import timedelta
@@ -123,3 +124,32 @@ def same_structured_event(left,right):
     try:
         return abs(published_time(left['published'])-published_time(right['published']))<=timedelta(hours=24)
     except (ValueError,TypeError,KeyError,AttributeError):return False
+
+
+def declared_conflict(left,right):
+    """Old title similarity must not erase an explicit lifecycle/object conflict."""
+    from news_editorial import entity
+    a,b=str(left.get('title') or ''),str(right.get('title') or '')
+    actor=entity(a)
+    if not actor or actor!=entity(b):return False
+    def lifecycle(title):
+        for phase,pattern in (
+            ('planned',r'\b(?:plans? to|will|may|could|aims? to|proposes?|scheduled)\b'),
+            ('cancelled',r'\b(?:not|never|denied|reject\w*|cancel\w*|withdrawn|delayed|postponed|roll.?back|recalled|pulls?)\b'),
+            ('application',r'\b(?:application|applies?|seeks?|pending)\b'),
+            ('conditional',r'\b(?:conditional|provisional|preliminary)\b'),
+            ('final',r'\b(?:full|final|takes effect|becomes effective)\b'),
+            ('released',r'\b(?:releases?|launches?|now available)\b'),
+        ):
+            if has(pattern,title):return phase
+        return None
+    x,y=lifecycle(a),lifecycle(b)
+    if x and y and x!=y:return True
+    # Matching version numbers do not make two different products one event.
+    if re.search(r'\bv\d+\.\d+',a) and re.search(r'\bv\d+\.\d+',b):
+        def product(title):
+            match=re.search(r'\b(?:releases?|launches?)\s+(.+?)\s+v\d',title,re.I)
+            return match[1].casefold() if match else None
+        if product(a) and product(b) and product(a)!=product(b):return True
+        if evidence(left)!=evidence(right):return True
+    return False
