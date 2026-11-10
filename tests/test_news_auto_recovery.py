@@ -174,7 +174,8 @@ class AutoNewsTests(unittest.TestCase):
             self.route(rows, state)
             _, send = self.route(rows, state, self.now+timedelta(minutes=16))
             self.assertEqual(send.call_count, 1)
-            self.assertIn('服務持續異常', send.call_args.args[1]['title'])
+            self.assertIn('內容檢查持續未通過', send.call_args.args[1]['title'])
+            self.assertIn('不能直接判定供應商故障', send.call_args.args[1]['description'])
             _, send = self.route(rows, state, self.now+timedelta(minutes=50))
             send.assert_not_called()
 

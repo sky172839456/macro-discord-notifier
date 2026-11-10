@@ -403,7 +403,8 @@ def route(items, state, now):
         ready.append(item)
     state['news_auto_status'] = {'at': now.isoformat(), 'ready': len(ready), 'retrying': len(retries),
                                  'ignored': len(ignored), 'failed_this_run': failed}
-    # Only a sustained service-wide failure gets one aggregate daily alert.
+    # Aggregate sustained copy failures; do not infer a provider outage from
+    # content gates rejecting otherwise readable source/translation responses.
     outage = state.setdefault('news_translation_health', {})
     if failed >= 3 and not ready:
         outage.setdefault('since', now.isoformat())
@@ -411,8 +412,8 @@ def route(items, state, now):
             log = os.getenv('DISCORD_LOG_WEBHOOK_URL')
             if log:
                 try:
-                    news.send_discord(log, {'title': '🔧 新聞翻譯服務持續異常',
-                        'description': '多篇新聞中文整理仍無法完成；系統會自動重試並略過過期內容。無需逐篇人工核對，其他通知照常處理。',
+                    news.send_discord(log, {'title': '🔧 新聞中文／內容檢查持續未通過',
+                        'description': '多篇新聞的中文或原文對照尚未通過；翻譯取得與內容條件須分別核對，不能直接判定供應商故障。候選已保留，系統會自動重試並略過過期內容；完整語意仍待驗收。',
                         'color': 0x7566A5, 'timestamp': now.isoformat()}, '新聞系統｜服務紀錄')
                 except Exception:
                     pass  # Retry the aggregate alert; never reroute to members.
