@@ -305,6 +305,11 @@ def equivalent(left, right, fallback=None):
         if abs(published_time(left['published']) - published_time(right['published'])) > timedelta(hours=24):
             return False
     a, b = str(left.get('title', '')), str(right.get('title', ''))
+    from content_interpretation import same_structured_event, declared_conflict
+    if declared_conflict(left,right):
+        return False
+    if same_structured_event(left,right):
+        return True
     if same_victim_episode(left, right) or same_verified_withdrawal_phase(left, right):
         return True
     key_a, key_b = event_key(left), event_key(right)

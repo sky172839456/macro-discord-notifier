@@ -164,7 +164,7 @@ class QualityTests(unittest.TestCase):
         state = {'initialized': True, 'seen': {}, 'pending': [], 'translation_cache': {}}
         successes, attempts = [], []
 
-        def send(_webhook, cards, *_):
+        def send(_webhook, cards, *_, **context):
             attempts.append(cards)
             if len(attempts) == 2:
                 raise RuntimeError('temporary failure')

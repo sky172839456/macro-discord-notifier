@@ -91,6 +91,9 @@ def polish_chinese(source, translated):
 
 def digest_exclusion_reason(item):
     import news_auto_recovery as auto
+    from content_contract import article_issues
+    if article_issues(item):
+        return '原文與逐段中文證據未通過'
     try:
         checker = auto.checked_copy if auto.enabled() else checked_translation
         title = checker(str(item.get('title') or ''), str(item.get('title_zh') or ''))
@@ -125,6 +128,11 @@ def headline(item):
 
 
 def chinese_points(item):
+    if item.get('content_contract'):
+        from content_contract import article_issues
+        if article_issues(item):
+            return []
+        return [p['zh'] for p in item['content_contract']['pairs']]
     points = []
     source = str(item.get('summary_check_source') or item.get('summary') or item.get('title') or '')
     for point in item.get('summary_zh_points') or []:

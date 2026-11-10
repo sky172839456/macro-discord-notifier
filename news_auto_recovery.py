@@ -34,6 +34,10 @@ def checked_copy(source, translated):
     result = checked_translation(source, translated)
     from news_copy_terms import validate_identifiers
     validate_identifiers(source,result)
+    from content_contract import segment_issues
+    issues = segment_issues(source,result)
+    if issues:
+        raise ValueError('source/copy contract: '+','.join(issues))
     if not numeric_values(source).issubset(numeric_values(result)):
         raise ValueError('translation dropped numeric facts')
     from news_streak_guard import validate
@@ -116,23 +120,27 @@ def translate_bing(source):
 
 def translate(source):
     import crypto_news_notifier as news
+    from content_contract import protect, restore
+    request_source, protected = protect(source)
+    if len(request_source.encode('utf8'))>450:
+        raise ValueError('protected segment exceeds provider limit')
     # Independent free providers. Alternatives are accepted only for the exact
     # same source segment; cache/backoff prevent repeated free-service requests.
     try:
-        query = urlencode({'q':source, 'langpair':'en|zh-TW', 'mt':'1'})
+        query = urlencode({'q':request_source, 'langpair':'en|zh-TW', 'mt':'1'})
         payload = json.loads(news.http_text(news.TRANSLATION_URL+'?'+query, attempts=1))
         if str(payload.get('responseStatus', 200)) == '200' and not payload.get('quotaFinished'):
             choices = [payload.get('responseData', {}).get('translatedText', '')]
             choices.extend(m.get('translation', '') for m in payload.get('matches', [])
-                           if m.get('segment', '').strip().casefold() == source.casefold())
+                           if m.get('segment', '').strip().casefold() == request_source.casefold())
             for choice in dict.fromkeys(choices):
                 try:
-                    return checked_copy(source, news.normalize_zh_title(news.clean_text(str(choice))))
+                    return checked_copy(source, news.normalize_zh_title(restore(news.clean_text(str(choice)),protected)))
                 except ValueError:
                     continue
     except Exception:
         pass
-    return checked_copy(source, news.normalize_zh_title(news.clean_text(translate_bing(source))))
+    return checked_copy(source, news.normalize_zh_title(restore(news.clean_text(translate_bing(request_source)),protected)))
 
 
 def material_news(item):
@@ -252,6 +260,9 @@ def same_article(left, right):
 
 
 def source_sentences(value):
+    from content_contract import strict, segments
+    if strict():
+        return segments(value)
     # Short RSS paragraphs need no English splitting at all. Preserve names.
     value = value.strip()
     if len(value.encode('utf-8')) <= 450:
@@ -268,7 +279,9 @@ def enrich(item, state, now):
     cache = state.setdefault('translation_cache', {})
 
     def translate(source):
-        key = 'auto-v2-' + hashlib.sha256(source.encode()).hexdigest()[:24]
+        from content_contract import VERSION, strict
+        prefix='auto-contract-v'+str(VERSION)+'-' if strict() else 'auto-v2-'
+        key = prefix + hashlib.sha256(source.encode()).hexdigest()[:24]
         cached = cache.get(key) or {}
         if cached.get('source') == source:
             try:
@@ -286,29 +299,37 @@ def enrich(item, state, now):
         enriched['title_zh'] = ''
         enriched['summary_zh_points'] = []
         return enriched
-    points = []
+    points, pairs = [], []
     summary = str(item.get('summary') or '')
     # Reject an incomplete publisher clause rather than invent its missing verb.
     if re.search(r'\b(?:as|while|because|although)\s+(?:banks?|companies|payment firms?|investors)(?:\s+and\s+(?:banks?|companies|payment firms?|investors))*\s*[.!]?$', summary, re.I):
         summary = ''
-    for sentence in source_sentences(summary):
+    selected = source_sentences(summary)
+    for sentence in selected:
         if re.fullmatch(r'(?:your )?day[- ]ahead look.*', sentence, re.I):
             continue
         try:
-            points.append(translate(sentence))
+            translated = translate(sentence)
+            points.append(translated)
+            pairs.append({'source':sentence,'zh':translated})
         except Exception:
             continue
     # A headline is already source content: repeat its fact when the RSS body is
     # a teaser/unavailable. Clearly disclose the shorter basis; invent nothing.
-    if not points:
+    from content_contract import strict
+    if not points and not (strict() and selected):
         points = [enriched['title_zh']]
         enriched['summary_basis'] = 'headline'
         enriched['summary_check_source'] = item['title']
+        pairs = [{'source':item['title'],'zh':enriched['title_zh']}]
     else:
         enriched['summary_basis'] = 'rss'
         enriched['summary_check_source'] = summary
     enriched['summary_zh_points'] = points[:2]
     enriched['auto_copy_version'] = 2
+    from content_contract import stamp
+    stamp(enriched,pairs[:2],enriched['summary_basis'])
+    enriched['content_contract']['complete_selected_excerpt'] = len(pairs)==len(selected) if selected else bool(pairs)
     return enriched
 
 
@@ -374,6 +395,7 @@ def route(items, state, now):
             count = retry.get('attempts', 0) + 1
             stored = dict(item); stored['published'] = published_time(item['published']).isoformat()
             retries[key] = {'item': stored, 'attempts': count,
+                            'reason':reason,
                             'next_at': (now + timedelta(minutes=min(120, 15 * 2**min(count-1, 3)))).isoformat()}
             failed += 1
             continue
@@ -381,7 +403,8 @@ def route(items, state, now):
         ready.append(item)
     state['news_auto_status'] = {'at': now.isoformat(), 'ready': len(ready), 'retrying': len(retries),
                                  'ignored': len(ignored), 'failed_this_run': failed}
-    # Only a sustained service-wide failure gets one aggregate daily alert.
+    # Aggregate sustained copy failures; do not infer a provider outage from
+    # content gates rejecting otherwise readable source/translation responses.
     outage = state.setdefault('news_translation_health', {})
     if failed >= 3 and not ready:
         outage.setdefault('since', now.isoformat())
@@ -389,8 +412,8 @@ def route(items, state, now):
             log = os.getenv('DISCORD_LOG_WEBHOOK_URL')
             if log:
                 try:
-                    news.send_discord(log, {'title': '🔧 新聞翻譯服務持續異常',
-                        'description': '多篇新聞中文整理仍無法完成；系統會自動重試並略過過期內容。無需逐篇人工核對，其他通知照常處理。',
+                    news.send_discord(log, {'title': '🔧 新聞中文／內容檢查持續未通過',
+                        'description': '多篇新聞的中文或原文對照尚未通過；翻譯取得與內容條件須分別核對，不能直接判定供應商故障。候選已保留，系統會自動重試並略過過期內容；完整語意仍待驗收。',
                         'color': 0x7566A5, 'timestamp': now.isoformat()}, '新聞系統｜服務紀錄')
                 except Exception:
                     pass  # Retry the aggregate alert; never reroute to members.

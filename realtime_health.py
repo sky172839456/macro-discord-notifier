@@ -144,10 +144,13 @@ def daily_health_embed(
     audit = state.get('content_audit') or {'warnings': ['尚無來源與內容對帳證據'], 'metrics': {}, 'scope': '待核對'}
     content_pending = bool(audit['warnings'])
     metrics = audit['metrics']
+    preflight=metrics.get('public_preflight') or {}
     content_field = {'name': '🔎 漏收與內容品質（自動規則）', 'inline': False,
         'value': (f"本輪原始候選 {metrics.get('raw','待核')}｜低價值暫留 {metrics.get('held','待核')}｜排除 {metrics.get('excluded','待核')}\n"
                   f"待送 {metrics.get('queued','待核')}｜送達不明 {metrics.get('unknown','待核')}｜近24小時已送 {metrics.get('delivered24h','待核')}\n"
-                  + ('\n'.join('⚠️ '+v for v in audit['warnings']) if content_pending else '本輪來源、候選對帳與已保存卡面規則未發現異常；不等於完整語意驗收。') + '\n'+audit['scope'])[:1024]}
+                  + f"公告發送前檢查 {preflight.get('checked','待核')}｜通過 {preflight.get('passed','待核')}｜暫留 {preflight.get('held','待核')}\n"
+                  + ('本輪沒有待發公告接受此檢查；不代表全來源或內容正常。\n' if preflight.get('checked')==0 else '')
+                  + ('\n'.join('⚠️ '+v for v in audit['warnings'][:4])+ (f'\n另有{len(audit["warnings"])-4}項待核，見工作紀錄。' if len(audit['warnings'])>4 else '') if content_pending else '本輪來源、候選對帳與已保存卡面規則未發現異常；不等於完整語意驗收。') + '\n'+audit['scope'])}
     gap = state.get("last_gap_minutes")
     gap_text = f"{gap} 分鐘" if isinstance(gap, int) else "首次建立基準"
     title = (

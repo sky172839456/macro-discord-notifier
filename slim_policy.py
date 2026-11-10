@@ -153,11 +153,14 @@ def same_event(left, right):
 def news_card(item, test=False, now=None):
     from notification_format import clean_source_text
     from notification_quality import headline as checked_headline, chinese_points, time_copy
-    headline = clean_source_text(checked_headline(item), 200)
+    full_headline = checked_headline(item)
+    headline = full_headline if len(full_headline)<=180 else item['category'].get('label','市場消息')
     if not item.get('official'):
         headline = '媒體報導｜' + headline
-    points = [clean_source_text(p, 220) for p in chinese_points(item)]
+    points = chinese_points(item)
     fact = "\n".join(f"• {p}" for p in points[:2])
+    if len(full_headline)>180:
+        fact='**完整標題**　'+full_headline+'\n'+fact
     if not fact:
         fact = "來源未提供可確認的中文摘要，請閱讀原文；不以分類模板補寫事實。"
     if item.get('summary_basis') == 'headline':
@@ -188,10 +191,10 @@ def digest_card(items, now):
     from notification_quality import headline, chinese_points
     lines = []
     for item in items[:5]:
-        title = headline(item)[:150].replace("\n", " ")
-        points = [str(p)[:160] for p in chinese_points(item)]
+        title = headline(item).replace("\n", " ")
+        points = chinese_points(item)
         attribution = '' if item.get('official') else '媒體報導｜'
-        detail = f"\n{attribution}{points[0]}" if points else "\n中文摘要尚未確認，請閱讀原文。"
+        detail = '\n'+attribution+'\n'.join(points[:2]) if points else "\n中文摘要尚未確認，請閱讀原文。"
         if item.get('summary_basis') == 'headline':
             detail += '\n-# 依原文標題整理；完整背景請見來源。'
         if item.get('source_update'):

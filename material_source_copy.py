@@ -3,7 +3,7 @@ from html.parser import HTMLParser
 import html
 import re
 
-VERSION = 3
+VERSION = 4
 RELEASE_SOURCES = {'Claude Code Releases', 'Claude Platform Updates'}
 
 
@@ -90,11 +90,5 @@ def release_features(row):
 
 def new_connection(title, summary):
     """An incident/patch mentioning MCP is not a newly added connection."""
-    def claim(value):
-        if re.search(r'\b(?:fixed|fixes|patched|repair|vulnerabilit\w*|breach|leak\w*)\b',value,re.I):
-            return False
-        return bool(re.search(r'\b(?:MCP|Model Context Protocol|connectors?|plugins?|plug-ins?|automated workflows?|automation|integrat\w*)\b',value,re.I))
-    if claim(title):
-        return True
-    from news_auto_recovery import source_sentences
-    return any(claim(part) for part in source_sentences(summary))
+    from content_interpretation import connection_claim
+    return connection_claim(title,summary)
