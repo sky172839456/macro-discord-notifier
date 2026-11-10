@@ -21,7 +21,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install locked runtime dependency
-        run: python -m pip install --disable-pip-version-check -r requirements.txt
+        run: python -m pip install --disable-pip-version-check -r requirements-test.txt
+      - name: Validate every workflow syntax and required structure
+        run: python workflow_integrity_check.py
       - name: Audit webhook destinations without sending messages
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
