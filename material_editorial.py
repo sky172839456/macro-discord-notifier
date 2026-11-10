@@ -171,10 +171,17 @@ def review(row, now, focus=None):
         tasks=assess(row)['tasks']
         if tasks:
             hook='這次串接能對'+ '、'.join(tasks) +'做哪些操作，適用方案與權限有哪些限制？'
+    from content_interpretation import specific_hook
+    from content_interpretation import evidence as source_evidence
+    if release:
+        evidence=source_evidence(row)
+        hook='針對「'+anchor+'」：'+hook
+    else:
+        hook,evidence = specific_hook(row,anchor,hook)
     return {
         'stars': stars, 'display': '★'*stars+'☆'*(5-stars), 'label': labels[stars],
         'reason': '；'.join(reasons)+'。',
         'concept': f'**本則焦點**　{anchor}\n\n**切入問題**　{hook}\n\n**內容骨架**　{outline}\n\n**表現方式**　{method}',
         'basis': '依標題／摘要作規則初評；星等是製作優先度，高星不代表已完成查證。',
-        'version': 2,
+        'version': 3, 'source_evidence': evidence,
     }

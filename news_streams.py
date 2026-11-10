@@ -107,6 +107,8 @@ def run(now):
     if not all(destinations.values()):
         raise RuntimeError('兩類新聞目的地尚未完整設定；未改送其他頻道')
     state = news.load_state()
+    from content_contract import record_preflight
+    state['content_preflight_status']={'at':now.isoformat(),'checked':0,'passed':0,'held':0,'reasons':{}}
     crypto_material, finance_material, material_parse_audit = [], [], []
     rows, statuses = news.fetch_all(material_rows=crypto_material, material_audit=material_parse_audit)
     financial, finance_status = fetch_finance(material_rows=finance_material, material_audit=material_parse_audit)
@@ -187,7 +189,10 @@ def run(now):
             if stream == 'finance':
                 # Ignore generic transmission copy still present in pending caches.
                 card.setdefault('fields', []).append({'name': '閱讀提示', 'value': FINANCE_READING_NOTE, 'inline': False})
-            news.send_discord(destinations[stream], card, '金融風向' if stream == 'finance' else '幣圈有事')
+            if not record_preflight(state,[row],card,now):
+                retained.append(row)
+                continue
+            news.send_discord(destinations[stream], card, '金融風向' if stream == 'finance' else '幣圈有事',source_items=[row],observed_at=now)
             delivered([row]); immediate_count += 1; sent += 1
             state['pending'] = [news.serialize_pending(r) for r in ready if r['id'] not in seen]
             news.save_state(state)
@@ -217,12 +222,14 @@ def run(now):
                     # Article-specific facts stay in the checked title/summary;
                     # do not infer a crypto impact from the topic category.
                     card.setdefault('fields', []).append({'name': '閱讀提示', 'value': FINANCE_READING_NOTE, 'inline': False})
-                news.send_discord(destinations[stream], card, '金融風向' if stream == 'finance' else '幣圈有事')
+                if not record_preflight(state,group,card,now):
+                    continue
+                news.send_discord(destinations[stream], card, '金融風向' if stream == 'finance' else '幣圈有事',source_items=group,observed_at=now)
                 delivered(group)
                 progress['ids'].extend(r['id'] for r in group)
                 state['pending'] = [news.serialize_pending(r) for r in retained if r['id'] not in seen]
                 news.save_state(state); sent += 1
-            if selected:
+            if selected and all(r['id'] in seen for r in selected):
                 progress['closed'] = True
                 news.save_state(state)
     cutoff = (now - timedelta(days=14)).date().isoformat()

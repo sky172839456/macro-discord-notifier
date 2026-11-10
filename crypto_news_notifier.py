@@ -429,7 +429,7 @@ def digest_embed(items: list[dict[str, Any]], now: datetime) -> list[dict[str, A
 
 
 def send_discord(webhook: str, embed: dict[str, Any] | list[dict[str, Any]],
-                 username: str = "加密新聞雷達") -> None:
+                 username: str = "加密新聞雷達", *, source_items=None, observed_at=None) -> None:
     channel_key = {
         "加密重大快訊": "breaking_news",
         "監管與 ETF 雷達": "regulation_etf",
@@ -439,6 +439,16 @@ def send_discord(webhook: str, embed: dict[str, Any] | list[dict[str, Any]],
     }.get(username, "crypto_news")
     embeds = embed if isinstance(embed, list) else [embed]
     cards = [apply_delivery_format(card, channel_key) for card in embeds]
+    from content_contract import strict, require_payload
+    require_payload(cards)
+    if strict():
+        if channel_key!='bot_log':
+            if not source_items:
+                raise ValueError('content preflight: public source context missing')
+            from content_contract import final_article_issues
+            for card in cards:
+                errors=final_article_issues(source_items,card,observed_at)
+                if errors:raise ValueError('content preflight: '+','.join(errors))
     payload = json.dumps({
         "username": sender_name(channel_key),
         "embeds": cards,
@@ -590,7 +600,7 @@ def run(now: datetime) -> tuple[int, int]:
     for item in immediate[:MAX_IMMEDIATE_PER_RUN]:
         item = add_translated_title(item, state, now)
         destination, username = destination_for(item, webhook)
-        send_discord(destination, news_embed(item, observed_at=now), username)
+        send_discord(destination, news_embed(item, observed_at=now), username,source_items=[item],observed_at=now)
         from news_editorial import member_ids, history_row
         for identifier in member_ids(item):
             seen[identifier] = now.date().isoformat()
@@ -661,7 +671,7 @@ def run(now: datetime) -> tuple[int, int]:
                     card = slim_policy.digest_card(group, now)
                     if len(groups) > 1:
                         card['title'] += f'｜{page+1}/{len(groups)}'
-                    send_discord(webhook, [card])
+                    send_discord(webhook, [card],source_items=group,observed_at=now)
                     delivered = {row['id'] for row in group}
                     for row in group:
                         from news_editorial import member_ids, history_row

@@ -31,7 +31,7 @@ class QualityBundleTests(unittest.TestCase):
 
     def run_news(self, rows, state=None, fail=False):
         state=state if state is not None else {'initialized':True,'seen':{},'pending':[]}
-        def send(destination,*_):
+        def send(destination,*_,**context):
             if fail and destination=='https://member.invalid': raise RuntimeError('member send failed')
         with patch.object(news,'load_state',return_value=state),patch.object(news,'save_state'),patch.object(news,'fetch_all',return_value=(rows,[('mock',len(rows),None)])),patch.object(news,'add_translated_title',side_effect=lambda row,*_:dict(row)),patch.object(news,'send_discord',side_effect=send) as sent:
             news.run(self.now)

@@ -115,5 +115,15 @@ def inspect(state, now):
         if parse_errors:
             warnings.append(f'原始素材解析失敗：{parse_errors}個來源')
     metrics['source_rows'] = source.get('raw_material_finance', '待核')
+    preflight=state.get('content_preflight_status') or {}
+    metrics['public_preflight']={k:preflight.get(k,'待核') for k in ('at','checked','passed','held','reasons')}
+    metrics['public_copy_retrying']=len(state.get('news_auto_retry') or {})
+    metrics['private_copy_retrying']=sum(bool(r.get('copy_retry')) and r.get('status') in ('queued','quality_hold') for r in items)
+    if metrics['private_copy_retrying']:
+        warnings.append(f'素材翻譯／卡面暫留並退避重試：{metrics["private_copy_retrying"]}筆')
+    if metrics['public_copy_retrying']:
+        warnings.append(f'公告中文／原文證據暫留待重核：{metrics["public_copy_retrying"]}筆（不等於已送達）')
+    if preflight.get('held',0):
+        warnings.append(f'公開新聞發送前內容未通過：{preflight["held"]}筆（原待送保留，不當作已送）')
     return {'warnings': warnings, 'metrics': metrics,
             'scope':'自動核對來源／篩選／佇列與可判定卡面；未讀Discord實卡、完整語意與未提供的來源仍待人工驗收。'}

@@ -387,7 +387,7 @@ def review_lines(data):
     for i, row in enumerate(review.get('items') or []):
         title = headline(row).replace('[', '').replace(']', '')[:90]
         points = chinese_points(row)
-        detail = ('\n' + points[0][:120]) if points else ''
+        detail = ('\n' + points[0]) if points else ''
         part = f'**{i+1:02d}｜{title}**{detail}\n{stamp(row["published"])}｜[{str(row["source"])[:50]}]({row["url"]})'
         for ref in row.get('recap_related_sources',[])[:2]:
             related=f'\n同事件其他報導｜[{str(ref["source"])[:50]}]({ref["url"]})'

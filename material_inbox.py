@@ -340,12 +340,13 @@ def card(row, now):
     if exchange_access_notice(str(row.get('title', ''))):
         why = '交易所註冊、驗證或服務資格變動，會影響讀者能否使用服務，適合整理適用對象與生效階段。'
         checks += '\n核對交易所原始公告、更新日期、國籍／居住地條件、新戶／既有帳戶、產品及生效範圍；截圖與推薦連結只作線索，不寫成全面禁用，也不建議搶註冊、虛報資格或規避限制。'
-    if row['material_topic'] in ('ai', 'innovation') and integration_topic(str(row.get('title', ''))):
+    from content_interpretation import connection_claim
+    if row['material_topic'] in ('ai', 'innovation') and connection_claim(row.get('title',''),row.get('summary','')):
         why = '報導涉及既有工具新增串接或自動化能力，可用更新前後的具體任務比較，說明多做了什麼、誰用得到。'
         formats = '限動說明新增能力；Reels對照原流程與串接流程；輪播整理用途、適用對象與使用條件。'
         checks += '\n核對串接是否已開放、官方或第三方提供、適用版本、費用、讀寫權限與地區；範例流程不等於已實測，MCP支援不等於所有功能都可操作。'
     from notification_quality import checked_translation, chinese_points, published_time
-    title = clean(row.get('title_zh', ''), 180)
+    title = clean(row.get('title_zh', ''), 800)
     try:
         title = checked_translation(row['title'], title)
     except ValueError:
@@ -372,6 +373,9 @@ def card(row, now):
     result = {'title': '📝 素材候選｜'+title, 'description': f'分類：{label}\n\n**製作優先度　{editorial["display"]} {editorial["stars"]}/5｜{editorial["label"]}**\n{editorial["basis"]}\n\n【僅管理員】選題建議，不代表事實已全部核實或已製作發布。\n\n原文標題：'+clean(row['title'], 210),
               'fields': fields, 'color': 0xB99B66, 'timestamp': now.isoformat(),
               'footer': {'text': 'WV素材整理｜先查證再製作｜不會自動發布IG'}}
+    if len(title)>180:
+        result['title']='📝 素材候選｜'+label
+        result['description']+='\n完整中文標題：'+title
     if any(len(f['value']) > 1024 for f in fields) or sum(len(f['name'])+len(f['value']) for f in fields)+len(result['description']) > 5500:
         raise ValueError('material card exceeds bounds')
     return result
@@ -395,6 +399,8 @@ class DeliveryUncertain(RuntimeError):
 def send_card(webhook, embed, username):
     from notification_format import readable_card
     embed = readable_card({**embed, 'author': {'name': 'W VIEWTURE｜私人素材整理'}})
+    from content_contract import require_payload
+    require_payload([embed])
     payload = json.dumps({'username': sender_name('material_inbox'), 'embeds': [embed], 'allowed_mentions': {'parse': []}}).encode()
     request = Request(webhook+'?wait=true', data=payload, headers={'Content-Type': 'application/json', 'User-Agent': 'WV-material-inbox/1.0'}, method='POST')
     try:
@@ -479,10 +485,17 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
         if old:
             evidence['key'] = old.get('material_key', key(old))
             if old.get('status') in ('queued', 'quality_hold') and old.get('url') == raw.get('url') and old.get('title') == raw.get('title'):
+                from content_contract import source_hash
+                before_hash=source_hash(old)
                 if raw.get('summary'):
+                    if raw['summary']!=old.get('summary') and 'summary_parts' not in raw:
+                        old.pop('summary_parts',None)
                     old['summary'] = raw['summary']
-                if raw.get('summary_parts'):
+                if 'summary_parts' in raw:
                     old['summary_parts'] = raw['summary_parts']
+                old['published']=date.isoformat()
+                if source_hash(old)!=before_hash:
+                    old.pop('copy_retry',None)
             refs = old.setdefault('related_sources', [])
             if raw['url'] != old['url'] and all(r['url'] != raw['url'] for r in refs) and len(refs) < 2:
                 refs.append({'source': raw.get('source', '來源'), 'url': raw['url']})
@@ -497,6 +510,9 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
             if selected:
                 item['material_topic'] = selected
             reason = selection(item, now) if selected else 'no_longer_relevant'
+            retry=item.get('copy_retry') or {}
+            if not reason and retry.get('next_at') and published_time(retry['next_at'])>now:
+                reason='copy_retry_backoff'
             item['status'] = 'quality_hold' if reason else 'queued'
             item['quality_hold_reason'] = reason
     by_key = {r.get('material_key'):r for r in box['items']}
@@ -531,26 +547,43 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
                 from notification_quality import checked_translation
                 from material_source_copy import release_title
                 row['title_zh'] = checked_translation(row['title'], release_title(row) or enrich(row['title']))
-                from material_source_copy import excerpt_parts, VERSION
+                from material_source_copy import excerpt_parts, VERSION as COPY_VERSION
                 from news_auto_recovery import checked_copy
-                if row.get('material_copy_version') != VERSION:
+                from content_contract import stamp, article_issues
+                if row.get('material_copy_version') != COPY_VERSION or article_issues(row,required=True):
                     row['summary_zh_points'] = []
+                    pairs = []
                     parts = excerpt_parts(row)
                     row['summary_check_source'] = '\n'.join(parts)
                     for part in parts:
                         try:
-                            row['summary_zh_points'].append(checked_copy(part, enrich(part)))
+                            translated = checked_copy(part, enrich(part))
+                            row['summary_zh_points'].append(translated)
+                            pairs.append({'source':part,'zh':translated})
                         except Exception:
                             continue
-                    row['material_copy_version'] = VERSION
+                    stamp(row,pairs)
+                    # Partial failure retries naturally; never cache success for
+                    # a paragraph whose qualifier/translation was dropped.
+                    row['material_copy_version'] = COPY_VERSION if len(pairs)==len(parts) and parts else 0
+                    row['content_contract']['complete_selected_excerpt'] = len(pairs)==len(parts) and bool(parts)
             except Exception:
                 pass
         try:
             rendered = card(row, now)
             row['render_audit'] = {'checked_at': now.isoformat(), 'issues': card_issues(row, rendered), 'curation_version': VERSION}
+            from content_contract import strict, final_article_issues
+            if strict():
+                row['render_audit']['issues'] += final_article_issues([row],rendered,now)
+                proof=row.get('content_contract') or {}
+                if not proof.get('complete_selected_excerpt'):
+                    row['render_audit']['issues'].append('incomplete_selected_excerpt')
+                row['render_audit']['issues']=list(dict.fromkeys(row['render_audit']['issues']))
             blockers = set(row['render_audit']['issues']) - {'translation_pending'}
             if blockers:
                 row['status'], row['quality_hold_reason'] = 'quality_hold', 'render_quality'
+                failed=int((row.get('copy_retry') or {}).get('attempts',0))+1
+                row['copy_retry']={'attempts':failed,'next_at':(now+timedelta(minutes=min(120,15*2**min(failed-1,3)))).isoformat()}
                 persist()
                 continue
             message_id = send(webhook, rendered, 'WV素材整理｜私人選題')
@@ -559,9 +592,17 @@ def run(rows, state, now, *, fetch, send, persist, enrich=None, verify=verify_de
             persist()
             print('素材整理：本則送達未確認，保留紀錄、停止自動重送，待讀回核對。')
             continue
+        except ValueError:
+            row['status'],row['quality_hold_reason']='quality_hold','render_quality'
+            row['render_audit']={'checked_at':now.isoformat(),'issues':['render_or_payload_invalid']}
+            failed=int((row.get('copy_retry') or {}).get('attempts',0))+1
+            row['copy_retry']={'attempts':failed,'next_at':(now+timedelta(minutes=min(120,15*2**min(failed-1,3)))).isoformat()}
+            persist()
+            continue
         if message_id:
             row['message_id'] = str(message_id)
         row['status'], row['notified_at'] = 'notified', now.isoformat()
+        row.pop('copy_retry',None)
         persist()  # A later failed send must not replay an already confirmed item.
         count += 1
     box['selection_audit']['completed_at'] = now.isoformat()
