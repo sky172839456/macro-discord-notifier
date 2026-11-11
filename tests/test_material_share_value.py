@@ -37,7 +37,7 @@ class ShareValue(unittest.TestCase):
         self.assertEqual(row['material_topic'],'business')
         self.assertIsNone(selection(row,self.now))
         text=json.dumps(m.card(row,self.now),ensure_ascii=False)
-        for value in ('活動／產品條件','資格','時程','資金限制','不承諾配發或收益','IPO認購'):
+        for value in ('活動／產品條件','Eligible users','KYC','10 BGB','7 days'):
             self.assertIn(value,text)
         self.assertNotIn('這次AI更新',text)
     def test_subscription_not_mislabeled_launchpool_or_company_endorsement(self):

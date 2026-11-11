@@ -24,8 +24,14 @@ def card_issues(row, card):
     if not re.search(r'[★☆]{5} [1-5]/5', description):
         problems.append('stars_missing')
     concept = fields.get('🧩 初步內容構思', '')
-    if not all(x in concept for x in ('切入問題', '內容骨架', '本則焦點')):
-        problems.append('angle_missing')
+    if concept:
+        if not all(x in concept for x in ('切入問題', '內容骨架', '本則焦點')):
+            problems.append('angle_missing')
+    else:
+        if not any(name.startswith('📌 來源內容') and value.strip() for name, value in fields.items()):
+            problems.append('source_content_missing')
+        if not fields.get('🔎 查證狀態'):
+            problems.append('verification_status_missing')
     if '原文標題待中文核對' in text:
         problems.append('translation_pending')
     if re.search(r'\ufffd|&(?:amp|lt|gt|quot|#\d+);', text):

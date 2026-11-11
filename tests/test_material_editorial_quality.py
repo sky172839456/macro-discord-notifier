@@ -46,7 +46,8 @@ class EditorialQuality(unittest.TestCase):
         card=m.card(row,row['published'])
         self.assertIn('研究／市場知識',card['description'])
         self.assertIn('製作優先度',card['description'])
-        self.assertIn('行情',json.dumps(card,ensure_ascii=False))
+        self.assertIn('來源內容',json.dumps(card,ensure_ascii=False))
+        self.assertNotIn('初步內容構思',json.dumps(card,ensure_ascii=False))
         self.assertEqual(row,before)
 
     def test_entities_decode_before_sanitizing_mentions_and_markup(self):

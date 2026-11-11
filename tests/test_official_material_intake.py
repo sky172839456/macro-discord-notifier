@@ -36,7 +36,7 @@ class OfficialIntake(unittest.TestCase):
         self.assertTrue(rows[0]['official']);self.assertNotIn('noise',rows[0]['summary'])
         rows[0]['material_topic']=m.topic(rows[0]);self.assertIsNone(selection(rows[0],self.now))
         text=json.dumps(m.card(rows[0],self.now),ensure_ascii=False)
-        self.assertIn('製作優先度',text);self.assertIn('切入問題',text);self.assertIn('觀察清單',text)
+        self.assertIn('製作優先度',text);self.assertIn('來源內容',text);self.assertIn(self.body,text)
         fetch.reset_mock();o.collect(self.now+timedelta(minutes=5),state,fetch=fetch,sources=[self.tv]);fetch.assert_called_once()
     def test_old_article_modification_does_not_become_new_publication(self):
         fetch=Mock(side_effect=lambda url,**k:self.index() if url==self.tv['url'] else self.detail(date=(self.now-timedelta(days=30)).isoformat()))
