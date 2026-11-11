@@ -89,14 +89,28 @@ class OfficialIntake(unittest.TestCase):
                     'https://api.bitget.com/api/v3/public/annoucements?x=1','https://www.binance.com/account'):
             self.assertFalse(o.allowed(url))
         with self.assertRaises(ValueError):o.SafeRedirect().redirect_request(None,None,302,'',{},'https://evil.com/x')
-    def test_bitget_creation_is_not_display_publication_and_must_match_exactly(self):
+    def bg_case(self,show,created=None,content='123',unified=None):
         ms=int(self.now.timestamp()*1000)
         api=json.dumps({'code':'00000','data':[{'annTitle':'Bitget Launchpool introduces Example','annUrl':'https://www.bitget.com/en/support/articles/123','cTime':str(ms)}]})
-        item=o.parse_index(api,self.bg)[0];self.assertIsNone(item['published'])
-        raw='<h1>'+item['title']+'</h1><div data-article-content="true">'+self.body+'</div><script>{"longCreateTime":"'+str(ms)+'","showTime":"'+str(ms+1)+'","unifiedDisplayTime":"'+str(ms+1)+'"}</script>'
-        row=o.parse_detail(raw,item,self.bg);self.assertEqual(row['published'],(self.now+timedelta(milliseconds=1)).isoformat())
-        with self.assertRaises(ValueError):o.parse_detail(raw.replace('"longCreateTime":"'+str(ms)+'"','"longCreateTime":"'+str(ms+3)+'"'),item,self.bg)
-        with self.assertRaises(ValueError):o.parse_detail(raw.replace('"unifiedDisplayTime":"'+str(ms+1)+'"','"unifiedDisplayTime":"'+str(ms+2)+'"'),item,self.bg)
+        item=o.parse_index(api,self.bg)[0]
+        raw=('<h1>'+item['title']+'</h1><div data-article-content="true">'+self.body+'</div><script>{"contentId":"'+content+'",'
+             '"longCreateTime":"'+str(ms+(created or 0))+'","showTime":"'+str(ms+show)+'","unifiedDisplayTime":"'+str(ms+(show if unified is None else unified))+'"}</script>')
+        return raw,item
+    def test_bitget_index_ctime_is_display_publication_not_draft_creation(self):
+        _,item=self.bg_case(0);self.assertIsNone(item['published'])
+        # Real shapes seen 2026-11-12: identical, 1 ms rounding, scheduled draft (created 1h42m earlier), re-saved (created 9 min later).
+        for show,created in ((0,0),(1,0),(0,-6106037),(0,538516)):
+            with self.subTest(show=show,created=created):
+                raw,item=self.bg_case(show,created)
+                row=o.parse_detail(raw,item,self.bg)
+                self.assertEqual(row['published'],(self.now+timedelta(milliseconds=show)).isoformat())
+    def test_bitget_publication_identity_and_conflicts_still_fail_closed(self):
+        for kwargs in ({'show':120000},{'show':-120000},{'show':1001},{'show':0,'content':'999'},{'show':0,'unified':2}):
+            with self.subTest(**kwargs):
+                raw,item=self.bg_case(**kwargs)
+                with self.assertRaises(ValueError):o.parse_detail(raw,item,self.bg)
+        raw,item=self.bg_case(0)
+        with self.assertRaises(ValueError):o.parse_detail(raw.replace('"showTime"','"x"').replace('"unifiedDisplayTime"','"y"'),item,self.bg)
     def test_binance_validates_code_title_and_publication_date(self):
         ms=int(self.now.timestamp()*1000);code='a'*32
         raw=json.dumps({'code':'000000','data':{'catalogs':[{'articles':[{'title':'Binance introduces Example Launchpool','code':code,'releaseDate':ms}]}]}})
