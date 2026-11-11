@@ -203,15 +203,19 @@ def parse_detail(raw, item, source):
             raise ValueError('official detail title mismatch')
         if kind=='bitget':
             article=next((n for n in nodes if n.attrs.get('data-article-content')=='true'),None)
-            created=set(re.findall(r'"longCreateTime"\s*:\s*"?(\d{13})',raw))
-            if len(created)!=1 or stamp(created.pop())!=stamp(item['created']):
-                raise ValueError('Bitget creation time identity mismatch')
+            # Identity is the article id itself, not a timestamp.
+            ids=set(re.findall(r'"contentId"\s*:\s*"?(\d+)',raw))
+            if item['url'].rsplit('/',1)[-1] not in ids:
+                raise ValueError('Bitget article identity mismatch')
             dates=set(re.findall(r'"(?:showTime|unifiedDisplayTime)"\s*:\s*"?(\d{13})',raw))
             if len(dates)!=1:
                 raise ValueError('Bitget publication time missing/conflicting')
             date=stamp(dates.pop())
-            if date<stamp(item['created']):
-                raise ValueError('Bitget publication before creation')
+            # The index cTime is the display/publication time (live 2026-11-12: equal to
+            # showTime within 1 ms on 30/30 articles). longCreateTime is the draft record
+            # time: earlier for scheduled posts, later for re-saved ones, so never compared.
+            if abs(date-stamp(item['created']))>timedelta(seconds=1):
+                raise ValueError('Bitget list/detail publication time conflict')
         else:
             article=next((n for n in nodes if 'entry-content' in n.attrs.get('class','').split()),None)
             dates={n.attrs.get('content') for n in nodes if n.tag=='meta' and n.attrs.get('property')=='article:published_time'}
