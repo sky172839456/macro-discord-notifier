@@ -67,7 +67,7 @@ class EditorialReviewTests(unittest.TestCase):
             row = {**self.row(), 'material_topic': topic}
             result = inbox.card(row, self.now)
             text = json.dumps(result, ensure_ascii=False)
-            for value in ('製作優先度', '切入問題', '內容骨架', '高星不代表已完成查證',
+            for value in ('製作優先度', '來源內容', '查證狀態', '非查證評等',
                           'https://example.com/update', '媒體報導候選'):
                 self.assertIn(value, text)
             self.assertLess(sum(len(f['name'])+len(f['value']) for f in result['fields'])+len(result['description']), 5500)

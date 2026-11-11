@@ -59,8 +59,7 @@ class BroadMaterialTopics(unittest.TestCase):
                    published=datetime(2026, 11, 4, 8, tzinfo=timezone.utc))
         result = inbox.card(row, row['published'])
         text = json.dumps(result, ensure_ascii=False)
-        for value in ('科技／新發明', '構想／展示／原型／測試／開賣',
-                      'prototype', '媒體報導候選', '獨立實測'):
+        for value in ('科技／新發明', 'prototype', 'testing', '媒體報導候選', '尚未以直接官方資料完成獨立核實'):
             self.assertIn(value, text)
         self.assertFalse(inbox.urgent(row))
 

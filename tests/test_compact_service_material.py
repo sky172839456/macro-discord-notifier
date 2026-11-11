@@ -34,7 +34,7 @@ class CompactServiceMaterial(unittest.TestCase):
         row={'title':'Bitfinex registration unavailable for Taiwanese nationals','material_topic':'business',
              'published':now,'official':False,'source':'Media','url':'https://example.com/story'}
         text=json.dumps(inbox.card(row,now),ensure_ascii=False)
-        for value in ('國籍／居住地','新戶／既有帳戶','不建議搶註冊','媒體報導候選','製作優先度'):
+        for value in ('原文標題待中文核對','媒體報導候選','製作優先度','來源與時間'):
             self.assertIn(value,text)
 
     def test_major_ai_tools_remain_nonfinancial_candidates(self):

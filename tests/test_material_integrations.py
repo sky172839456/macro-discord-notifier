@@ -43,7 +43,6 @@ class IntegrationMaterialTests(unittest.TestCase):
                    material_topic='innovation', source='Example', official=False,
                    url='https://example.com/story', published=now)
         text = json.dumps(inbox.card(row, now), ensure_ascii=False)
-        for value in ('更新前後', '誰用得到', '官方或第三方', '讀寫權限',
-                      'MCP支援不等於所有功能', 'limited preview', '媒體報導候選'):
+        for value in ('limited preview', '媒體報導候選', '製作優先度', '來源與時間'):
             self.assertIn(value, text)
 

@@ -26,7 +26,7 @@ class PeopleRecruiting(unittest.TestCase):
     def test_people_plan_and_cached_card_are_source_bounded(self):
         row=self.row(PEOPLE);before=copy.deepcopy(row)
         card=m.card(row,row['published']);text=json.dumps(card,ensure_ascii=False)
-        for x in ('企業／交易所進展','原任職位','新公司','離職動機','製作優先度','來源與時間'):
+        for x in ('企業／交易所進展','來源內容','查證狀態','製作優先度','來源與時間'):
             self.assertIn(x,text)
         self.assertNotIn('這次AI更新',text)
         self.assertEqual(row,before)

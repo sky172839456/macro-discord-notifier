@@ -33,6 +33,6 @@ class OfficialMaterialSources(unittest.TestCase):
         row=m.parse_source_feed(self.xml(host),name,host)[0]
         row['material_topic']=m.topic(row)
         text=json.dumps(m.card(row,now),ensure_ascii=False)
-        for value in ('製作優先度','初步內容構思','來源與時間','官方來源候選','方法','樣本'):
+        for value in ('製作優先度','來源內容','來源與時間','官方來源候選'):
             self.assertIn(value,text)
         self.assertNotIn('已獨立驗證',text)

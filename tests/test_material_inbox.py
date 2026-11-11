@@ -56,7 +56,7 @@ class MaterialInboxTests(unittest.TestCase):
         self.assertEqual(self.run_box([self.row()]), 1)
         card = self.send.call_args.args[1]
         text = json.dumps(card, ensure_ascii=False)
-        for value in ('原文標題', '來源內容', '為什麼值得做', '建議形式', '查證狀態', '媒體報導候選', '貼文整理雙方', 'coindesk.com', '2026/11/03 17:50'):
+        for value in ('來源內容', '製作優先度', '查證狀態', '媒體報導候選', 'coindesk.com', '2026/11/03 17:50'):
             self.assertIn(value, text)
         self.assertNotIn('來源正常', text)
         self.assertEqual(self.state['seen'], old)

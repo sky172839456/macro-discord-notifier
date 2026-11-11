@@ -289,6 +289,36 @@ def equivalent(a, b):
     return key(a) == key(b) or same_news_event(a, b)
 
 
+def source_links(row):
+    """Deduplicate article URLs, then label distinct reports from one publisher once."""
+    from crypto_news_notifier import canonical_url
+    refs = [{'source': row.get('source', '來源'), 'url': row['url']}, *row.get('related_sources', [])]
+    groups, seen = {}, set()
+    for ref in refs:
+        url = ref.get('url', '')
+        if not public_url(url):
+            continue
+        identity = canonical_url(url)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        name = clean(ref.get('source') or '來源', 60)
+        group = groups.setdefault(name.casefold(), {'name': name, 'urls': []})
+        group['urls'].append(url)
+        if len(seen) == 3:
+            break
+    lines = []
+    for group in groups.values():
+        urls, name = group['urls'], group['name']
+        if len(urls) == 1:
+            lines.append(f'[{name}]({urls[0]})')
+        else:
+            reports = [f'[主文]({urls[0]})']
+            reports.extend(f'[相關報導 {i}]({url})' for i, url in enumerate(urls[1:], 1))
+            lines.append(name+'：'+' · '.join(reports))
+    return '\n'.join(lines)
+
+
 def card(row, now):
     # Reclassify only this unsent rendering, without reopening delivered history.
     row = dict(row)
@@ -296,55 +326,16 @@ def card(row, now):
     from material_editorial import editorial_angle
     if selected and row.get('material_topic') == 'ai' and editorial_angle(str(row.get('title', '')), str(row.get('summary', ''))):
         row['material_topic'] = selected
-    label, why, formats, checks = ANGLES[row['material_topic']]
+    label = ANGLES[row['material_topic']][0]
     from material_editorial import editorial_angle
     angle = editorial_angle(str(row.get('title', '')), str(row.get('summary', '')))
-    if angle == 'people':
-        why = '這則是企業高層人事異動，可整理原任職與新職責、已公布時程，不當成新工具發布。'
-        formats = '限動列已確認異動；輪播做原公司／新公司及職位對照。'
-        checks = '核對原公司、新公司、姓名、職位、宣布與到任時間；未公布的離職動機、策略影響及股價方向不自行推測。'
-    elif angle == 'startup':
+    if angle == 'startup':
         label = '企業／創業應用'
-        why = '聚焦創業者的營運做法、工作分工或資金進展，依原文細節評估能否做成實例。'
-        formats = '輪播拆解工作分工；Reels用原文案例說明做法與限制。'
-        checks = '核對公司／創業者、資料期間、樣本、實際工作、成本及收入證據；成立數、融資額不等於獲利。'
     elif angle == 'politics':
         label = '政治／公共治理'
-        why = '人物的政策立場與公開行為可作事實對照，重點是時間與規則階段，而非以AI字眼當新工具。'
-        formats = '輪播對照已揭露事實與政策時程；限動標清來源及仍待查證項目。'
-        checks = '核對人物身分、揭露文件與時間、提案／表決／生效階段；持股不直接代表違法或內線交易。'
-    elif angle == 'recruiting':
-        why = '這則聚焦AI在招募流程的應用與收費討論，可拆解改變了哪個工作環節，而不是泛稱AI更新。'
-        formats = 'Reels圖解篩選流程；輪播區分效率、服務費及業者觀點。'
-        checks = '核對測試或受訪對象、候選人篩選環節、費用口徑、資料權限及適用範圍；不把個別經驗當成整體就業結論。'
-    elif angle == 'market':
-        why = '這則是市場價格與風險討論，可拆解股價表現、融資壓力及來源觀點，不當成新工具發布。'
-        formats = '輪播對照行情、背景與證據；Reels解釋市場疑問，不把反彈當作風險解除。'
-        checks = '核對報價時間、統計期間與消息歸屬；泡沫疑問或受訪者判斷不是已證實結論。'
-    elif angle in ('research_review', 'security_review'):
-        why = '這則討論研究發現或專家觀點，適合拆解證據、方法與反例，不當成新功能上線。'
-        formats = '輪播區分原研究、受訪者說法及尚待驗證的部分。'
-        checks = '回查原報告、研究方法與受訪上下文；不把評論、研究警訊當成已發生的新攻擊。'
-    elif angle == 'usage_review':
-        why = '這則是生活使用經驗，適合以成功與出錯的對照帶出工具的能力邊界。'
-        formats = '限動提問；Reels比較同一工具的成功與失敗案例，明示為來源作者經驗。'
-        checks = '核對原作者測試條件與產品版本；個案經驗不等於所有人都會得到相同結果。'
-    from material_share_value import assess, value_copy, activity_kind
-    value_result = assess(row)
-    if value_result['eligible']:
-        why = value_copy(value_result)
-    if activity_kind(str(row.get('title',''))):
+    from material_share_value import activity_kind
+    if activity_kind(str(row.get('title', ''))):
         label = '活動／產品條件'
-        formats = '輪播拆解產品、資格、時程與資金限制；限動附原始公告及截止時間。'
-        checks = '核對實際產品是Launchpool、IPO認購或代幣化權益，不能混稱；確認發行方、標的關係、地區／資格、費用、資金限制與風險，不承諾配發或收益。'
-    if exchange_access_notice(str(row.get('title', ''))):
-        why = '交易所註冊、驗證或服務資格變動，會影響讀者能否使用服務，適合整理適用對象與生效階段。'
-        checks += '\n核對交易所原始公告、更新日期、國籍／居住地條件、新戶／既有帳戶、產品及生效範圍；截圖與推薦連結只作線索，不寫成全面禁用，也不建議搶註冊、虛報資格或規避限制。'
-    from content_interpretation import connection_claim
-    if row['material_topic'] in ('ai', 'innovation') and connection_claim(row.get('title',''),row.get('summary','')):
-        why = '報導涉及既有工具新增串接或自動化能力，可用更新前後的具體任務比較，說明多做了什麼、誰用得到。'
-        formats = '限動說明新增能力；Reels對照原流程與串接流程；輪播整理用途、適用對象與使用條件。'
-        checks += '\n核對串接是否已開放、官方或第三方提供、適用版本、費用、讀寫權限與地區；範例流程不等於已實測，MCP支援不等於所有功能都可操作。'
     from notification_quality import checked_translation, chinese_points, published_time
     title = clean(row.get('title_zh', ''), 800)
     try:
@@ -356,21 +347,16 @@ def card(row, now):
     facts = display_points(points or excerpt_parts(row))
     from material_editorial import review
     editorial = review(row, now, focus=title if '原文標題待中文核對' not in title else row['title'])
-    status = ('官方自行公布；效能、適用範圍與發布階段仍須讀原文核對。' if row['material_topic'] == 'ai' and row.get('official') else
+    status = ('官方自行公布，不等於獨立實測；適用範圍與發布階段以原文為準。' if row['material_topic'] == 'ai' and row.get('official') else
               '官方來源候選；列示內容仍須核對範圍與實施階段。' if row.get('official') else
               '媒體報導候選；尚未以直接官方資料完成獨立核實。')
     fields = [
         {'name': '📌 來源內容'+('（中文未完整核對，保留原文片段）' if not points else ''), 'value': facts or '請開啟原文核對。', 'inline': False},
-        {'name': '💡 為什麼值得做', 'value': why+'\n\n**本則初評理由**　'+editorial['reason'], 'inline': False},
-        {'name': '🧩 初步內容構思', 'value': editorial['concept'], 'inline': False},
-        {'name': '🎬 建議形式', 'value': formats, 'inline': False},
-        {'name': '🔎 查證狀態／製作前要補', 'value': status+'\n\n'+checks, 'inline': False},
+        {'name': '🔎 查證狀態', 'value': status, 'inline': False},
     ]
-    refs = [{'source': row.get('source', '來源'), 'url': row['url']}, *row.get('related_sources', [])]
-    refs = [r for r in refs if public_url(r.get('url'))][:3]
-    links = '\n'.join(f'[{clean(r["source"], 60)}]({r["url"]})' for r in refs)
+    links = source_links(row)
     fields.append({'name': '🔗 來源與時間', 'value': links+f'\n原文：{published_time(row["published"]).astimezone(TZ):%Y/%m/%d %H:%M}\n收錄：{now.astimezone(TZ):%Y/%m/%d %H:%M}（台灣）', 'inline': False})
-    result = {'title': '📝 素材候選｜'+title, 'description': f'分類：{label}\n\n**製作優先度　{editorial["display"]} {editorial["stars"]}/5｜{editorial["label"]}**\n{editorial["basis"]}\n\n【僅管理員】選題建議，不代表事實已全部核實或已製作發布。\n\n原文標題：'+clean(row['title'], 210),
+    result = {'title': '📝 素材候選｜'+title, 'description': f'分類：{label}\n\n**製作優先度　{editorial["display"]} {editorial["stars"]}/5**\n星等為製作優先度，非查證評等。',
               'fields': fields, 'color': 0xB99B66, 'timestamp': now.isoformat(),
               'footer': {'text': 'WV素材整理｜先查證再製作｜不會自動發布IG'}}
     if len(title)>180:
