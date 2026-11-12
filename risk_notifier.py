@@ -248,6 +248,14 @@ def bybit_incidents():
     return result
 
 
+def official_notice_detail(item):
+    """Best-effort official body/time for a new critical notice; {} when the source has none."""
+    if item.get("exchange") != "Binance" or not item.get("code"):
+        return {}
+    from exchange_announcement_notifier import binance_article_detail
+    return binance_article_detail(item["code"])
+
+
 def critical_official_notices():
     """Use each exchange's official announcement collector; mirror only critical risk."""
     from exchange_announcement_notifier import PAGE_SOURCES, page_items
