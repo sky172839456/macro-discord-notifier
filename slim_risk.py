@@ -254,6 +254,53 @@ def incident_card(api, exchange, item, now):
             "footer": {"text": "官方事件資料｜範圍以本公告為準｜不構成投資建議"}, "timestamp": now.isoformat()}
 
 
+NOTICE_GUIDANCE = {
+    "security": "官方公告涉及安全事件或資產影響；請先看交易所的處置、受影響範圍與服務限制，不要只憑標題判斷。",
+    "outage": "官方公告涉及服務中斷或異常；請留意交易、登入與充提是否受影響，恢復時間以官方更新為準。",
+}
+
+
+def notice_card(api, item, now):
+    """Card for an exchange's official announcement (not a status-page incident).
+
+    Announcement lists carry no incident status or update timeline, so this card
+    never shows an empty status/description; it shows what the notice is, the
+    official text when available, and the official time or the query time.
+    """
+    category = item.get("category") or {}
+    exchange = str(item.get("exchange") or "交易所")
+    title = str(item.get("title") or "")
+    zh_title = title
+    try:
+        # A real title translation; risk_notifier.translate_title only maps status words.
+        from crypto_news_notifier import translate_title
+        from notification_quality import checked_translation
+        zh_title = checked_translation(title, translate_title(title))
+    except Exception:
+        zh_title = title
+    excerpt = api.clean_source_text(str(item.get("body") or ""), 500)
+    if excerpt:
+        try:
+            from crypto_news_notifier import translate_text
+            from notification_quality import checked_translation
+            excerpt = checked_translation(excerpt, translate_text(excerpt))
+        except Exception:
+            excerpt = ""
+    if excerpt and excerpt[-1] not in "。！？.!?" and "。" in excerpt:
+        excerpt = excerpt[:excerpt.rindex("。") + 1]  # never end mid-sentence
+    guidance = NOTICE_GUIDANCE.get(category.get("key"), "官方公告涉及重大風險；影響範圍以官方原文為準。")
+    published = item.get("published") if item.get("published_is_official") else None
+    when = (f"官方公告時間：{published.astimezone(TAIPEI):%Y/%m/%d %H:%M}（台灣）" if isinstance(published, datetime)
+            else f"🕒 本次查詢：{now.astimezone(TAIPEI):%Y/%m/%d %H:%M}（台灣）")
+    return {"title": f"{category.get('icon') or '🚨'} 官方公告｜{exchange}｜{zh_title or '重大風險公告'}"[:240],
+            "description": (excerpt + "\n\n" if excerpt else "") + guidance,
+            "fields": [{"name": "公告類型", "value": category.get("label") or "重大風險公告", "inline": True},
+                       {"name": "🔗 官方公告", "value": f"[閱讀原文]({item.get('url')})\n{when}", "inline": False}],
+            "color": 0xE74C3C,
+            "footer": {"text": f"{exchange} 官方公告｜只同步安全與服務中斷｜不構成投資建議"},
+            "timestamp": now.isoformat()}
+
+
 def monitor(api, webhook, now=None):
     now = now or datetime.now(timezone.utc)
     state = api.load()
@@ -321,7 +368,14 @@ def monitor(api, webhook, now=None):
     for item in notices:
         key = f"{item['exchange']}:{item['id']}"
         if key not in known and initialized:
-            api.send(webhook, incident_card(api, item["exchange"], {**item, "name": item["title"], "status": "investigating"}, now))
+            detail = {}
+            fetch = getattr(api, "official_notice_detail", None)
+            if fetch:
+                try:
+                    detail = fetch(item) or {}
+                except Exception as exc:
+                    print(f"警告：{item['exchange']} 公告內文暫缺（{type(exc).__name__}），改用類別說明。")
+            api.send(webhook, notice_card(api, {**item, **detail}, now))
         known[key] = now.isoformat()
     if notices:
         state.setdefault("baselines", {})["CriticalNotices"] = True

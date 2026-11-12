@@ -177,9 +177,49 @@ def binance_items() -> list[dict[str, Any]]:
                 "id": hashlib.sha256(("Binance" + link).encode()).hexdigest()[:24],
                 "exchange": "Binance", "title": title, "summary": title, "url": link,
                 "category": category, "published": datetime.now(timezone.utc),
-                "published_is_official": False,
+                "published_is_official": False, "code": code,
             })
     return list({item["id"]: item for item in items}.values())
+
+
+def binance_article_detail(code: str) -> dict[str, Any]:
+    """Official publish time and plain body for one Binance article.
+
+    The catalog list returns titles only (body/publishDate are null), so a risk
+    card built from it alone has nothing to say. Fetch the detail only for a new
+    notice; return only fields the source actually provides.
+    """
+    if not re.fullmatch(r"[0-9a-f]{32}", code or ""):
+        return {}
+    payload = json.loads(text(
+        "https://www.binance.com/bapi/composite/v1/public/cms/article/detail/query?articleCode=" + code))
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return {}
+    result: dict[str, Any] = {}
+    stamp = data.get("publishDate")
+    if isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and stamp > 0:
+        result["published"] = datetime.fromtimestamp(stamp / 1000, timezone.utc)
+        result["published_is_official"] = True
+    parts: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("node") == "text" and isinstance(node.get("text"), str):
+                parts.append(node["text"])
+            for child in node.get("child") or []:
+                walk(child)
+
+    body = data.get("body")
+    if isinstance(body, str):
+        try:
+            walk(json.loads(body))
+        except ValueError:
+            pass
+    plain = re.sub(r"^Fellow Binancians,?\s*", "", " ".join(" ".join(parts).split()))
+    if plain:
+        result["body"] = plain
+    return result
 
 
 def bingx_items() -> list[dict[str, Any]]:
