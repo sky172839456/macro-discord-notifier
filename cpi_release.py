@@ -81,6 +81,10 @@ def details(item):
             lines.append(line)
             if not confirmed:
                 missing.append(label+'季調口徑')
+        elif key == 'annual' and metrics.get('annual_official_missing') is True:
+            previous = metrics.get('previous_annual') if comparable else None
+            comparison = f'{previous:.1f}%' if finite(previous) else '暫缺'
+            lines.append(f'**年增率（未季調）**\n本次 無法計算：官方去年同月指數未發布｜前值 {comparison}')
         else:
             previous = metrics.get('previous_' + key) if comparable else None
             comparison = f'{previous:.1f}%' if finite(previous) else '暫缺'
@@ -132,8 +136,14 @@ def index_metrics(monthly_rows, annual_rows, reference):
     current_monthly = rate(monthly, current, prior)
     if current_monthly is None:
         return None
+    # The agency's own row exists but carries a non-numeric marker ("-"): the
+    # year-ago index was never published, so no annual rate can exist.
+    officially_missing = any(str(row.get('year')) == str(year - 1) and row.get('period') == f'M{month:02d}'
+                             and not re.fullmatch(r'-?\d+(?:\.\d+)?', str(row.get('value', '')).strip())
+                             for row in annual_rows)
     return {'monthly': current_monthly,
             'annual': rate(annual, current, (year - 1, month)),
+            'annual_official_missing': officially_missing and finite(annual.get(current)),
             'previous_monthly': rate(monthly, prior, previous_period(*prior)),
             'previous_annual': rate(annual, prior, (prior[0] - 1, prior[1])),
             'previous_period': '%04d/%02d' % prior,

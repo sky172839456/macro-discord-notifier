@@ -337,11 +337,56 @@ def title_tokens(title: str) -> set[str]:
     return {word for word in re.findall(r"[a-z0-9]{3,}", title.lower()) if word not in stop}
 
 
+def money_amounts(value: str) -> set[float]:
+    """Amounts in USD millions; "$270M", "$270 million" and "$0.27 billion" are equal."""
+    scale = {"k": .001, "thousand": .001, "m": 1, "mn": 1, "million": 1, "b": 1000, "bn": 1000, "billion": 1000}
+    found = re.findall(r"\$\s?(\d+(?:\.\d+)?)\s*(k|thousand|mn|m|million|bn|b|billion)\b", str(value or ""), re.I)
+    return {round(float(n) * scale[u.lower()], 3) for n, u in found}
+
+
+# Words that many unrelated stories share; they never identify one event on their own.
+GENERIC_NAMES = {"the", "bitcoin", "btc", "ethereum", "ether", "eth", "crypto", "etf", "etfs", "sec", "fed", "us",
+                 "stablecoin", "stablecoins", "banks", "bank", "global", "project", "million", "billion", "token",
+                 "tokens", "exchange", "market", "markets", "new", "report", "first", "week", "monday", "tuesday",
+                 "wednesday", "thursday", "friday", "saturday", "sunday", "after", "amid", "with", "and"}
+
+
+def same_named_amount_event(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    """Same distinctive name and the same headline amount within 24h is one story told by several outlets."""
+    try:
+        if abs(left["published"] - right["published"]) > timedelta(hours=24):
+            return False
+    except (KeyError, TypeError):
+        return False
+    def amounts(row):
+        return money_amounts(row.get("title", "")) or money_amounts(row.get("summary", ""))
+    a, b = amounts(left), amounts(right)
+    if not (a and b and a & b) or (money_amounts(left.get("title", "")) and money_amounts(right.get("title", ""))
+                                   and money_amounts(left.get("title", "")) != money_amounts(right.get("title", ""))):
+        return False
+    def names(row):
+        text = f"{row.get('title', '')} {row.get('summary', '')}"
+        return {w.lower() for w in re.findall(r"\b[A-Z][A-Za-z0-9]{2,}\b", text)} - GENERIC_NAMES
+    if not names(left) & names(right):
+        return False
+    # A later stage of the same incident (reopened -> withdrawals resumed) stays visible.
+    steps = r"\b(reopen|resum|restor|halt|paus|suspend|freez|unfreez|recover|refund|return|arrest|charg|sentenc|" \
+            r"approv|reject|launch|delay|complet|clos|settl|sue|sued|lawsuit|withdraw|exploit|drain)\w*"
+    def progress(row):
+        return {m.lower()[:5] for m in re.findall(steps, row.get("title", ""), re.I)}
+    if progress(left) and progress(right) and progress(left) != progress(right):
+        return False
+    from news_editorial import stage, progress_terms, text as row_text
+    return (stage(row_text(left)) == stage(row_text(right))
+            and progress_terms(row_text(left)) == progress_terms(row_text(right)))
+
+
 def similar_title(left: str, right: str) -> bool:
     if slim_policy.enabled() and slim_policy.same_event(left, right):
         return True
     def amounts(value):
         value = re.sub(r"\b(\d+(?:\.\d+)?)\s*billion\b", r"\1b", value.lower())
+        value = re.sub(r"\b(\d+(?:\.\d+)?)\s*million\b", r"\1m", value)
         return set(re.findall(r"\b\d+(?:\.\d+)?[bmkt]?\b", value))
     if amounts(left) != amounts(right):
         return False  # 數字改變可能代表新進展，不能只因標題相似就吞掉。
@@ -357,6 +402,9 @@ def same_news_event(left, right):
         from news_entry_audit import unverified_greece_variant
         if unverified_greece_variant(left, right):
             return False  # 未核對的新條件不能被一般標題相似度吞掉。
+        from content_interpretation import declared_conflict
+        if not declared_conflict(left, right) and same_named_amount_event(left, right):
+            return True  # 同名稱＋同金額＝多家媒體寫同一件事（例：FARO 2.7億美元三家報導）。
         import news_auto_recovery as auto
         if auto.enabled():
             from news_verified_context import same_verified_event, same_swiss_launch_version

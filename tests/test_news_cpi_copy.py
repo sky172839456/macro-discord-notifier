@@ -171,6 +171,41 @@ class NewsCpiCopyTests(unittest.TestCase):
         with patch.object(notifier,'http_json_post',return_value=payload):
             self.assertEqual(notifier.fetch_bls_api_releases(self.now,{'bls_api':{'cpi':{'signature':'old'}}}),[])
 
+    def test_cpi_with_officially_uncollected_year_ago_month_still_releases(self):
+        # Live 2026-11-10: BLS lists 2025 M10 as "-" (not collected); the old code
+        # raised ValueError and dropped every BLS result, so no CPI card was sent.
+        series=[{'seriesID':'CUSR0000SA0','data':[{'year':'2026','period':'M10','value':'337.476'},
+                  {'year':'2026','period':'M09','value':'336.298'},{'year':'2026','period':'M08','value':'334.131'}]},
+                {'seriesID':'CUUR0000SA0','data':[{'year':'2026','period':'M10','value':'337.511'},
+                  {'year':'2026','period':'M09','value':'336.940'},{'year':'2025','period':'M10','value':'-'},
+                  {'year':'2025','period':'M09','value':'324.800'}]}]
+        payload={'status':'REQUEST_SUCCEEDED','Results':{'series':series}}
+        state={'bls_api':{'cpi':{'signature':'old'}}}
+        with patch.object(notifier,'http_json_post',return_value=payload):
+            rows=notifier.fetch_bls_api_releases(self.now,state)
+        cpi=[r for r in rows if r['rule']['key']=='cpi']
+        self.assertEqual(len(cpi),1);self.assertNotIn('12 months',cpi[0]['summary'])
+        self.assertTrue(cpi[0]['cpi_metrics']['annual_official_missing'])
+        text,missing=cpi_release.details(cpi[0])
+        self.assertEqual(missing,[]);self.assertIn('官方去年同月指數未發布',text);self.assertIn('0.4%',text)
+        self.assertNotEqual(state['bls_api']['cpi']['signature'],'old')
+        # A genuinely absent row (not the agency's "-" marker) still holds the card.
+        series[1]['data']=[r for r in series[1]['data'] if r['year']!='2025' or r['period']!='M10']
+        with patch.object(notifier,'http_json_post',return_value=payload):
+            rows=notifier.fetch_bls_api_releases(self.now,{'bls_api':{'cpi':{'signature':'old'}}})
+        self.assertEqual(cpi_release.details([r for r in rows if r['rule']['key']=='cpi'][0])[1],['年增率'])
+
+    def test_bls_parse_error_does_not_consume_release_or_other_series(self):
+        series=[{'seriesID':key,'data':[{'year':'2026','period':'M09','value':'103.7'},
+                 {'year':'2026','period':'M08','value':'103.1'},{'year':'2025','period':'M09','value':'100'}]}
+                for key in notifier.BLS_API_GROUPS['cpi']]
+        payload={'status':'REQUEST_SUCCEEDED','Results':{'series':series}}
+        state={'bls_api':{'cpi':{'signature':'old'}}}
+        with patch.object(notifier,'http_json_post',return_value=payload), \
+             patch.object(notifier,'EVENT_RULES',[]):
+            self.assertEqual(notifier.fetch_bls_api_releases(self.now,state),[])
+        self.assertEqual(state['bls_api']['cpi']['signature'],'old')
+
     def test_late_cpi_still_separates_schedule_and_detection(self):
         card=notifier.release_embed(self.cpi(),self.now,detected_at=self.now+timedelta(minutes=25))
         self.assertIn('補發',card['title'])
