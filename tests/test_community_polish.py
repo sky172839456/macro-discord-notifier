@@ -22,7 +22,7 @@ class CommunityPolishTests(unittest.TestCase):
         with patch.dict(os.environ, {'SLIM_NOTIFICATIONS': '1'}):
             card = apply_delivery_format(row, 'macro_alerts')
         self.assertTrue(card['title'].startswith('【數據公布】'))
-        self.assertEqual(card['author']['name'], 'W先生｜W Viewture')
+        self.assertEqual(card['author']['name'], 'W Viewture')
         self.assertEqual(card['color'], WM_COLORS['purple'])
         self.assertEqual(card['url'], row['url'])
         self.assertEqual(card['timestamp'], row['timestamp'])
