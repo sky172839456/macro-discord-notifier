@@ -72,7 +72,7 @@ def sentiment_lines(data, now, weekly=False):
         delta = None
     return (f'恐慌貪婪指數 **{row["value"]}/100｜{label}**\n較{"七日前" if weekly else "前一日"} {signed(delta, "分")}\n\n'
             f'資料：{stamp(row["timestamp"])}｜以比特幣情緒為主\n'
-            f'來源：[Alternative.me]({SENTIMENT_URL})\n\n情緒不等同漲跌預測')
+            f'來源：[Alternative.me]({SENTIMENT_URL})')
 
 
 def global_lines(data, now):
@@ -81,7 +81,7 @@ def global_lines(data, now):
         return f'⚠️ 市場總覽暫缺或未更新。\n來源：[CoinGecko]({GLOBAL_URL})'
     return (f'總市值 **{money(row["market_cap"])}**\n24h **{signed(row["market_cap_change_24h"])}**\n'
             f'BTC市占 **{row["btc_dominance"]:.2f}%**\n'
-            f'\n資料：{stamp(row["timestamp"])}\n來源：[CoinGecko]({GLOBAL_URL})\n\n市占是市值占比，並非資金流量。')
+            f'\n資料：{stamp(row["timestamp"])}\n來源：[CoinGecko]({GLOBAL_URL})')
 
 
 def price_lines(data, market, now, weekly):
@@ -105,7 +105,8 @@ def price_lines(data, market, now, weekly):
         if row.get('fallback_reason'):
             part += '\nBitget本輪未取得可核對資料，改用幣安。'
         lines.append(part)
-    lines.append('最近七根完整UTC日線；非即時七日快照。' if weekly else '近24小時漲跌；查詢快照，非即時報價。')
+    if weekly:
+        lines.append('最近七根完整UTC日線；非即時七日快照。')
     return '\n\n'.join(lines)
 
 
@@ -248,7 +249,7 @@ def contract_lines(data, now, weekly):
         if row.get('fallback_reason'):
             parts.append('Bitget本輪未取得可核對資料，改用幣安。')
         lines.append('\n'.join(parts))
-    lines.append('僅列上述交易所合約；估值＝幣數×標記價格。\n數量變化不代表多空方向；費率非年化，正值通常由多方付空方。')
+    lines.append('估值＝幣數×標記價格；費率為每期值，非年化。')
     return '\n\n'.join(lines)
 
 
@@ -262,7 +263,8 @@ def observations(data, weekly, now=None):
         a, b = changes['BTC'], changes['ETH']
         if a * b < 0:
             rows.append('BTC與ETH漲跌方向分化，單一幣種無法代表整體。')
-        else:
+        elif weekly:
+            # Daily: the price lines above already show this; it adds no information.
             lead = 'BTC' if a >= b else 'ETH'
             rows.append(f'{lead}在這段價格區間領先{abs(a-b):.2f}個百分點。')
     flows = [data.get(k) or {} for k in (('weekly_btc_etf', 'weekly_eth_etf') if weekly else ('etf', 'eth_etf'))]
@@ -282,7 +284,9 @@ def observations(data, weekly, now=None):
                 and (instant(mood['timestamp']) - instant(mood['previous_timestamp'])).total_seconds() == 7 * 86400):
             delta = mood['value'] - mood['previous_value']
             rows.append(f'情緒指數較七日前{signed(delta, "分")}；情緒與價格分開判讀。')
-    return rows[:3 if weekly else 2] or ['可比較資料不足，本次不補寫市場方向。']
+    if not weekly:
+        return rows[:2]  # Daily: say nothing rather than a stock sentence.
+    return rows[:3] or ['可比較資料不足，本次不補寫市場方向。']
 
 
 def weekly_conclusion(data):
@@ -451,7 +455,11 @@ def build_card(period, now, market, market_error, events, event_error, data):
         fields.append(field('🧩 一週統整與總結', '\n\n'.join('• ' + line for line in observations(data, True, now)) + '\n\n**本週總結**｜' + weekly_conclusion(data)))
         fields.append(field('📅 本週要注意什麼｜未來七日', events_lines(events, now, event_error, True)))
     else:
-        fields.append(field('📅 今日關注', events_lines(events, now, event_error, False, budget=650) + '\n\n**📌 市場觀察**\n' + '\n'.join('• ' + line for line in observations(data, False, now))))
+        notes = observations(data, False, now)
+        fields.append(field('📅 今日關注', events_lines(events, now, event_error, False, budget=650)
+                            + ('\n\n**📌 市場觀察**\n' + '\n'.join('• ' + line for line in notes) if notes else '')
+                            # One reading note replaces the per-section caveats.
+                            + '\n\n-# 讀法：市占是市值占比、非資金流量；情緒不等於漲跌預測；未平倉變化不代表多空方向；價格為查詢快照。'))
     description = '用一週的變化做整理，再準備這週的行程。' if weekly else '價格、情緒、資金，一張掌握今天的市場狀態。'
     if not weekly:
         description += '\n\n' + daily_top_three(data, market, events, now, event_error)

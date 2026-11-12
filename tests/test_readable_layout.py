@@ -113,7 +113,8 @@ class ReadableLayoutTests(unittest.TestCase):
         self.assertIn("\n來源：[CoinGecko]",glob)
         sent=brief.sentiment_lines(data,now)
         self.assertIn("51/100｜中性**\n較前一日 +3.00分",sent)
-        self.assertIn("\n\n情緒不等同漲跌預測",sent)
+        # 2026-11-12: per-section caveats moved to one reading note on the card.
+        self.assertNotIn("情緒不等同漲跌預測",sent)
 
 if __name__=="__main__":
     unittest.main()

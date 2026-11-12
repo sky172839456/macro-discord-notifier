@@ -160,6 +160,8 @@ def material_news(item):
     commentary = re.search(
         r'\b(?:exposes? .{0,35}(?:risks?|flaws?)|raises? questions|buying opportunity|'
         r'what it means|analysts? (?:say|says|argue\w*)|'
+        # Periodic statistics ("reports seven-fold increase in phishing alerts") are not an incident.
+        r'reports? (?:a |an )?(?:\w+-?fold|\d+%|\d+x|sharp|significant)?\s*(?:increase|rise|jump|surge|drop|decline)s? in|'
         r'(?:price|stocks?|shares?|bitcoin|ether) (?:falls?|drops?|rises?|slumps?|rebounds?|rallies) (?:after|following))\b', title, re.I)
     material_progress = re.search(
         r'\b(?:loss(?:es)?\s+(?:rise\w*|revis\w*|increas\w*|updat\w*)|'
