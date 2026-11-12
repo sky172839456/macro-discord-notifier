@@ -419,8 +419,14 @@ def daily_top_three(data, market, events, now, event_error=None):
     for key, symbol in (('etf', 'BTC'), ('eth_etf', 'ETH')):
         row = data.get(key) or {}
         date = row.get('date')
+        unlisted = bool(row.get('unreported_components', 0))
         if not row.get('source_issue') and number(row.get('net_flow_musd')) and hasattr(date, 'strftime'):
-            partial = '（初值）' if row.get('partial') else ''
+            if float(row['net_flow_musd']) == 0 and unlisted:
+                # Same rule as the ETF section below: a zero total with unlisted
+                # fund cells is not a confirmed zero flow.
+                flows.append(f'{date:%m/%d} {symbol} Farside尚未列出完整數據')
+                continue
+            partial = '（初值）' if row.get('partial') else '（暫定）' if unlisted else ''
             flows.append(f'{date:%m/%d} {symbol} {money_musd(row["net_flow_musd"])}{partial}')
         else:
             flows.append(f'{symbol} ETF資料待核對')

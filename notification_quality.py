@@ -74,8 +74,21 @@ def polish_chinese(source, translated):
             translated = re.sub(r'((?:Binance|幣安).{0,8}(?:客戶|用戶|使用者).{0,8}?)(?:淨虧損|淨損失)', r'\1資金淨流出', translated)
     if re.search(r'\bCapital B\b', source):
         translated = translated.replace('資本 B', 'Capital B').replace('資本B', 'Capital B')
-    for old, new in (('芯片', '晶片'), ('硬件', '硬體'), ('在線', '線上')):
+    for old, new in (('芯片', '晶片'), ('硬件', '硬體'), ('在線', '線上'),
+                     # One card must not mix 聯準會／美聯儲／聯儲局 or mainland/Taiwan terms.
+                     ('美聯儲', '聯準會'), ('美聯準會', '聯準會'), ('聯儲局', '聯準會'), ('人工智能', '人工智慧'),
+                     ('黑客', '駭客'), ('網絡', '網路'), ('數據中心', '資料中心'), ('加息', '升息'), ('減息', '降息')):
         translated = translated.replace(old, new)
+    # Proper names the translator turns into common words; only when the source names them.
+    if re.search(r'\bSecuritize\b', source) and not re.search(r'\bsecuriti[sz]ation\b', source, re.I):
+        translated = translated.replace('證券化', 'Securitize')
+    if re.search(r'\bElliptic\b', source):
+        translated = re.sub(r'橢圓形?', 'Elliptic', translated)
+    if re.search(r'\bMeta\b', source) and 'Meta' not in translated:
+        translated = re.sub(r'(?<=的)元(?=前景|股|平台|公司)|^元(?=前景|股|平台|公司)', 'Meta ', translated)
+    if re.search(r'\b(?:buy|buying|bought|slam|slams|scoop|scoops)\s+(?:up\s+)?the\s+dip\b', source, re.I):
+        translated = re.sub(r'(?:猛烈抨擊|抨擊|購買|買入|猛買)\s*(?:the\s*)?(?:DIP|Dip|dip|下跌)', '逢低買進', translated)
+    translated = re.sub(r'(?<=[a-z])(?=Bitcoin\b|Ethereum\b)', ' ', translated)
     if re.search(r'\bwarrant exercises?\b|\bexercis\w*\b.{0,30}\bwarrants?\b', source, re.I):
         translated = translated.replace('認股權證活動', '認股權證行使金額')
     translated = re.sub(r'\b([A-Z][A-Z0-9]{1,9})\s*[（(]\s*\1\s*[)）]', r'\1', translated)
@@ -194,7 +207,8 @@ def money_musd(value):
     if amount >= 100:
         text = f'{amount / 100:,.2f}億美元'
     elif amount >= .01:
-        text = f'{amount * 100:,.1f}萬美元'
+        # 3,910萬 and 3,910.0萬 must not appear side by side on the same card.
+        text = re.sub(r'\.0$', '', f'{amount * 100:,.1f}') + '萬美元'
     else:
         text = f'{amount * 1_000_000:,.2f}美元'
     return f'淨{"流入" if value > 0 else "流出"}{text}'

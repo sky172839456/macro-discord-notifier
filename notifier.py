@@ -185,70 +185,82 @@ def fetch_bls_api_releases(now: datetime, state: dict[str, Any]) -> list[dict[st
             "|".join(f"{item['year']}:{item['period']}:{item['value']}" for item in latest).encode()
         ).hexdigest()[:20]
         previous = observations.get(event_key)
-        observations[event_key] = {"reference": reference, "signature": signature}
-        if previous is None or previous.get("signature") == signature:
+        observation = {"reference": reference, "signature": signature}
+        if previous is None:
+            observations[event_key] = observation
             continue
-
-        rule = next(rule for rule in EVENT_RULES if rule["key"] == event_key)
-        if event_key in {"cpi", "ppi"}:
-            monthly, annual = datasets
-            monthly_change = (float(monthly[0]["value"]) / float(monthly[1]["value"]) - 1) * 100
-            prior_year = next(
-                (item for item in annual if item["period"] == annual[0]["period"]
-                 and int(item["year"]) == int(annual[0]["year"]) - 1),
-                None,
-            )
-            summary = f"The index changed {monthly_change:.1f} percent"
-            if prior_year:
-                annual_change = (float(annual[0]["value"]) / float(prior_year["value"]) - 1) * 100
-                summary += f" and {annual_change:.1f} percent over the last 12 months"
-            summary += "."
-        elif event_key == "jobs":
-            if previous.get("reference") == reference:
-                continue
-            payroll_change = float(datasets[0][0]["value"]) - float(datasets[0][1]["value"])
-            previous_payroll_change = (
-                float(datasets[0][1]["value"]) - float(datasets[0][2]["value"])
-                if len(datasets[0]) > 2 else None
-            )
-            summary = f"Payroll employment changed {payroll_change:+.0f} thousand"
-            if previous_payroll_change is not None:
-                summary += f"; previous payroll change was {previous_payroll_change:+.0f} thousand"
-            summary += f"; unemployment rate was {datasets[1][0]['value']} percent"
-            if len(datasets[1]) > 1:
-                summary += f"; previous unemployment rate was {datasets[1][1]['value']} percent"
-            summary += "."
-        else:
-            current = float(datasets[0][0]["value"])
-            summary = f"Job openings were {current / 1000:.3f} million."
-            prior_period = datasets[0][1] if len(datasets[0]) > 1 else None
-            from cpi_release import previous_period
-            prior_year, prior_month = previous_period(int(latest[0]["year"]), int(latest[0]["period"][1:]))
-            if prior_period and (int(prior_period["year"]), prior_period["period"]) == (prior_year, f"M{prior_month:02d}"):
-                summary += f" previous value {float(prior_period['value']) / 1000:.3f} million."
-            # An old-period revision is not a newly published monthly release.
-            if previous.get("reference") == reference:
-                continue
-        releases.append({
-            "id": f"bls-api-{event_key}-{reference}-{signature}",
-            "title": rule["name"], "summary": summary, "url": rule["source"],
-            "published": now, "rule": rule, 'reference_period': reference,
-        })
-        if event_key == 'jobs':
-            from cpi_release import previous_period
-            prior_prior = previous_period(*previous_period(int(latest[0]['year']), int(latest[0]['period'][1:])))
-            pp = datasets[0][2] if len(datasets[0])>2 else None
-            safe_previous = previous_payroll_change if pp and (int(pp['year']),pp['period']) == (prior_prior[0],f'M{prior_prior[1]:02d}') else None
-            releases[-1]['jobs_metrics'] = {'payroll':payroll_change*1000,
-                'unemployment':float(datasets[1][0]['value']),
-                'previous_payroll':safe_previous*1000 if safe_previous is not None else None,
-                'previous_unemployment':float(datasets[1][1]['value'])}
-        if event_key in {'cpi', 'ppi'}:
-            year = int(latest[0]['year'])
-            urls = [f'{BLS_API_URL}{series_id}?startyear={year-2}&endyear={year}' for series_id in ids]
-            releases[-1].update(price_metrics=price_metrics, url=urls[1], cpi_source_urls=urls)
-            if event_key == 'cpi':
-                releases[-1]['cpi_metrics'] = price_metrics
+        if previous.get("signature") == signature:
+            continue
+        # Mark a release as seen only after it was built; a parse error in one
+        # series must neither consume that release nor abort the others.
+        before = len(releases)
+        try:
+            rule = next(rule for rule in EVENT_RULES if rule["key"] == event_key)
+            if event_key in {"cpi", "ppi"}:
+                monthly, annual = datasets
+                monthly_change = (float(monthly[0]["value"]) / float(monthly[1]["value"]) - 1) * 100
+                prior_year = next(
+                    (item for item in annual if item["period"] == annual[0]["period"]
+                     and int(item["year"]) == int(annual[0]["year"]) - 1),
+                    None,
+                )
+                summary = f"The index changed {monthly_change:.1f} percent"
+                annual_change = (price_metrics or {}).get("annual")
+                # BLS marks uncollected months with "-" (e.g. October 2025); that must
+                # drop only the annual figure, never abort every BLS release.
+                if prior_year and annual_change is not None:
+                    summary += f" and {annual_change:.1f} percent over the last 12 months"
+                summary += "."
+            elif event_key == "jobs":
+                if previous.get("reference") == reference:
+                    continue
+                payroll_change = float(datasets[0][0]["value"]) - float(datasets[0][1]["value"])
+                previous_payroll_change = (
+                    float(datasets[0][1]["value"]) - float(datasets[0][2]["value"])
+                    if len(datasets[0]) > 2 else None
+                )
+                summary = f"Payroll employment changed {payroll_change:+.0f} thousand"
+                if previous_payroll_change is not None:
+                    summary += f"; previous payroll change was {previous_payroll_change:+.0f} thousand"
+                summary += f"; unemployment rate was {datasets[1][0]['value']} percent"
+                if len(datasets[1]) > 1:
+                    summary += f"; previous unemployment rate was {datasets[1][1]['value']} percent"
+                summary += "."
+            else:
+                current = float(datasets[0][0]["value"])
+                summary = f"Job openings were {current / 1000:.3f} million."
+                prior_period = datasets[0][1] if len(datasets[0]) > 1 else None
+                from cpi_release import previous_period
+                prior_year, prior_month = previous_period(int(latest[0]["year"]), int(latest[0]["period"][1:]))
+                if prior_period and (int(prior_period["year"]), prior_period["period"]) == (prior_year, f"M{prior_month:02d}"):
+                    summary += f" previous value {float(prior_period['value']) / 1000:.3f} million."
+                # An old-period revision is not a newly published monthly release.
+                if previous.get("reference") == reference:
+                    continue
+            releases.append({
+                "id": f"bls-api-{event_key}-{reference}-{signature}",
+                "title": rule["name"], "summary": summary, "url": rule["source"],
+                "published": now, "rule": rule, 'reference_period': reference,
+            })
+            if event_key == 'jobs':
+                from cpi_release import previous_period
+                prior_prior = previous_period(*previous_period(int(latest[0]['year']), int(latest[0]['period'][1:])))
+                pp = datasets[0][2] if len(datasets[0])>2 else None
+                safe_previous = previous_payroll_change if pp and (int(pp['year']),pp['period']) == (prior_prior[0],f'M{prior_prior[1]:02d}') else None
+                releases[-1]['jobs_metrics'] = {'payroll':payroll_change*1000,
+                    'unemployment':float(datasets[1][0]['value']),
+                    'previous_payroll':safe_previous*1000 if safe_previous is not None else None,
+                    'previous_unemployment':float(datasets[1][1]['value'])}
+            if event_key in {'cpi', 'ppi'}:
+                year = int(latest[0]['year'])
+                urls = [f'{BLS_API_URL}{series_id}?startyear={year-2}&endyear={year}' for series_id in ids]
+                releases[-1].update(price_metrics=price_metrics, url=urls[1], cpi_source_urls=urls)
+                if event_key == 'cpi':
+                    releases[-1]['cpi_metrics'] = price_metrics
+        except (ValueError, TypeError, KeyError, ZeroDivisionError, IndexError, StopIteration):
+            del releases[before:]
+            continue
+        observations[event_key] = observation
     return releases
 
 

@@ -18,6 +18,16 @@ class DailyThreePointsTests(unittest.TestCase):
               'etf':{'date':self.now,'net_flow_musd':99999,'source_issue':'來源分項與合計不符'}}
         text=daily_top_three(data,None,[],self.now,'source unavailable')
         self.assertNotIn('99,999',text);self.assertNotIn('+8.00%',text);self.assertIn('ETF資料待核對',text);self.assertIn('未完整確認',text)
+    def test_zero_total_with_unlisted_funds_is_not_a_zero_headline(self):
+        # Live 11/10-11/12: summary said 合計0美元 while the ETF section said incomplete.
+        data={'etf':{'date':self.now,'net_flow_musd':0,'unreported_components':3},
+              'eth_etf':{'date':self.now,'net_flow_musd':-39.1,'unreported_components':2}}
+        text=daily_top_three(data,None,[],self.now)
+        self.assertNotIn('0美元',text.split('02｜')[1].split('；')[0])
+        self.assertIn('BTC Farside尚未列出完整數據',text)
+        self.assertIn('ETH 淨流出3,910萬美元（暫定）',text);self.assertNotIn('3,910.0萬',text)
+        complete={'etf':{'date':self.now,'net_flow_musd':0}}
+        self.assertIn('11/07 BTC 合計0美元',daily_top_three(complete,None,[],self.now))
     def test_daily_gets_three_points_without_changing_weekly_or_detail_sections(self):
         daily=build_card('daily',self.now,None,None,[],None,{})
         weekly=build_card('weekly',self.now,None,None,[],None,{})
