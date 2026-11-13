@@ -116,18 +116,13 @@ def daily_health_embed(
     lines = []
     failures = 0
     skipped = 0
-    disabled = []
-    merged = []
     for name in MONITOR_LABELS:
         status, detail = results.get(name, ("missing", "本輪沒有執行紀錄"))
         display = MONITOR_DISPLAY[name]
         if status == "ok":
             icon, label = "✅", "流程完成"
-        elif status == "disabled":
-            disabled.append(display)
-            continue
-        elif status == "merged" and name == "市場分析":
-            merged.append(f"{display}：{detail}")
+        elif status == "disabled" or (status == "merged" and name == "市場分析"):
+            # 2026-11-13 本人：已停用（已刪）與已整併的項目不再列在巡檢卡；仍不計成功、也不計異常。
             continue
         elif status == "skipped":
             icon, label = "⚪", "未設定／已略過"
@@ -136,10 +131,6 @@ def daily_health_embed(
             icon, label = "❌", "執行失敗或缺少紀錄"
             failures += 1
         lines.append(f"{icon} **{display}**\n{label}｜{detail}")
-    if merged:
-        lines.append("**↪️ 已整併**\n" + "\n".join(merged))
-    if disabled:
-        lines.append("**⏸️ 已停用的獨立通知**\n" + "、".join(disabled))
 
     audit = state.get('content_audit') or {'warnings': ['尚無來源與內容對帳證據'], 'metrics': {}, 'scope': '待核對'}
     content_pending = bool(audit['warnings'])
@@ -185,7 +176,7 @@ def daily_health_embed(
                     if failures
                     else f"**⚠️ {skipped} 個監控未設定**\n未執行項目不會被標示為正常。"
                     if skipped
-                    else "**✅ 本輪流程已完成**\n只代表排程程式完成；已整併及停用項目另列，不計為獨立執行成功。"
+                    else "**✅ 本輪流程已完成**\n只代表排程程式完成。"
                 ),
                 "inline": False,
             },

@@ -144,7 +144,7 @@ class SlimNotificationsTests(unittest.TestCase):
         rows["衍生品"] = ("disabled", "已停用")
         card = realtime_health.daily_health_embed(rows, {}, self.now)
         self.assertNotIn("異常", card["title"])
-        self.assertIn("已停用", card["description"])
+        self.assertNotIn("已停用", card["description"])
 
     def test_production_workflow_routes_risk_to_news_and_does_not_load_dead_webhooks(self):
         text = (Path(__file__).resolve().parents[1]/".github/workflows/realtime-monitors.yml").read_text(encoding="utf-8")

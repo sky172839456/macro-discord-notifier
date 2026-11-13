@@ -32,9 +32,12 @@ class HealthChannelSyncTests(unittest.TestCase):
     def test_merged_analysis_and_disabled_alerts_are_not_successes(self):
         card = health.daily_health_embed(self.production_results(), {}, self.now)
         self.assertEqual(card['description'].count('✅'), 4)
-        self.assertIn('已整併', card['description'])
-        self.assertIn('已停用的獨立通知', card['description'])
-        self.assertIn('獨立衍生品警報', card['description'])
+        # 2026-11-13 本人：已停用與已整併不再列出，也不算異常
+        self.assertNotIn('已整併', card['description'])
+        self.assertNotIn('已停用', card['description'])
+        self.assertNotIn('獨立衍生品警報', card['description'])
+        self.assertNotIn('另列', json.dumps(card, ensure_ascii=False))
+        self.assertNotIn('異常', card['title'])
         self.assertIn('內容待核', card['title'])
         self.assertEqual(card['color'], 0xF1C40F)
 
