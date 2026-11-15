@@ -20,6 +20,8 @@ EVENT_RULES = (
     {"key": "industrial", "keywords": ("industrial production", "capacity utilization"), "name": "美國工業生產與產能利用率", "source": "https://www.federalreserve.gov/releases/g17/current/default.htm"},
     {"key": "durable", "keywords": ("advance new orders for manufactured durable goods", "durable goods"), "name": "美國耐久財訂單", "source": "https://www.census.gov/manufacturing/m3/adv/current/index.html"},
     {"key": "gdp", "keywords": ("gross domestic product", "gdp (", "gdp:"), "name": "美國國內生產毛額（GDP）", "source": "https://www.bea.gov/data/gdp/gross-domestic-product", "priority": "highest"},
+    # 會議紀要不是利率決議：放在 fomc 之前，避免含「FOMC」的標題被當成 FOMC 公告、空等結果卡（2026-11-15）。
+    {"key": "fomc_minutes", "keywords": ("fomc meeting minutes", "fomc minutes", "minutes of the federal open market committee"), "name": "美國聯準會 FOMC 會議紀要", "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"},
     {"key": "fomc", "keywords": ("federal open market committee", "fomc", "monetary policy statement"), "name": "美國聯準會 FOMC 公告", "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm", "priority": "highest"},
     {"key": "powell", "keywords": ("jerome h. powell", "chair powell", "governor powell", "powell"), "name": "Jerome Powell 談話", "source": "https://www.federalreserve.gov/newsevents/calendar.htm"},
     {"key": "fed_official", "keywords": ("chairman ", "chair ", "vice chair", "governor "), "name": "聯準會重要官員談話", "source": "https://www.federalreserve.gov/newsevents/speeches-testimony.htm"},
@@ -36,7 +38,8 @@ MARKET_INTERPRETATIONS = {
     "jobs": "若就業明顯降溫，可能提高降息期待，但過度疲弱也可能引發衰退疑慮；若就業過熱，利率可能維持高檔更久。",
     "gdp": "若經濟成長優於預期，通常反映經濟韌性，但也可能降低短期降息機率；若明顯低於預期，須留意衰退風險。",
     "fomc": "措辭偏寬鬆或暗示降息，通常有利風險資產；措辭偏鷹或暗示利率維持高檔，可能使美股與加密資產承壓。",
-    "powell": "市場將聚焦 Powell 對通膨、就業與利率路徑的表態；偏寬鬆訊號通常有利風險資產，偏鷹訊號則可能帶來壓力。請以活動當下的官方職稱與完整上下文為準。",
+    "fomc_minutes": "會議紀要是上次會議的討論細節，不是新的利率決議；市場會看委員對通膨、利率路徑的分歧程度。",
+    "powell":"市場將聚焦 Powell 對通膨、就業與利率路徑的表態；偏寬鬆訊號通常有利風險資產，偏鷹訊號則可能帶來壓力。請以活動當下的官方職稱與完整上下文為準。",
     "fed_official": "市場將聚焦官員對通膨、就業、利率路徑與金融穩定的表態；請依官方當下職稱、完整講稿與市場原先預期綜合判讀。",
     "pce": "PCE 是聯準會重要通膨指標；核心 PCE 降溫通常有利降息預期，反之可能使利率維持高檔。",
     "claims": "初領失業金上升反映就業降溫，但過度惡化也可能引發衰退擔憂。",

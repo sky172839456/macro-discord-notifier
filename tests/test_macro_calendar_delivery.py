@@ -163,7 +163,7 @@ class MacroCalendarDeliveryTests(unittest.TestCase):
         notifier.run(self.now+timedelta(minutes=110))
         self.assertEqual(len(self.member_calls()), 1)
         card = self.member_calls()[0].args[1]
-        self.assertIn("共11項", card["title"])
+        self.assertIn("共12項", card["title"])  # 2026-11-15 加入 FOMC 會議紀要
         self.assertIn("本群追蹤項目", card["description"])
         self.assertIn("不另發逐項公布前提醒", card["footer"]["text"])
         for key in keys:

@@ -41,6 +41,31 @@ class NextWeekCalendarTests(unittest.TestCase):
             from notification_format import apply_delivery_format
             self.assertTrue(apply_delivery_format(card, 'macro_alerts')['title'].startswith('【下週行事曆】'))
 
+    def test_chair_own_line_and_other_speeches_merged_per_day(self):
+        def speech(iso, title):
+            return {'time': datetime.fromisoformat(iso), 'title': title,
+                    'rule': {'name': '聯準會重要官員談話', 'key': 'fed_official'}}
+        events = [speech('2026-11-16T10:00:00+00:00', 'FOMC Member Barr Speaks'),
+                  speech('2026-11-16T14:05:00+00:00', 'FOMC Member Williams Speaks'),
+                  speech('2026-11-16T17:00:00+00:00', 'Fed Chairman Warsh Speaks'),
+                  speech('2026-11-17T12:30:00+00:00', 'FOMC Member Musalem Speaks'),
+                  speech('2026-11-17T14:10:00+00:00', 'Fed Vice Chair Jefferson Speaks'),
+                  event('2026-11-17T13:30:00+00:00', '美國零售銷售', 'retail'),
+                  speech('2026-11-19T13:50:00+00:00', 'FOMC Member Hammack Speaks')]
+        card, _ = nwc.build_card(self.sunday_night, events)
+        text = card['description']
+        self.assertIn('**11/16（週一）**\n18:00～22:05｜聯準會官員談話 2 場', text)
+        self.assertIn('**11/17（週二）**\n01:00｜聯準會主席 Warsh 談話', text)  # 美東 11/16 12:00 = 台灣 11/17 01:00
+        self.assertIn('20:30～22:10｜聯準會官員談話 2 場\n21:30｜美國零售銷售', text)  # 副主席不算主席
+        self.assertIn('**11/19（週四）**\n21:50｜聯準會官員談話', text)
+        self.assertNotIn('聯準會重要官員談話', text)
+
+    def test_enriched_chair_policy_keeps_its_name(self):
+        chair = {'time': datetime.fromisoformat('2026-11-18T17:00:00+00:00'),
+                 'rule': {'name': '聯準會主席 Warsh｜貨幣政策', 'key': 'fed_chair_policy'}}
+        card, _ = nwc.build_card(self.sunday_night, [chair])
+        self.assertIn('01:00｜聯準會主席 Warsh｜貨幣政策', card['description'])
+
     def test_unconfirmed_source_sends_nothing(self):
         state = {}
         self.assertFalse(nwc.check(state, self.sunday_night, lambda: ([], '官方行事曆目前未完成同步'), self.sent.append, lambda: None))
