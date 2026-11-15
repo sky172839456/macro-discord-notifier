@@ -410,8 +410,96 @@ def review_lines(data):
     return '\n\n'.join(lines)
 
 
+TOP_PRICE_PCT = 3.0       # 24小時漲跌達 ±3% 才算明顯
+TOP_SENTIMENT_POINTS = 5  # 恐慌貪婪單日變動 5 分
+TOP_OI_PCT = 5.0          # 未平倉數量單日變動 5%
+TOP_FUNDING_HIGH = 0.03   # 每期資金費率 ≥ 0.03% 算偏高
+TOP_ETF_MUSD = 200.0      # ETF 單日淨流入／流出 2 億美元
+
+
+def top_candidates(data, market, events, now, event_error=None):
+    """2026-11-15 本人確認：從價格、情緒、未平倉、資金費率、ETF、今日數據挑變化最大的。
+
+    每項回傳 (分數, 文字)；分數 ≥ 1 代表超過門檻。只用已核對、未過期的數值；缺值就不列。"""
+    rows = []
+    moves = []
+    for symbol in ('BTC', 'ETH'):
+        row = (data.get('crypto') or {}).get(symbol) or (market or {}).get(symbol) or {}
+        change = row.get('change_24h', row.get('change'))
+        if (number(row.get('price')) and number(change)
+                and (not row.get('source') or fresh(row.get('updated_at'), now, .5))):
+            moves.append((abs(float(change)), f'{symbol} {row["price"]:,.2f} {row.get("quote_currency", "USD")}（{signed(change)}）'))
+    if moves:
+        rows.append(('price', max(m[0] for m in moves) / TOP_PRICE_PCT, '價格｜' + '；'.join(m[1] for m in moves)))
+    mood = data.get('sentiment') or {}
+    if fresh(mood.get('timestamp'), now, 48) and number(mood.get('value')):
+        label = {'extreme fear': '極度恐懼', 'fear': '恐懼', 'neutral': '中性', 'greed': '貪婪', 'extreme greed': '極度貪婪'}.get(
+            ' '.join(str(mood.get('classification') or '').lower().split()), '')
+        delta = mood['value'] - mood['previous_value'] if number(mood.get('previous_value')) else None
+        extreme = 1.0 if mood['value'] <= 20 or mood['value'] >= 80 else 0
+        score = max(abs(delta) / TOP_SENTIMENT_POINTS if number(delta) else 0, extreme)
+        text = f'情緒｜恐慌貪婪指數 {mood["value"]}/100' + (f'（{label}）' if label else '')
+        if number(delta):
+            text += f'，較前一日 {signed(delta, "分")}'
+        rows.append(('sentiment', score, text))
+    deriv = data.get('derivatives') or {}
+    oi = [(abs(r['oi_change_1d']), f'{s} {signed(r["oi_change_1d"])}') for s, r in ((s, deriv.get(s) or {}) for s in ('BTC', 'ETH'))
+          if number(r.get('oi_change_1d')) and fresh(r.get('timestamp'), now, .5)]
+    if oi:
+        rows.append(('oi', max(o[0] for o in oi) / TOP_OI_PCT, '未平倉｜數量較前一日 ' + '、'.join(o[1] for o in oi) + '（不代表多空方向）'))
+    funding = [(s, float(r['funding_rate'])) for s, r in ((s, deriv.get(s) or {}) for s in ('BTC', 'ETH'))
+               if number(r.get('funding_rate')) and fresh(r.get('rate_timestamp'), now, .5)]
+    if funding:
+        negative = [f for f in funding if f[1] < 0]
+        high = max(abs(f[1]) for f in funding) / TOP_FUNDING_HIGH
+        score = max(1.0 if negative else 0, high)
+        note = '（負值通常由空方付多方）' if negative else '（正值通常由多方付空方）'
+        rows.append(('funding', score, '資金費率｜' + '、'.join(f'{s} {v:+.4f}%' for s, v in funding) + note))
+    flows = []
+    for key, symbol in (('etf', 'BTC'), ('eth_etf', 'ETH')):
+        row = data.get(key) or {}
+        date = row.get('date')
+        unlisted = bool(row.get('unreported_components', 0))
+        if (not row.get('source_issue') and number(row.get('net_flow_musd')) and hasattr(date, 'strftime')
+                and not (float(row['net_flow_musd']) == 0 and unlisted)):
+            partial = '（初值）' if row.get('partial') else '（暫定）' if unlisted else ''
+            flows.append((abs(float(row['net_flow_musd'])), f'{date:%m/%d} {symbol} {money_musd(row["net_flow_musd"])}{partial}'))
+    if flows:
+        rows.append(('etf', max(f[0] for f in flows) / TOP_ETF_MUSD, 'ETF｜' + '；'.join(f[1] for f in flows)))
+    if not event_error:
+        from slim_policy import today_events, CORE_EVENTS
+        today = today_events(events, now, 1)
+        if today:
+            first = today[0]
+            more = f'等{len(today)}項' if len(today) > 1 else ''
+            score = 1.5 if any(r['rule']['key'] in CORE_EVENTS for r in today) else 1.0
+            rows.append(('events', score, f'行程｜{first["time"].astimezone(TZ):%H:%M} {first["rule"]["name"]}{more}'))
+    return rows
+
+
 def daily_top_three(data, market, events, now, event_error=None):
-    """Summarize only checked values; missing, stale and partial inputs stay explicit."""
+    """先看三件事：挑超過門檻、變化最大的三項；都沒有明顯變化才退回價格／ETF／行程。
+
+    不列「尚未列出」「待核對」這類空項（2026-11-15 本人確認）。"""
+    rows = top_candidates(data, market, events, now, event_error)
+    picked = sorted((r for r in rows if r[1] >= 1), key=lambda r: -r[1])[:3]
+    if len(picked) < 3:
+        for kind in ('price', 'etf', 'events'):
+            row = next((r for r in rows if r[0] == kind), None)
+            if row and row not in picked and len(picked) < 3:
+                picked.append(row)
+    if not picked:
+        picked = [('none', 0, '價格｜本輪未取得可核對的價格資料，請看下方各區塊。')]
+    lines = ['**先看三件事**' if len(picked) == 3 else '**先看重點**']
+    lines += [f'{i:02d}｜{text}' for i, (_, _, text) in enumerate(picked, 1)]
+    if event_error:
+        lines.append('⚠️ 行事曆未完整確認，請查看下方「今日關注」。')
+    lines.append('各資料期間、來源與完整度見下方；不據此推論漲跌原因。')
+    return '\n'.join(lines)
+
+
+def daily_top_three_fixed(data, market, events, now, event_error=None):
+    """舊版固定三項（價格／ETF／行程），保留給比對與回退用。"""
     prices = []
     for symbol in ('BTC', 'ETH'):
         row = (data.get('crypto') or {}).get(symbol) or (market or {}).get(symbol) or {}
@@ -454,7 +542,11 @@ def build_card(period, now, market, market_error, events, event_error, data):
     if weekly:
         fields.append(field('📰 上週關鍵事件｜已推播紀錄', review_lines(data)))
         fields.append(field('🧩 一週統整與總結', '\n\n'.join('• ' + line for line in observations(data, True, now)) + '\n\n**本週總結**｜' + weekly_conclusion(data)))
-        fields.append(field('📅 本週要注意什麼｜未來七日', events_lines(events, now, event_error, True)))
+        if data.get('next_week_calendar_posted'):
+            # 2026-11-15 本人確認：週日 20:00 已發下週行事曆，週報只留一句指引，避免重複。
+            fields.append(field('📅 本週要注意什麼', '本週追蹤的數據與官員談話時間，已在週日 20:00 發到🏦｜數據有話說；每天 07:00 也會列當日行程。'))
+        else:
+            fields.append(field('📅 本週要注意什麼｜未來七日', events_lines(events, now, event_error, True)))
     else:
         notes = observations(data, False, now)
         fields.append(field('📅 今日關注', events_lines(events, now, event_error, False, budget=650)

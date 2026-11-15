@@ -550,12 +550,14 @@ def send(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
         pass
 
 
-def run(period: str, now: datetime, dry_run: bool = False, history=None):
+def run(period: str, now: datetime, dry_run: bool = False, history=None, calendar_posted: bool = False):
     secret = "DISCORD_DAILY_SUMMARY_WEBHOOK_URL" if period == "daily" else "DISCORD_WEEKLY_SUMMARY_WEBHOOK_URL"
     webhook = os.environ.get(secret)
     if not webhook and not dry_run:
         raise RuntimeError(f"缺少 {secret}")
     dashboard = collect_dashboard(now) if period == "daily" else collect_weekly_dashboard(now)
+    if calendar_posted:
+        dashboard['next_week_calendar_posted'] = True
     if period == "daily" and dashboard.get("crypto"):
         market = {symbol: {"price": item["price"], "change": item["change_24h"]}
                   for symbol, item in dashboard["crypto"].items() if item.get("price") is not None}
@@ -637,7 +639,8 @@ def run_scheduled(now: datetime) -> list[str]:
         state["daily"] = today
         sent.append("daily")
     if local.weekday() == 0 and local.hour >= 7 and state.get("weekly") != week:
-        remember(run("weekly", now, history=history) if slim_policy.enabled() else run("weekly", now))
+        remember(run("weekly", now, history=history, calendar_posted=state.get('next_week_calendar') == week)
+                 if slim_policy.enabled() else run("weekly", now))
         state["weekly"] = week
         sent.append("weekly")
     def persist():
@@ -650,7 +653,46 @@ def run_scheduled(now: datetime) -> list[str]:
         if check(state, now, lambda symbol: etf_flow_snapshot(FARSIDE_BTC if symbol == 'BTC' else FARSIDE_ETH),
                  lambda card: send(os.environ['DISCORD_DAILY_SUMMARY_WEBHOOK_URL'],card,False), persist):
             sent.append('etf_update')
+        # 2026-11-15 本人確認：價格大波動快訊（24h ±5%／±10%、1h ±3%，一天最多 3 則）。
+        import price_move_alert
+        from exchange_market_data import prefer, spot
+        from market_brief_data import get_json, derivatives_snapshot, fear_greed_snapshot
+        def price_context():
+            context = {}
+            for key, fetch in (('derivatives', derivatives_snapshot), ('sentiment', fear_greed_snapshot)):
+                try:
+                    context[key] = fetch()
+                except Exception:
+                    pass
+            return context
+        if price_move_alert.check(state, now, lambda coin: prefer(lambda venue: spot(get_json, coin, venue)), price_context,
+                                  lambda card: send(os.environ['DISCORD_DAILY_SUMMARY_WEBHOOK_URL'], card, False), persist):
+            sent.append('price_alert')
+        # 2026-11-15 本人確認：週日 20:00 在🏦｜數據有話說發下週行事曆。
+        import next_week_calendar
+        def week_events():
+            events, error = upcoming_events(now, 9)
+            import fed_speech_policy
+            events, policy_status = fed_speech_policy.enrich(events, {}, now, http_text)
+            if any(not row[2] for row in policy_status):
+                error = error or '主席政策談話尚未完整確認'
+            return events, error
+        if os.environ.get('DISCORD_WEBHOOK_URL') and next_week_calendar.check(
+                state, now, week_events, lambda card: send_macro(os.environ['DISCORD_WEBHOOK_URL'], card), persist):
+            sent.append('next_week_calendar')
     return sent
+
+
+def send_macro(webhook: str, embed: dict[str, Any]) -> None:
+    """下週行事曆走總經頻道（🏦｜數據有話說）的格式與署名。"""
+    card = apply_delivery_format(embed, 'macro_alerts')
+    payload = {"username": sender_name('macro_alerts'), "embeds": [card], "allowed_mentions": {"parse": []}}
+    request = Request(webhook + ("&" if "?" in webhook else "?") + "wait=true",
+                      data=json.dumps(payload).encode("utf-8"),
+                      headers={"Content-Type": "application/json", "User-Agent": "macro-discord-notifier/3.0"},
+                      method="POST")
+    with urlopen(request, timeout=30):
+        pass
 
 
 def main() -> None:
