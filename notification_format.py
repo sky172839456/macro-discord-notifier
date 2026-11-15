@@ -54,7 +54,7 @@ def wm_member_style(card, channel_key):
         color = 'green'
     elif channel_key in {'market_risk', 'breaking_news'} or '【重大快訊】' in title:
         color = 'red'
-    elif '【數據提醒】' in title or '【官員談話】' in title:
+    elif '【數據提醒】' in title or '【官員談話】' in title or '【價格快訊】' in title:
         color = 'amber'
     elif channel_key == 'weekly_market' or '【數據公布】' in title:
         color = 'purple'
@@ -175,7 +175,7 @@ def infer_source_status(embed: dict[str, Any]) -> str:
 def classified_title(title: str, channel_key: str) -> str:
     """Keep the notification type readable without relying on its accent color."""
     title = str(title or "")
-    if re.match(r"^【(?:每日行情|每週行情|金融新聞|金融快訊|加密新聞|總經數據|風險警報|重大快訊|市場新聞|監管／ETF|總經觀察|技術分析|系統紀錄|市場資訊|數據提醒|今日行事曆|數據公布|恢復通知|新聞彙整|官員談話)】", title):
+    if re.match(r"^【(?:每日行情|每週行情|金融新聞|金融快訊|加密新聞|總經數據|風險警報|重大快訊|市場新聞|監管／ETF|總經觀察|技術分析|系統紀錄|市場資訊|數據提醒|今日行事曆|下週行事曆|數據公布|恢復通知|新聞彙整|官員談話|價格快訊)】", title):
         return title[:256]
     # Recognize our own preview wrappers while keeping the category first.
     content = re.sub(r"^(?:🧪 (?:精簡版預覽|測試)｜\s*)+", "", title)
