@@ -334,7 +334,8 @@ def events_lines(events, now, error, weekly, budget=1000):
         parts.append(part)
     text = '\n\n'.join(parts)
     if not text:
-        text = '目前未查到符合追蹤範圍的未來事件。'
+        # 2026-11-15 本人選「推播文字修正」：原句讀起來像程式出錯。
+        text = '今天沒有本群追蹤的重要數據或事件。'
     if len(rows) > len(parts):
         text += f'\n另有{len(rows)-len(parts)}項；完整當日清單見「總經數據快訊」。'
     if error:
@@ -468,7 +469,10 @@ def build_card(period, now, market, market_error, events, event_error, data):
             for key in ('crypto', 'weekly_crypto', 'derivatives', 'weekly_derivatives')
             for row in (data.get(key) or {}).values()):
         description += '\n⚠️ 部分資料暫缺；各區塊只顯示已取得的內容。'
-    card = {'title': f'{"🧭 每週市場導航" if weekly else "📊 每日市場情報"}｜{now.astimezone(TZ):%m/%d}',
+    # 2026-11-15 本人選「推播文字修正」：頻道已有【每日行情】分類標籤，標題不再重複「每日市場情報」。
+    local_day = now.astimezone(TZ)
+    weekday = '一二三四五六日'[local_day.weekday()]
+    card = {'title': f'{"🧭 本週導航" if weekly else "📊 市場情報"}｜{local_day:%m/%d}（週{weekday}）',
             'description': description, 'fields': fields, 'color': 0x8274B0 if weekly else 0x647FB5,
             'footer': {'text': f'查詢：{now.astimezone(TZ):%m/%d %H:%M}（台灣時間）｜各資料依標示期間｜不構成投資建議'}, 'timestamp': now.isoformat()}
     total = len(card['title']) + len(description) + len(card['footer']['text']) + sum(len(f['name']) + len(f['value']) for f in fields)
