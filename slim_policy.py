@@ -11,7 +11,7 @@ CORE_EVENTS = {"cpi", "jobs", "pce", "fomc"}
 RESULT_EVENTS = CORE_EVENTS | {"ppi", "retail", "claims", "gdp", "durable", "jolts", "industrial"}
 CALENDAR_EVENTS = CORE_EVENTS | {"ppi", "gdp", "retail", "claims", "jolts", "durable", "industrial"}
 REMINDER_EVENTS = set()  # Member pre-release notices are consolidated into the daily timetable.
-CALENDAR_EVENTS |= {"fed_chair_policy"}
+CALENDAR_EVENTS |= {"fed_chair_policy", "fomc_minutes"}
 
 
 def enabled():
@@ -295,7 +295,12 @@ def calendar_cards(events, now, error=None):
         return []  # Never construct an empty member calendar, even via direct callers.
     lines = []
     for e in selected:
-        status = "已過排定時間；結果另見正式公告" if e['time'] <= now else "待公布"
+        if e['time'] > now:
+            status = "待公布"
+        elif e['rule']['key'] in RESULT_EVENTS:
+            status = "已過排定時間；結果另見正式公告"
+        else:
+            status = "已過排定時間；內容見官方來源"  # 會議紀要、主席談話不另發結果卡
         lines.append(f"**{e['time'].astimezone(TAIPEI):%H:%M}｜{e['rule']['name']}**\n{status}\n🔗 [官方來源]({e['rule']['source']})")
     if error:
         lines.append("⚠️ 部分行事曆尚未確認；未列出不代表今天沒有事件。")
