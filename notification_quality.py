@@ -164,15 +164,26 @@ def published_time(value):
     return datetime.fromisoformat(value.replace('Z', '+00:00'))
 
 
+def elapsed_copy(minutes):
+    """2026-11-15 本人選「推播文字修正」：讀者看「約21小時」比「約1288分鐘」直覺。"""
+    if minutes < 120:
+        return f'約{minutes}分鐘'
+    hours = round(minutes / 60)
+    if hours < 48:
+        return f'約{hours}小時'
+    return f'約{round(hours / 24)}天'
+
+
 def time_copy(published, observed, *, scheduled=False):
     published, observed = published_time(published), published_time(observed)
     minutes = max(0, int((observed - published).total_seconds() // 60))
     base = '官方排定時間' if scheduled else '來源發布時間'
+    # 「機器人發現」是內部用語；讀者看到的是本群送出的時間。
     rows = [f'📅 {base}：{published.astimezone(TAIPEI):%Y/%m/%d %H:%M}',
-            f'🕒 {"機器人發現" if scheduled else "本次整理時間"}：{observed.astimezone(TAIPEI):%Y/%m/%d %H:%M}']
+            f'🕒 {"本群發布" if scheduled else "本次整理時間"}：{observed.astimezone(TAIPEI):%Y/%m/%d %H:%M}']
     late = minutes >= DELAY_MINUTES
     if late:
-        rows.append(f'⏳ 補發｜距{base}約{minutes}分鐘；請留意原始時間。')
+        rows.append(f'⏳ 補發｜距{base}{elapsed_copy(minutes)}；請留意原始時間。')
     return '\n'.join(rows), late
 
 

@@ -92,7 +92,7 @@ def corrected(message):
         fourth = clean(parts[4]).replace('**05｜','**04｜')
         card['description'] = '\n\n──────────────\n\n'.join((first,greek,third,fourth))
     for field in card.get('fields', []):
-        field['value'] = field['value'].replace('機器人發現：','原推播紀錄：')
+        field['value'] = field['value'].replace('機器人發現：','原推播紀錄：').replace('本群發布：','原推播紀錄：')
     card['color'] = 0x647FB5 if mid in ('1567912549494689873','1568583218159026229') else card.get('color',0x647FB5)
     card.setdefault('footer', {})['text'] = card.get('footer', {}).get('text','') + '｜'+MARK+'：用詞／分類或同題整理已更正，原來源與時點保留'
     return card

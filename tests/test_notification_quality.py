@@ -82,7 +82,7 @@ class QualityTests(unittest.TestCase):
         self.assertIn('補發', card['title'])
         text = json.dumps(card, ensure_ascii=False)
         self.assertIn('官方排定時間', text)
-        self.assertIn('機器人發現', text)
+        self.assertIn('本群發布', text)
         self.assertNotIn('MoM', text)
         self.assertNotIn('YoY', text)
 
@@ -91,7 +91,7 @@ class QualityTests(unittest.TestCase):
                 'published': self.now, 'summary': '', 'url': ''}
         card = notifier.release_embed(item, detected_at=self.now)
         self.assertNotIn('補發', card['title'])
-        self.assertIn('不將發現時間當成公布時間', json.dumps(card, ensure_ascii=False))
+        self.assertIn('不將本群發布時間當成官方公布時間', json.dumps(card, ensure_ascii=False))
 
     def test_news_time_marks_late_original_without_claiming_official(self):
         item = self.article('Exchange confirms withdrawals halted after breach')

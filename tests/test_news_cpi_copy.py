@@ -210,4 +210,4 @@ class NewsCpiCopyTests(unittest.TestCase):
         card=notifier.release_embed(self.cpi(),self.now,detected_at=self.now+timedelta(minutes=25))
         self.assertIn('補發',card['title'])
         self.assertIn('官方排定時間',json.dumps(card,ensure_ascii=False))
-        self.assertIn('機器人發現',json.dumps(card,ensure_ascii=False))
+        self.assertIn('本群發布',json.dumps(card,ensure_ascii=False))

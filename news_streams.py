@@ -184,7 +184,9 @@ def run(now):
             card = slim_policy.news_card(row, now=now)
             from notification_quality import time_copy
             _, delayed = time_copy(row['published'], now)
-            prefix = ('【金融事件整理】 ' if stream == 'finance' else '【重大事件整理】 ') if delayed else ('【金融快訊】 ' if stream == 'finance' else '【重大快訊】 ')
+            # 2026-11-15 本人選「推播文字修正」：延後的卡片標題已有「⏳ 延後整理｜」，
+            # 分類只用既有標籤，避免「【市場新聞】【重大事件整理】延後整理｜」三層疊在一起。
+            prefix = ('【金融新聞】 ' if stream == 'finance' else '【市場新聞】 ') if delayed else ('【金融快訊】 ' if stream == 'finance' else '【重大快訊】 ')
             card['title'] = prefix + card['title']
             if stream == 'finance':
                 # Ignore generic transmission copy still present in pending caches.

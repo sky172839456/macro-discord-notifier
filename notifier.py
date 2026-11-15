@@ -918,9 +918,9 @@ def release_embed(item: dict[str, Any], official_time: datetime | None = None,
         if known_publication:
             timing, late = time_copy(known_publication, detected_at, scheduled=bool(official_time))
         else:
-            timing = f'🕒 機器人發現：{detected_at.astimezone(TAIPEI):%Y/%m/%d %H:%M}\n官方公布時間：未確認；不將發現時間當成公布時間。'
+            timing = f'🕒 本群發布：{detected_at.astimezone(TAIPEI):%Y/%m/%d %H:%M}\n官方公布時間：未確認；不將本群發布時間當成官方公布時間。'
         fields = [f for f in fields if not f['name'].startswith('🕐 本次')]
-        fields.insert(0, {'name': '🕒 發布與發現時間', 'value': timing, 'inline': False})
+        fields.insert(0, {'name': '🕒 公布與發布時間', 'value': timing, 'inline': False})
     return {"author": {"name": "US MACRO WATCH｜總經數據快訊"},
             "title": f"{'【數據公布】⏳ 補發｜' if late else '🔴 '}{item['rule']['name']}｜最新數據",
             "description": f"### 📊 本次公布結果\n{numbers}" + ("" if slim_policy.enabled() else "\n\n> 市場預期值不屬於官方資料；官方未提供時會明確標示「未提供」。"),

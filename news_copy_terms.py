@@ -265,7 +265,22 @@ def repair_translation(source, translated):
             amount = Decimal(number) * 100
             display = format(amount, 'f').rstrip('0').rstrip('.') if '.' in format(amount, 'f') else str(amount)
             translated = re.sub(r'\b' + re.escape(number) + r'M\s+CYS\b', display + '萬枚 CYS', translated, flags=re.I)
-    return translated
+    return taiwan_terms(translated)
+
+
+# 2026-11-15 本人選「推播文字修正」：同一張卡曾同時出現「聯準會／美聯儲」「人工智慧／人工智能」等用語，
+# 統一成台灣常用說法。只換固定詞，不改句意與數字。
+TAIWAN_TERMS = (
+    ('美國聯邦儲備委員會', '聯準會'), ('美聯儲', '聯準會'), ('聯儲局', '聯準會'), ('美聯準會', '聯準會'),
+    ('人工智能', '人工智慧'), ('黑客', '駭客'), ('網絡', '網路'), ('信息', '資訊'),
+    ('數據中心', '資料中心'), ('通脹', '通膨'),
+)
+
+
+def taiwan_terms(text):
+    for old, new in TAIWAN_TERMS:
+        text = text.replace(old, new)
+    return text
 
 
 def validate_identifiers(source,translated):
