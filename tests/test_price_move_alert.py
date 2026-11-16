@@ -74,6 +74,41 @@ class PriceMoveAlertTests(unittest.TestCase):
             delivered = apply_delivery_format(card, 'daily_market')
         self.assertTrue(delivered['title'].startswith('【價格快訊】'))
 
+    def test_numeric_oi_base_timestamp_from_daily_snapshot(self):
+        # 2026-11-15 17:09～17:19 回歸：日報 snapshot 保留交易所原始數字 timestamp，
+        # 快訊卡把它送進 fromisoformat 而 TypeError，連三輪沒發出。
+        base_at = datetime(2026, 11, 14, 23, 5, tzinfo=timezone.utc)  # 台灣 11/15 07:05
+        for raw in (base_at.timestamp(), int(base_at.timestamp() * 1000), str(int(base_at.timestamp() * 1000)),
+                    '2026-11-14T23:05:00Z'):
+            with self.subTest(timestamp=raw):
+                self.sent = []
+                state = {'price_alerts': [], 'brief_history': [{'derivatives': {'BTC': {'oi_ccy': 100.0, 'timestamp': raw}}}]}
+                context = {'derivatives': {'BTC': {'oi_ccy': 95.0, 'funding_rate': -0.0009}}}
+                self.assertTrue(self.run_check(state, {'BTC': quote(63000, -6.0, self.now)}, context=context))
+                text = str(self.sent[-1])
+                self.assertIn('未平倉數量較11/15 07:05 -5.00%', text)
+
+    def test_real_daily_snapshot_with_numeric_timestamp_feeds_alert_card(self):
+        # 整合：用日報 market_brief_v2.snapshot 真正產出的 brief_history 項目，而不是手寫 ISO。
+        import market_brief_v2
+        brief_at = self.now - timedelta(hours=3)
+        data = {'derivatives': {'BTC': {'scope': 'Bitget USDT 永續', 'oi_ccy': 100.0, 'oi_usd': 6.3e9,
+                                        'timestamp': (brief_at - timedelta(minutes=2)).timestamp()}}}
+        snap = market_brief_v2.snapshot(data, brief_at)
+        self.assertIsInstance(snap['derivatives']['BTC']['timestamp'], float)
+        state = {'price_alerts': [], 'brief_history': [snap]}
+        context = {'derivatives': {'BTC': {'oi_ccy': 103.0}}}
+        self.assertTrue(self.run_check(state, {'BTC': quote(63000, 5.5, self.now)}, context=context))
+        self.assertIn('未平倉數量較11/15 06:58 +3.00%', str(self.sent[-1]))
+
+    def test_unreadable_oi_base_timestamp_skips_only_that_line(self):
+        state = {'price_alerts': [], 'brief_history': [{'derivatives': {'BTC': {'oi_ccy': 100.0, 'timestamp': None}}}]}
+        context = {'derivatives': {'BTC': {'oi_ccy': 95.0, 'funding_rate': -0.0009}}}
+        self.assertTrue(self.run_check(state, {'BTC': quote(63000, -6.0, self.now)}, context=context))
+        text = str(self.sent[-1])
+        self.assertNotIn('未平倉數量較', text)
+        self.assertIn('-0.0009%', text)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo('Asia/Taipei')
@@ -23,7 +23,30 @@ SPOT_MAX_AGE = 600  # 秒；超過 10 分鐘的報價不拿來觸發
 
 
 def _time(value):
-    return datetime.fromisoformat(value)
+    """ISO 字串或 epoch 數字（秒或毫秒，也接受純數字字串）轉成帶時區的時間。
+
+    日報 snapshot 會保留交易所原始的數字 timestamp（2026-11-15 回歸），不能假設都是 ISO 字串。
+    """
+    if isinstance(value, datetime):
+        result = value
+    elif ((isinstance(value, (int, float)) and not isinstance(value, bool))
+          or (isinstance(value, str) and value.strip().replace('.', '', 1).isdigit())):
+        seconds = float(value)
+        if seconds > 1e11:  # 毫秒
+            seconds /= 1000
+        result = datetime.fromtimestamp(seconds, timezone.utc)
+    elif isinstance(value, str):
+        result = datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
+    else:
+        raise TypeError(f'無法解讀的時間：{value!r}')
+    return result if result.tzinfo else result.replace(tzinfo=timezone.utc)
+
+
+def _try_time(value):
+    try:
+        return _time(value)
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
 
 
 def day_level(change):
@@ -102,8 +125,9 @@ def build_card(now, quotes, found, context):
         row = deriv.get(symbol) or {}
         bits = []
         prior = base.get(symbol) or {}
-        if row.get('oi_ccy') and prior.get('oi_ccy'):
-            bits.append(f'未平倉數量較{_time(prior["timestamp"]).astimezone(TZ):%m/%d %H:%M} {_pct((row["oi_ccy"] / prior["oi_ccy"] - 1) * 100)}')
+        prior_at = _try_time(prior.get('timestamp'))
+        if row.get('oi_ccy') and prior.get('oi_ccy') and prior_at:
+            bits.append(f'未平倉數量較{prior_at.astimezone(TZ):%m/%d %H:%M} {_pct((row["oi_ccy"] / prior["oi_ccy"] - 1) * 100)}')
         if row.get('funding_rate') is not None:
             bits.append(f'資金費率 {row["funding_rate"]:+.4f}%（每期，非年化）')
         if bits:
