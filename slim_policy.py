@@ -289,19 +289,29 @@ def reminder_due(event, now):
     return event["rule"]["key"] in REMINDER_EVENTS and 0 < (event["time"]-now).total_seconds()/60 <= 27
 
 
+def countdown(moment):
+    """Discord 時間標籤：成員看到「13 小時後」，Discord 會自己更新，過了變「3 小時前」。
+
+    2026-11-18 本人選 DC 功能細節 #7「時間標籤＋倒數」。台灣時間的文字照留，倒數放在後面括號。
+    """
+    return f'<t:{int(moment.timestamp())}:R>'
+
+
 def calendar_cards(events, now, error=None):
     selected = today_events(events, now, include_elapsed=True)
     if not selected:
         return []  # Never construct an empty member calendar, even via direct callers.
     lines = []
     for e in selected:
+        when = ''
         if e['time'] > now:
             status = "待公布"
+            when = f"（{countdown(e['time'])}）"
         elif e['rule']['key'] in RESULT_EVENTS:
             status = "已過排定時間；結果另見正式公告"
         else:
             status = "已過排定時間；內容見官方來源"  # 會議紀要、主席談話不另發結果卡
-        lines.append(f"**{e['time'].astimezone(TAIPEI):%H:%M}｜{e['rule']['name']}**\n{status}\n🔗 [官方來源]({e['rule']['source']})")
+        lines.append(f"**{e['time'].astimezone(TAIPEI):%H:%M}｜{e['rule']['name']}**{when}\n{status}\n🔗 [官方來源]({e['rule']['source']})")
     if error:
         lines.append("⚠️ 部分行事曆尚未確認；未列出不代表今天沒有事件。")
     intro = '台灣時間｜本群追蹤項目，非全球全部經濟數據。\n依本輪取得的今日排程排序；排定時間不代表結果已確認。\n\n'

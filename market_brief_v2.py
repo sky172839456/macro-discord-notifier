@@ -314,7 +314,7 @@ EVENT_WATCH = {
 
 
 def events_lines(events, now, error, weekly, budget=1000):
-    from slim_policy import today_events, CORE_EVENTS
+    from slim_policy import today_events, CORE_EVENTS, countdown
     rows = today_events(events, now, 7 if weekly else 1)
     # Weekly focus is explicitly selected, while the separate daily calendar lists all.
     if weekly:
@@ -325,7 +325,8 @@ def events_lines(events, now, error, weekly, budget=1000):
     source = ''
     parts = []
     for r in selected:
-        part = (f'**{r["time"].astimezone(TZ):%m/%d %H:%M}｜{r["rule"]["name"]}**\n'
+        when = f'（{countdown(r["time"])}）' if r['time'] > now else ''  # 2026-11-18 本人選時間標籤倒數
+        part = (f'**{r["time"].astimezone(TZ):%m/%d %H:%M}｜{r["rule"]["name"]}**{when}\n'
                 f'{EVENT_WATCH.get(r["rule"]["key"], "核對公布結果、前值與資料所屬期間。")}')
         url = str(r['rule'].get('source') or '')
         if url.startswith('https://'):
