@@ -6,6 +6,8 @@
 - 發到☕｜行情醒腦室（與日報同一 webhook），全天都可發。
 - 只 @「🔔 價格快訊」身分組：成員在通行證／救援站按按鈕自己領、再按取消（2026-11-18 本人選 DC 功能細節 #10）；不 @ 其他人。
 - 只列現價、漲跌幅、未平倉變化、資金費率、恐慌指數；不推論原因、不預測。
+- 定位是「大波動時先想風險」，不是即時警報（2026-11-18 本人選）：卡上寫明約 5 分鐘檢查一次、交易請用交易所或
+  TradingView 的價格提醒，並附官網免費課「止盈止損」「槓桿與強平」。
 - 第一次執行只建立基準，不補發已經發生的波動。
 """
 from __future__ import annotations
@@ -22,6 +24,13 @@ DAILY_CAP = 3
 SAMPLE_KEEP = timedelta(hours=3)
 SPOT_MAX_AGE = 600  # 秒；超過 10 分鐘的報價不拿來觸發
 PING_ROLE = '1572560889897554001'  # 🔔 價格快訊（沒有任何權限，不是密鑰）；伺服器重建這個身分組時要改
+
+# 2026-11-18 本人選「照建議改」：快訊比不過交易所 App 的速度，定位改成「大波動時先想風險」，並講清楚不是即時。
+LESSON_UTM = '?utm_source=dc&utm_medium=social&utm_campaign=price_alert'
+RISK_NOTE = ('🧭 波動大的時候，先看自己的倉位、槓桿和止損，再決定要不要動。\n'
+             f'→ [止盈止損](https://www.wviewture.com/lesson-exits.html{LESSON_UTM})・'
+             f'[槓桿與強平](https://www.wviewture.com/lesson-leverage.html{LESSON_UTM})')
+NOT_REALTIME = '大約 5 分鐘檢查一次，不是即時；要拿來交易，請在交易所或 TradingView 設自己的價格提醒。'
 
 
 def _time(value):
@@ -143,7 +152,8 @@ def build_card(now, quotes, found, context):
         fields.append({'name': '🌡️ 恐慌貪婪指數', 'value': f'{mood["value"]}/100' + (f'（{label}）' if label else '') + '\n每日更新一次，非即時。', 'inline': False})
     return {
         'title': f'【價格快訊】 {arrow} {head}',
-        'description': '\n'.join(lines) + f'\n\n觸發條件：{reasons}。\n-# 只列查詢當下的數字，不推論原因、不預測走勢；價格為交易所查詢快照。',
+        'description': '\n'.join(lines) + f'\n\n觸發條件：{reasons}。\n{RISK_NOTE}\n'
+                       f'-# {NOT_REALTIME}只列查詢當下的數字，不推論原因、不預測走勢；價格為交易所查詢快照。',
         'fields': fields,
         'footer': {'text': f'查詢：{now.astimezone(TZ):%m/%d %H:%M}（台灣時間）｜不構成投資建議'},
         'timestamp': now.isoformat(),

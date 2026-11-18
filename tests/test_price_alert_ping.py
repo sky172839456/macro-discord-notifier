@@ -46,6 +46,25 @@ class PriceAlertPingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             captured(ping_role='@everyone')
 
+    def test_card_says_not_realtime_and_points_to_free_risk_lessons(self):
+        # 2026-11-18 本人選「照建議改」：定位改成大波動時先想風險，講清楚不是即時。
+        from datetime import datetime, timezone
+        now = datetime(2026, 11, 18, 12, tzinfo=timezone.utc)
+        quotes = {'ETH': {'price': 1808.9, 'change_24h': 5.02, 'quote_currency': 'USDT'}}
+        found = [{'kind': '24h', 'symbol': 'ETH', 'direction': 'up', 'level': 5.0, 'change': 5.02}]
+        card = price_move_alert.build_card(now, quotes, found, {})
+        text = card['description']
+        self.assertIn('不是即時', text)
+        self.assertIn('TradingView', text)
+        self.assertIn('https://www.wviewture.com/lesson-exits.html?utm_source=dc&utm_medium=social&utm_campaign=price_alert', text)
+        self.assertIn('https://www.wviewture.com/lesson-leverage.html?utm_source=dc&utm_medium=social&utm_campaign=price_alert', text)
+        self.assertIn('不推論原因、不預測走勢', text)
+        with mock.patch.dict(os.environ, {'SLIM_NOTIFICATIONS': '1'}):
+            from notification_format import apply_delivery_format
+            out = apply_delivery_format(card, 'daily_market')
+        self.assertIn('[止盈止損](https://www.wviewture.com/lesson-exits.html', out['description'])
+        self.assertIn('不是即時', out['description'])
+
     def test_only_the_price_alert_sender_passes_the_role(self):
         source = inspect.getsource(summary_notifier)
         self.assertEqual(source.count('ping_role=price_move_alert.PING_ROLE'), 1)
