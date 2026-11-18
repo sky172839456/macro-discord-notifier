@@ -38,7 +38,9 @@ class CommunityPolishTests(unittest.TestCase):
             with patch.dict(os.environ, {'SLIM_NOTIFICATIONS': '1'}):
                 card = apply_delivery_format({'title': title, 'fields': []}, channel)
             self.assertEqual(card['color'], WM_COLORS[color])
-            self.assertEqual(card['title'], title)
+            # 2026-11-18 起標題圖示換成 WV 表情（恢復通知 ✅ → :wv_got:），其餘文字不變。
+            import wv_emoji
+            self.assertEqual(card['title'], wv_emoji.title_with_wv(title))
 
     def bybit(self, state='ongoing', kind=3, env=1, **extra):
         item = {'id': 'event', 'title': 'Service incident', 'state': state, 'maintainType': kind,
