@@ -535,10 +535,16 @@ def build_embed(period: str, now: datetime, market: dict[str, dict[str, float]] 
     }
 
 
-def send(webhook: str, embed: dict[str, Any], dry_run: bool) -> None:
+def send(webhook: str, embed: dict[str, Any], dry_run: bool, ping_role: str | None = None) -> None:
     channel_key = "weekly_market" if any(word in str(embed.get("title", "")) for word in ("每週", "本週")) else "daily_market"
     card = apply_delivery_format(embed, channel_key)
     payload = {"username": sender_name(channel_key), "embeds": [card], "allowed_mentions": {"parse": []}}
+    if ping_role:
+        # 只 @ 指定的自選通知身分組（目前只有價格快訊），不解析其他提及。
+        if not re.fullmatch(r"\d{17,20}", str(ping_role)):
+            raise ValueError("ping_role must be a Discord role id")
+        payload["content"] = f"<@&{ping_role}>"
+        payload["allowed_mentions"] = {"parse": [], "roles": [str(ping_role)]}
     if dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -666,7 +672,8 @@ def run_scheduled(now: datetime) -> list[str]:
                     pass
             return context
         if price_move_alert.check(state, now, lambda coin: prefer(lambda venue: spot(get_json, coin, venue)), price_context,
-                                  lambda card: send(os.environ['DISCORD_DAILY_SUMMARY_WEBHOOK_URL'], card, False), persist):
+                                  lambda card: send(os.environ['DISCORD_DAILY_SUMMARY_WEBHOOK_URL'], card, False,
+                                                    ping_role=price_move_alert.PING_ROLE), persist):
             sent.append('price_alert')
         # 2026-11-15 本人確認：週日 20:00 在🏦｜數據有話說發下週行事曆。
         import next_week_calendar
