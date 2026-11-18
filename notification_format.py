@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 from notification_layout import readable_card
+import wv_emoji
 
 
 def final_card(card):
@@ -232,7 +233,8 @@ def apply_delivery_format(
         else:
             card["footer"] = {"text": "台灣時間｜不構成投資建議"}
         card.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
-        return final_card(readable_card(wm_member_style(card, channel_key)))
+        # 2026-11-18 本人選「推播卡片用 WV 表情」：最後一步才換標題圖示，超過上限就保留原圖示。
+        return final_card(wv_emoji.brand_title(readable_card(wm_member_style(card, channel_key))))
     description = str(card.get("description", ""))
     if channel_key != "bot_log" and "**📌 繁中標題**" in description and "**🌐 英文原標題**" in description:
         original = description.split("**🌐 英文原標題**", 1)[1].split("\n\n", 1)[0].strip()
