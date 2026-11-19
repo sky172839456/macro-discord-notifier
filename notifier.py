@@ -424,14 +424,18 @@ def fetch_public_calendar() -> tuple[list[dict[str, Any]], bool]:
 
 
 def merge_calendar_events(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    merged, seen = [], set()
+    merged, seen = [], {}
     for event in sorted((item for group in groups for item in group), key=lambda item: item["time"]):
         speech = event['rule']['key'] in {'powell', 'fed_official', 'fed_chair_policy'}
         key = (event["rule"]["key"], event["time"].replace(second=0, microsecond=0),
                event.get('speaker') or event.get('title', '') if speech else '')
         if key not in seen:
-            seen.add(key)
+            seen[key] = len(merged)
             merged.append(event)
+        elif event.get('reference_period') and not merged[seen[key]].get('reference_period'):
+            # Keep the official schedule's data month even when another source
+            # listed the same release first (2026-11-20, retail cross-check).
+            merged[seen[key]] = dict(merged[seen[key]], reference_period=event['reference_period'])
     return merged
 
 
@@ -1282,9 +1286,12 @@ def run(now: datetime, dry_run: bool = False, force_digest: bool = False,
 
     if slim_policy.enabled():
         from macro_result_integrity import enrich
+        from macro_calendar import with_schedule_reference
         releases = [enrich(row, lambda url: http_text(url, attempts=1), lambda url: http_bytes(url, attempts=1))
                     if 0 <= (now-row['published']).total_seconds()/60 <= RELEASE_BACKFILL_MINUTES
                     and f"release:{row['id']}" not in sent else row for row in releases]
+        # Retail data month is cross-checked against the official schedule row.
+        releases = [with_schedule_reference(row, calendar) for row in releases]
     pending_release_groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for item in releases:
         age = (now - item["published"]).total_seconds() / 60

@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 import notifier as n
 import slim_policy as policy
@@ -20,6 +20,11 @@ RETAIL = ('FOR IMMEDIATE RELEASE: Thursday, October 15, 2026 '
 
 def census(year):
     return f'Advance Monthly Sales for Retail and Food Services October 15, {year} 8:30 AM'
+
+
+def retail(summary, reference='2026-M09'):
+    """Retail results are checked against the official schedule's data month (2026-11-20)."""
+    return {'summary': summary, 'scheduled_reference_period': reference}
 
 
 class MacroScopeExpansionTests(unittest.TestCase):
@@ -72,7 +77,7 @@ class MacroScopeExpansionTests(unittest.TestCase):
                 industrial_calendar(NOW, lambda _: source, n.html_to_text)
 
     def test_retail_confidence_interval_and_annual_change_never_become_previous(self):
-        text, missing = retail_details({'summary': RETAIL})
+        text, missing = retail_details(retail(RETAIL))
         self.assertEqual(missing, [])
         self.assertIn('2026/09', text)
         self.assertIn('+0.8%', text)
@@ -83,13 +88,13 @@ class MacroScopeExpansionTests(unittest.TestCase):
 
     def test_retail_negative_zero_missing_previous_and_unrelated_revision(self):
         source = RETAIL.split('The July')[0]
-        text, missing = retail_details({'summary': source.replace('up 0.8', 'down 0.8')})
+        text, missing = retail_details(retail(source.replace('up 0.8', 'down 0.8')))
         self.assertEqual(missing, [])
         self.assertIn('-0.8%', text)
         self.assertIn('前值 暫缺', text)
-        text, _ = retail_details({'summary': source.replace('up 0.8', 'up 0.0')})
+        text, _ = retail_details(retail(source.replace('up 0.8', 'up 0.0')))
         self.assertIn('+0.0%', text)
-        text, _ = retail_details({'summary': RETAIL.replace('The July 2026 to August 2026', 'The June 2026 to July 2026')})
+        text, _ = retail_details(retail(RETAIL.replace('The July 2026 to August 2026', 'The June 2026 to July 2026')))
         self.assertIn('前值 暫缺', text)
 
     def test_missing_month_actual_or_basis_blocks_retail_not_inferred_from_other_numbers(self):
@@ -144,6 +149,12 @@ class MacroScopeExpansionTests(unittest.TestCase):
             rule = next(r for r in n.EVENT_RULES if r['key'] == key)
             return {'id': 'new-'+key, 'rule': rule, 'published': now, 'summary': summary, 'url': rule['source']}
         rows = [row('retail', RETAIL), row('claims', 'In the week ending October 10, the advance figure for seasonally adjusted initial claims was 216,000.'), row('ppi', '')]
+        # Official Census schedule row for the same release, listed yesterday evening (Taiwan)
+        # so it adds no calendar card today; the retail result takes its data month from it.
+        scheduled = now - timedelta(hours=11)
+        rows[0]['published'] = scheduled
+        fixture.calendar = [{'id': 'census-retail', 'time': scheduled, 'reference_period': '2026-M09',
+                             'rule': next(r for r in n.EVENT_RULES if r['key'] == 'retail')}]
         rows[1]['url']='https://oui.doleta.gov/press/2026/101426.pdf'
         rows[-1].update(reference_period='2026-M09', price_metrics={'monthly': 0.4, 'annual': 3.2, 'monthly_seasonally_adjusted': True, 'annual_unadjusted': True})
         fixture.releases = rows

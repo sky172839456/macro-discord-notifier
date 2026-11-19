@@ -9,6 +9,25 @@ NY = ZoneInfo('America/New_York')
 Q = {'first': 1, 'second': 2, 'third': 3, 'fourth': 4}
 VERB = r'(?P<verb>increased|decreased|rose|fell|declined|advanced|moved up|moved down|edging up|edging down)'
 VALUE = r'(?P<value>\d+(?:\.\d+)?)'
+# Prior month written right after the industrial production headline, e.g.
+# "decreased 0.4 percent in October after increasing 0.7 percent in September"
+# (2026-11-20).  Only this clause counts; other sentences are other indicators.
+IP_PRIOR = re.compile(
+    r'\s*,?\s*after\s+(?:'
+    r'(?P<verb>increasing|rising|advancing|gaining|decreasing|falling|declining|dropping|edging up|edging down|'
+    r'increased|decreased|rose|fell|declined|advanced|moved up|moved down)\s+(?P<value>\d+(?:\.\d+)?)\s+percent'
+    r'|an?\s+(?:(?:upwardly|downwardly)\s+)?(?:revised\s+)?(?P<noun>gain|increase|rise|advance|decline|decrease|drop)\s+of\s+(?P<noun_value>\d+(?:\.\d+)?)\s+percent'
+    r'|(?P<flat>being unchanged|no change))'
+    r'\s+in\s+(?P<month>' + MONTH + r')\b', re.I)
+IP_DOWN = {'decreasing', 'falling', 'declining', 'dropping', 'edging down', 'decreased', 'fell', 'declined', 'moved down',
+           'decline', 'decrease', 'drop'}
+
+
+def ip_prior(match):
+    if match['flat']:
+        return 0.0
+    word, value = (match['verb'], match['value']) if match['verb'] else (match['noun'], match['noun_value'])
+    return float(value)*(-1 if word.lower() in IP_DOWN else 1)
 
 
 def clean(value):
@@ -106,9 +125,10 @@ def details(item):
             y = released.year-(month>released.month)
             current = signed(subject)
             label = '工業生產月增率（季調）'
-            previous = re.search(r'after\s+'+VERB+r'\s+'+VALUE+r'\s+percent in ('+MONTH+r')',text,re.I)
-            prior_value = signed(previous) if previous and MONTHS[previous[3].lower()] == previous_period(y,month)[1] else None
-            capacity = re.search(r'Capacity utilization\s+(?:moved up to|moved down to|was|remained at|decreased to|increased to)\s+(\d+(?:\.\d+)?) percent in ('+MONTH+r')',text,re.I)
+            previous = IP_PRIOR.match(text, subject.end())
+            prior_value = ip_prior(previous) if previous and MONTHS[previous['month'].lower()] == previous_period(y,month)[1] else None
+            capacity = re.search(r'Capacity utilization\s+(?:moved up to|moved down to|was|remained at|decreased to|increased to|'
+                                 r'rose to|fell to|dropped to|declined to|climbed to|edged up to|edged down to)\s+(\d+(?:\.\d+)?) percent in ('+MONTH+r')',text,re.I)
             if capacity and MONTHS[capacity[2].lower()] == month:
                 lines.append(f'**產能利用率**　{float(capacity[1]):.1f}%')
         from macro_result_display import comparison
