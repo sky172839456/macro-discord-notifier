@@ -190,7 +190,7 @@ class ResultIntegrityTests(unittest.TestCase):
         examples={'fomc':row('fomc',self.fed),'pce':row('pce',self.pce),
                   'gdp':row('gdp',GDP),'durable':row('durable',DURABLE),
                   'industrial':row('industrial',INDUSTRIAL),'jolts':row('jolts',JOLTS),
-                  'retail':row('retail',RETAIL),
+                  'retail':row('retail',RETAIL,scheduled_reference_period='2026-M09'),
                   'jobs':row('jobs',id='bls-api-jobs-2026-M09-x',reference_period='2026-M09',
                              jobs_metrics={'payroll':100000,'unemployment':4.1}),
                   'claims':row('claims',(FIX/'claims_20261022_wrapped.txt').read_text(encoding='utf-8'),

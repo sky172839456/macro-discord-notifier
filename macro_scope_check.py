@@ -4,7 +4,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 import notifier as n
-from macro_calendar import census_calendar, industrial_calendar
+from macro_calendar import census_calendar, industrial_calendar, with_schedule_reference
 from macro_results import retail_details
 
 
@@ -18,14 +18,18 @@ def check():
     if index < 0:
         raise ValueError('retail official headline missing')
     excerpt = retail[max(0, index-100):index+2200]
-    numbers, missing = retail_details({'summary': excerpt})
+    published = n.official_page_published_at(excerpt, 'retail', now)
+    # Same cross-check as production: data month must match the official schedule row.
+    item = with_schedule_reference({'summary': excerpt, 'rule': {'key': 'retail'}, 'published': published}, census)
+    numbers, missing = retail_details(item)
     if missing:
         raise ValueError('retail: '+','.join(missing))
     def row(e):
         return {'key': e['rule']['key'], 'time': e['time'].astimezone(n.TAIPEI).isoformat(), 'source': e['rule']['source']}
     return {'checkedAt': now.isoformat(), 'census': {'detail': detail, 'nextEvents': [row(e) for e in census if e['time']>=now][:4]},
             'industrial': {'monthlyEvents': len(industrial), 'nextEvents': [row(e) for e in industrial if e['time']>=now][:3]},
-            'retail': {'copy': numbers, 'officialPublication': n.official_page_published_at(excerpt, 'retail', now).isoformat()},
+            'retail': {'copy': numbers, 'officialPublication': published.isoformat(),
+                       'scheduledReferencePeriod': item.get('scheduled_reference_period')},
             'productionStateRead': False, 'productionStateWritten': False, 'discordSends': 0}
 
 
