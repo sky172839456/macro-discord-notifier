@@ -30,7 +30,7 @@ class MaterialCompleteCopy(unittest.TestCase):
     def test_release_html_retains_bullets_code_and_safe_metavariables(self):
         html='<ul><li>Added <code>--settings &lt;file&gt;</code> to <code>claude remote-control</code>.</li><li>Fixed MCP OAuth handling.</li></ul>'
         parts=release_parts(html)
-        self.assertEqual(parts,['Added --settings 〈file〉 to claude remote-control.','Fixed MCP OAuth handling.'])
+        self.assertEqual(parts,['Added `--settings 〈file〉` to `claude remote-control`.','Fixed MCP OAuth handling.'])
         self.assertTrue(all(len(p.encode('utf8'))<=450 for p in parts))
     def test_two_complete_release_bullets_never_include_a_cut_third_fix(self):
         row=self.row();before=copy.deepcopy(row)
