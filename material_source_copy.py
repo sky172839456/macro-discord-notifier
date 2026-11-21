@@ -19,10 +19,15 @@ class ReleaseList(HTMLParser):
             if self.depth == 0:
                 self.current = []
             self.depth += 1
+        elif self.depth and tag == 'code':
+            # Keep source code boundaries for the shared literal-copy contract.
+            self.current.append('`')
         elif self.depth and tag in ('p', 'br'):
             self.current.append(' ')
     def handle_endtag(self, tag):
-        if tag == 'li' and self.depth:
+        if tag == 'code' and self.depth:
+            self.current.append('`')
+        elif tag == 'li' and self.depth:
             self.depth -= 1
             if not self.depth:
                 # CLI metavariables are text, not HTML tags or member mentions.
