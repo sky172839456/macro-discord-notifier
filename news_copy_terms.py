@@ -346,7 +346,37 @@ def semantic_repairs(source, translated):
         translated, count = re.subn(head, name + '：', translated)
         if not count:
             raise ValueError('signed analysis byline not preserved')
-    return translated
+    return strike_meaning(source, translated)
+
+
+# 2026-11-26 本人說「罷工誤譯也一起修」：strike 被機器翻譯一律寫成「罷工」。
+# 7～10 月幣圈又有事 13 張卡實際出現三種：對伊朗等的軍事打擊、選擇權履約價（strike-by-strike）、
+# Strike 這家公司（Twenty One 與 Strike 合併）。原文有勞工語境才是真的罷工；
+# 只能判斷成一種意思才修，判斷不了或混在一起就不採用這份譯文。
+STRIKE_LABOR = (r'\b(?:workers?|unions?|walk-?outs?|labou?r|employees|pickets?|picket lines?|wages?|'
+                r'dockworkers?|strikers?|general strike|(?:go|goes|going|went|gone) on strike|on strike)\b')
+STRIKE_MILITARY = (r'\b(?:iran\w*|israel\w*|ukrain\w*|russia\w*|military|missiles?|wars?|ceasefire|hormuz|'
+                   r'air ?strikes?|attacks?|bomb\w*|troops|drones?|pentagon|navy|houthis?|hezbollah|'
+                   r'strikes? (?:on|against))\b')
+STRIKE_OPTIONS = (r'\b(?:options?|open interest|expir(?:y|ies|e|es|ing|ation)|strike[- ]by[- ]strike|'
+                  r'strike prices?|max pain|deribit|put[- ]call)\b')
+STRIKE_COMPANY = (r'\bStrike\b(?=\s+(?:merger|app|CEO|founder|wallet|users?|Lightning|launch\w*|acquir\w*|'
+                  r'partner\w*|deal|plans?|raises?|adds?|integrat\w*))|\b(?:Twenty One|Jack Mallers)\b.{0,40}\bStrike\b'
+                  r'|\bStrike\b.{0,40}\b(?:Twenty One|Jack Mallers)\b')
+
+
+def strike_meaning(source, translated):
+    if '罷工' not in translated or not re.search(r'\bstrik(?:e|es|ing)\b', source, re.I):
+        return translated
+    meanings = [word for word, pattern, flags in (('Strike', STRIKE_COMPANY, 0), ('履約價', STRIKE_OPTIONS, re.I),
+                                                  ('軍事打擊', STRIKE_MILITARY, re.I)) if re.search(pattern, source, flags)]
+    if re.search(STRIKE_LABOR, source, re.I):
+        if meanings:
+            raise ValueError('mixed strike meanings require another translation')
+        return translated
+    if len(meanings) != 1:
+        raise ValueError('strike meaning not resolved; not a labor strike')
+    return translated.replace('罷工', meanings[0])
 
 
 # 2026-11-15 本人選「推播文字修正」：同一張卡曾同時出現「聯準會／美聯儲」「人工智慧／人工智能」等用語，
