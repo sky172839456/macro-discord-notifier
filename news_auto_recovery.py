@@ -297,6 +297,10 @@ def enrich(item, state, now):
     enriched = dict(item)
     try:
         enriched['title_zh'] = translate(str(item['title']))
+        # 標題本身可能沒寫資金流（例：ETFs all in the red），摘要寫了就一起判斷。
+        from notification_quality import fund_flow_price_issue
+        if fund_flow_price_issue(str(item['title'])+' '+str(item.get('summary') or ''), enriched['title_zh']):
+            raise ValueError('headline fund flow translated as price move')
     except Exception:
         enriched['title_zh'] = ''
         enriched['summary_zh_points'] = []
