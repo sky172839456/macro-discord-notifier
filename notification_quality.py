@@ -48,12 +48,65 @@ def checked_translation(source, translated):
     if numeric_values(result) != numeric_values(translated):
         raise ValueError('copy edit changed numeric facts')
     # Fail closed when the subject is a fund flow, but the copy calls it a price move.
-    if re.search(r'\b(?:etfs?|funds?)\b', source, re.I) and re.search(r'\b(?:outflows?|inflows?)\b|\bshed\s+\$', source, re.I):
-        if re.search(r'(?:ETF|基金|資金).{0,12}(?:下跌|上漲|跌幅|漲幅)', result) and not re.search(r'\b(?:price|shares?|stocks?|nav)\b', source, re.I):
-            raise ValueError('fund flows translated as price moves')
+    issue = fund_flow_price_issue(source, result)
+    if issue:
+        raise ValueError(issue)
     if re.search(r'\bexploits?\b', source, re.I) and re.search(r'\b(?:hacks?|breaches|crypto)\b', source, re.I) and '利用' in result and '漏洞利用' not in result:
         raise ValueError('ambiguous security exploit translation')
+    if unverified_name_gloss(source, result):
+        raise ValueError('unverified Chinese name for a source proper noun')
     return result
+
+
+# 2026-11-26 本人要修「ETF 資金流出被寫成價格下跌」：資金流與價格分開判斷，
+# 只有原文明確寫價格／股價／淨值同方向變動，譯文才能寫 ETF／基金漲跌。
+FUND = r'\b(?:etfs?|etps?|funds?)\b'
+FLOW_WORDS = r'(?:\b(?:outflows?|inflows?|withdrawals?|redemptions?|bleed(?:s|ing)?|bled)\b|\bshed(?:s|ding)?\s+(?:US)?\$)'
+PRICE_NOUN = r'\b(?:prices?|shares?|stocks?|navs?|net asset values?)\b'
+DOWN_VERB = r'\b(?:fell|falls?|falling|drop(?:s|ped|ping)?|declin(?:e|es|ed|ing)|slid(?:e|es|ing)?|slump(?:s|ed|ing)?|tumbl(?:e|es|ed|ing)|sank|sinks?|lower|down)\b'
+UP_VERB = r'\b(?:rose|rises?|rising|gain(?:s|ed|ing)?|jump(?:s|ed|ing)?|climb(?:s|ed|ing)?|rall(?:y|ies|ied|ying)|surg(?:e|es|ed|ing)|higher|up)\b'
+CLAUSE = r'[^，,。；;：:！!？?\n]{0,12}'
+
+
+def _price_move(context, verb):
+    """Price evidence: a price noun near the verb, or a fund that itself moves by a non-dollar amount."""
+    return bool(re.search(PRICE_NOUN + r'.{0,40}?' + verb, context, re.I)
+                or re.search(verb + r'.{0,40}?' + PRICE_NOUN, context, re.I)
+                or re.search(FUND + r'(?:\s+[\w’\'-]+){0,3}?\s+' + verb + r'(?!\s*(?:by\s+)?(?:US)?\$)', context, re.I))
+
+
+def fund_flow_price_issue(context, copy):
+    """Context is one source segment, or a headline plus its summary for the headline copy."""
+    context = str(context or '')
+    if not (re.search(FUND + r'.{0,80}?' + FLOW_WORDS, context, re.I) or re.search(FLOW_WORDS + r'.{0,80}?' + FUND, context, re.I)):
+        return None
+    if re.search(r'(?:ETF|ETP|基金|資金)' + CLAUSE + r'(?:下跌|跌幅|下滑|走低|走跌|重挫|暴跌)', copy) and not _price_move(context, DOWN_VERB):
+        return 'fund flows translated as price decline'
+    if re.search(r'(?:ETF|ETP|基金|資金)' + CLAUSE + r'(?:上漲|漲幅|走高|大漲|上揚)', copy) and not _price_move(context, UP_VERB):
+        return 'fund flows translated as price rise'
+    return None
+
+
+# 2026-11-26 本人要修「Megaspeed 被寫成兆芯」：翻譯器自帶的「中文（English）」單字專名配對，
+# 只接受下面已核對的中文名；沒核對過的就換別的翻譯來源，最後仍不行就不採用，保留原文由下一輪處理。
+# 表內是 11/26 掃過全球錢線、幣圈又有事最近 522 張卡實際出現且核對正確的配對。
+VERIFIED_NAME_GLOSSES = {
+    'Nvidia': ('輝達', '英偉達'), 'Tesla': ('特斯拉',), 'Citigroup': ('花旗集團', '花旗'), 'Citi': ('花旗', '花旗集團'),
+    'Binance': ('幣安',), 'Thales': ('泰雷茲',), 'Deribit': ('德裏比特', '德瑞比特'), 'Waller': ('沃勒',),
+    'Sacks': ('薩克斯',), 'Winklevoss': ('溫克沃斯', '溫克沃斯兄弟'), 'BlackRock': ('貝萊德',), 'Fed': ('聯準會',),
+}
+
+
+def unverified_name_gloss(source, copy):
+    """Return a source proper noun the copy glosses with an unverified Chinese name."""
+    for match in re.finditer(r'([㐀-鿿])\s*[（(]\s*([A-Z][a-z][A-Za-z0-9]*)\s*[)）]', copy):
+        name = match[2]
+        if not re.search(r'(?<![A-Za-z])' + re.escape(name) + r'(?![A-Za-z])', str(source)):
+            continue
+        head = copy[:match.start(1) + 1]
+        if not any(head.endswith(alias) for alias in VERIFIED_NAME_GLOSSES.get(name, ())):
+            return name
+    return None
 
 
 def polish_chinese(source, translated):

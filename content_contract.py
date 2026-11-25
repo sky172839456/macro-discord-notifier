@@ -210,6 +210,9 @@ def article_issues(row, now=None, required=None):
         except (ValueError,TypeError):errors.append('segment_translation_invalid')
     try:checked_copy(str(row.get('title') or ''),str(row.get('title_zh') or ''))
     except (ValueError,TypeError):errors.append('title_translation_invalid')
+    from notification_quality import fund_flow_price_issue
+    if fund_flow_price_issue(str(row.get('title') or '')+' '+str(row.get('summary') or ''),str(row.get('title_zh') or '')):
+        errors.append('title_fund_flow_as_price')
     return list(dict.fromkeys(errors))
 
 
