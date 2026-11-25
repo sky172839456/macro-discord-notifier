@@ -67,9 +67,11 @@ def asset_symbols(value):
 
 
 def protect(source):
-    from news_editorial import ALIASES
+    from news_editorial import ALIASES, SIGNED_ANALYSIS
     brands='|'.join(re.escape(v.title()) for variants in ALIASES.values() for v in variants)
-    pattern = (r'`[^`\n]+`|(?<!\w)--[a-z][a-z-]*(?:\s*[〈<][^>〉\n]+[>〉])?'
+    # 署名分析的作者姓氏保留英文，不讓翻譯音譯成像受訪者。
+    pattern = (r'^(?:'+'|'.join(SIGNED_ANALYSIS)+r')(?=\s*:\s)|'
+               r'`[^`\n]+`|(?<!\w)--[a-z][a-z-]*(?:\s*[〈<][^>〉\n]+[>〉])?'
                r'|\bv\d+\.\d+(?:\.\d+)*(?:[-.][A-Za-z0-9]+)*'
                r'|\b(?:'+IDENTIFIERS+r')\b|\b(?:BTC|ETH|NEAR|USDT|USDC|XRP|SOL|BNB|BGB)\b')
     pattern+=r'|\b(?:'+brands+r')\b|\b[A-Z][a-z]+(?:[A-Z][A-Za-z0-9]*)+\b'
@@ -202,13 +204,19 @@ def article_issues(row, now=None, required=None):
     parts=row.get('summary_parts') or []
     sources=[normalized(basis),*[normalized(p) for p in parts]]
     from news_auto_recovery import checked_copy
+    from news_copy_terms import semantic_repairs
     for pair in pairs:
         source=str(pair.get('source') or '')
         if len(source.encode('utf8'))>450:errors.append('excerpt_exceeds_provider_limit')
         if not source or not any(normalized(source) in original for original in sources):errors.append('excerpt_not_in_source')
-        try:checked_copy(source,str(pair.get('zh') or ''))
+        try:
+            checked_copy(source,str(pair.get('zh') or ''))
+            # 更新前已存的譯文會原樣顯示；新修正會改到它，就重新翻譯，不送舊字。
+            if semantic_repairs(source,str(pair.get('zh') or ''))!=str(pair.get('zh') or ''):errors.append('segment_translation_stale')
         except (ValueError,TypeError):errors.append('segment_translation_invalid')
-    try:checked_copy(str(row.get('title') or ''),str(row.get('title_zh') or ''))
+    try:
+        checked_copy(str(row.get('title') or ''),str(row.get('title_zh') or ''))
+        if semantic_repairs(str(row.get('title') or ''),str(row.get('title_zh') or ''))!=str(row.get('title_zh') or ''):errors.append('title_translation_stale')
     except (ValueError,TypeError):errors.append('title_translation_invalid')
     from notification_quality import fund_flow_price_issue
     if fund_flow_price_issue(str(row.get('title') or '')+' '+str(row.get('summary') or ''),str(row.get('title_zh') or '')):

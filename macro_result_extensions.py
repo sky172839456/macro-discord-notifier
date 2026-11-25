@@ -18,7 +18,7 @@ IP_PRIOR = re.compile(
     r'increased|decreased|rose|fell|declined|advanced|moved up|moved down)\s+(?P<value>\d+(?:\.\d+)?)\s+percent'
     r'|an?\s+(?:(?:upwardly|downwardly)\s+)?(?:revised\s+)?(?P<noun>gain|increase|rise|advance|decline|decrease|drop)\s+of\s+(?P<noun_value>\d+(?:\.\d+)?)\s+percent'
     r'|(?P<flat>being unchanged|no change))'
-    r'\s+in\s+(?P<month>' + MONTH + r')\b', re.I)
+    r'\s+in\s+(?P<month>' + MONTH + r')(?:\s+(?P<year>20\d{2}))?\b', re.I)
 IP_DOWN = {'decreasing', 'falling', 'declining', 'dropping', 'edging down', 'decreased', 'fell', 'declined', 'moved down',
            'decline', 'decrease', 'drop'}
 
@@ -39,6 +39,18 @@ def signed(match):
     if not match:
         return None
     return float(match['value'])*(-1 if match['verb'].lower() in {'decreased','fell','declined','moved down','edging down'} else 1)
+
+
+# A feed entry is the national GDP release only when its own title names GDP.
+# Industry/state/county/territory releases and annual or satellite-account
+# statistics that merely mention a GDP share are other documents (2026-11-18
+# outdoor recreation release).  Missing main values of a real GDP release
+# still go to the result gate and are reported, never skipped here.
+GDP_RELEASE_TITLE = re.compile(r'(?:U\.S\.\s+|Real\s+)?(?:GDP|Gross Domestic Product)\b(?!\s+(?:by|for|of)\b)', re.I)
+
+
+def gdp_release_title(title):
+    return bool(GDP_RELEASE_TITLE.match(clean(title)))
 
 
 def publication(text, key):
@@ -126,7 +138,10 @@ def details(item):
             current = signed(subject)
             label = '工業生產月增率（季調）'
             previous = IP_PRIOR.match(text, subject.end())
-            prior_value = ip_prior(previous) if previous and MONTHS[previous['month'].lower()] == previous_period(y,month)[1] else None
+            # 2026-11-26: an explicit prior year must also be the adjacent period.
+            expected_prior = previous_period(y,month)
+            prior_value = (ip_prior(previous) if previous and MONTHS[previous['month'].lower()] == expected_prior[1]
+                           and (not previous['year'] or int(previous['year']) == expected_prior[0]) else None)
             capacity = re.search(r'Capacity utilization\s+(?:moved up to|moved down to|was|remained at|decreased to|increased to|'
                                  r'rose to|fell to|dropped to|declined to|climbed to|edged up to|edged down to)\s+(\d+(?:\.\d+)?) percent in ('+MONTH+r')',text,re.I)
             if capacity and MONTHS[capacity[2].lower()] == month:

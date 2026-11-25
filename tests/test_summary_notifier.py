@@ -29,7 +29,8 @@ class SummaryNotifierTests(unittest.TestCase):
         now = datetime(2026, 7, 20, tzinfo=timezone.utc)
         with patch.object(summary_notifier, "http_text", side_effect=OSError("blocked")), \
              patch.object(summary_notifier, "official_calendar_fallback", return_value=[]), \
-             patch.object(summary_notifier, "public_calendar_fallback_with_status", return_value=([], True)):
+             patch.object(summary_notifier, "public_calendar_fallback_with_status", return_value=([], True)), \
+             patch.object(summary_notifier, "official_schedule_events", return_value=([], [])):
             events, error = upcoming_events(now, 1)
         self.assertEqual(events, [])
         self.assertIsNone(error)

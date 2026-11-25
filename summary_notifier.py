@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from config import BLS_CALENDAR_URL, TAIPEI_ZONE
-from notifier import NY, classify, http_text, parse_bls_calendar
+from notifier import NY, classify, fetch_extended_calendar, http_text, parse_bls_calendar
 from market_brief_data import collect_dashboard, collect_weekly_dashboard
 from notification_format import apply_delivery_format
 
@@ -34,6 +34,7 @@ FAIR_ECONOMY_CALENDARS = (
     "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
     "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
 )
+AUXILIARY_SOURCE = "公開行事曆輔助"  # same label as notifier.fetch_public_calendar
 
 
 class BLSMonthlyParser(HTMLParser):
@@ -113,6 +114,9 @@ def parse_fair_economy_calendar(data: Any) -> list[dict[str, Any]]:
             "advance gdp": "gross domestic product",
             "final gdp": "gross domestic product",
             "prelim gdp": "gross domestic product",
+            # Same aliases as the daily calendar (notifier.fetch_public_calendar).
+            "core pce": "personal consumption expenditures",
+            "pce price": "personal consumption expenditures",
         }
         lower_title = title.lower()
         if "fomc" in lower_title and any(word in lower_title for word in ("speaks", "speech", "member")):
@@ -135,6 +139,7 @@ def parse_fair_economy_calendar(data: Any) -> list[dict[str, Any]]:
             "title": title,
             "time": event_time.astimezone(timezone.utc),
             "rule": rule,
+            "calendar_source": AUXILIARY_SOURCE,
         })
     return events
 
@@ -180,7 +185,30 @@ def weekly_market() -> dict:
     return {coin: {**(row := weekly_prices(http_json, coin)), 'change': row['change_7d']} for coin in ('BTC', 'ETH')}
 
 
-def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str | None]:
+def official_schedule_events(now: datetime) -> tuple[list[dict[str, Any]], list[tuple[str, bool, str]]]:
+    """BEA／Census／Fed official schedules, the same rows the 07:00 daily calendar reads.
+
+    BLS does not publish PCE/GDP/FOMC dates, so without these the Sunday week
+    calendar missed PCE on 2026-11-22 while the daily calendar listed it.
+    """
+    try:
+        return fetch_extended_calendar(now)
+    except Exception as exc:
+        return [], [("官方延伸排程", False, f"{type(exc).__name__} / {exc}")]
+
+
+def prefer_official_schedules(events: list[dict[str, Any]], official: list[dict[str, Any]],
+                              now: datetime) -> list[dict[str, Any]]:
+    """Official rows come first; a public-calendar row of a release that the official
+    schedule still lists ahead is dropped, so a stale date after a reschedule is
+    never shown. Public rows only fill releases the official sources did not confirm."""
+    confirmed = {event["rule"]["key"] for event in official if event["time"] >= now}
+    return official + [event for event in events
+                       if event.get("calendar_source") != AUXILIARY_SOURCE or event["rule"]["key"] not in confirmed]
+
+
+def upcoming_events(now: datetime, days: int,
+                    official_statuses: list[tuple[str, bool, str]] | None = None) -> tuple[list[dict[str, Any]], str | None]:
     events: list[dict[str, Any]] = []
     # BLS occasionally rejects requests from shared cloud IPs. Try the official
     # calendar endpoint more than once, then its official download variant.
@@ -202,6 +230,10 @@ def upcoming_events(now: datetime, days: int) -> tuple[list[dict[str, Any]], str
         events, public_succeeded = public_calendar_fallback_with_status()
     if not events and not public_succeeded:
         return [], "官方行事曆目前未完成同步，系統將於下次排程自動重試。"
+    official, statuses = official_schedule_events(now)
+    if official_statuses is not None:
+        official_statuses.extend(statuses)
+    events = prefer_official_schedules(events, official, now)
     end = now + timedelta(days=days)
     filtered = sorted((event for event in events if now <= event["time"] < end), key=lambda item: item["time"])
     unique: list[dict[str, Any]] = []
@@ -678,7 +710,10 @@ def run_scheduled(now: datetime) -> list[str]:
         # 2026-11-15 本人確認：週日 20:00 在🏦｜數據有話說發下週行事曆。
         import next_week_calendar
         def week_events():
-            events, error = upcoming_events(now, 9)
+            official_statuses = []
+            events, error = upcoming_events(now, 9, official_statuses)
+            if any(not healthy for _, healthy, _ in official_statuses):
+                error = error or '官方排程尚未完整確認'  # 卡面加註「未列出不代表沒有事件」
             import fed_speech_policy
             events, policy_status = fed_speech_policy.enrich(events, {}, now, http_text)
             if any(not row[2] for row in policy_status):

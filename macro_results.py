@@ -37,10 +37,14 @@ def retail_move(name):
 # that is not statistically significant with one footnote asterisk.
 RETAIL_INTERVAL = r'(?:\s*\([^)]*\))?(?:\s*\*)?'
 # Stay inside the headline sentence: "$748.2 billion" is fine, ". " ends it.
-RETAIL_SAME_SENTENCE = r'(?P<clause>(?:(?!\.\s).){0,400}?)'
+# 2026-11-26: the move must be the one attached to this subject's dollar level
+# ("were $748.2 billion, up 0.2 percent"); a ";" or another "were" in between
+# means another series/survey, e.g. "were $748.2 billion, while ... up 9.9 percent".
+RETAIL_SAME_SENTENCE = r'(?P<clause>(?:(?!\.\s|;|\bwere\b).){0,400}?)'
+RETAIL_LEVEL = r'\bwere\s+\$\d[\d,]*(?:\.\d+)?\s+(?:billion|million)\s*,\s*'
 RETAIL_HEADLINE = re.compile(
     r'estimates of U\.S\. retail and food services sales for (?P<month>' + MONTH + r')\s+(?P<year>20\d{2})\s*,'
-    + RETAIL_SAME_SENTENCE + retail_move('cur') + RETAIL_INTERVAL + r'\s+from (?:the )?previous month', re.I)
+    + RETAIL_SAME_SENTENCE + RETAIL_LEVEL + retail_move('cur') + RETAIL_INTERVAL + r'\s+from (?:the )?previous month', re.I)
 RETAIL_PAIR = (r'The (?P<from_month>' + MONTH + r')\s+(?P<from_year>20\d{2})\s+to\s+'
                r'(?P<to_month>' + MONTH + r')\s+(?P<to_year>20\d{2})\s+percent change was ')
 RETAIL_REVISED = re.compile(RETAIL_PAIR + r'revised from\s+' + retail_move('old') + RETAIL_INTERVAL
@@ -76,14 +80,17 @@ def retail_details(item):
     def adjacent(m):
         return (m and (int(m['from_year']), MONTHS[m['from_month'].lower()]) == earlier
                 and (int(m['to_year']), MONTHS[m['to_month'].lower()]) == prior)
-    revised, unrevised = RETAIL_REVISED.search(text), RETAIL_UNREVISED.search(text)
-    usable = [m for m in (revised, unrevised) if adjacent(m)]
-    # Exactly one statement about the prior month, or no prior value at all.
-    previous = number(usable[0], 'prev') if len(usable) == 1 else None
+    # 2026-11-26: compare EVERY statement about the adjacent month pair, not only
+    # the first of each kind; conflicting statements leave the prior value empty.
+    usable = [('revised', m) for m in RETAIL_REVISED.finditer(text) if adjacent(m)]
+    usable += [('unrevised', m) for m in RETAIL_UNREVISED.finditer(text) if adjacent(m)]
+    candidates = {(kind, number(m, 'prev')) for kind, m in usable}
+    # One consistent statement about the prior month, or no prior value at all.
+    previous = next(iter(candidates))[1] if len(candidates) == 1 else None
     value = number(headline, 'cur')
     from macro_result_display import comparison
     lines = [f'**資料月份**　{year}/{month:02d}｜前期 {prior[0]}/{prior[1]:02d}',
              comparison('零售銷售月增率（季調）',value,previous,signed=True)]
     if previous is not None:
-        lines.append('前值採本次官方修訂後的前一期。' if usable[0] is revised else '前值採本次官方公布的前一期（未修訂）。')
+        lines.append('前值採本次官方修訂後的前一期。' if usable[0][0] == 'revised' else '前值採本次官方公布的前一期（未修訂）。')
     return '\n\n'.join(lines), []

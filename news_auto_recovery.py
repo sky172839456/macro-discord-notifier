@@ -261,10 +261,10 @@ def same_article(left, right):
     return True
 
 
-def source_sentences(value):
+def source_sentences(value, count=2):
     from content_contract import strict, segments
     if strict():
-        return segments(value)
+        return segments(value, count=count)
     # Short RSS paragraphs need no English splitting at all. Preserve names.
     value = value.strip()
     if len(value.encode('utf-8')) <= 450:
@@ -273,7 +273,7 @@ def source_sentences(value):
                        lambda m: m.group().replace('.', '\u2024'), value)
     sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z“"\d])|[\r\n]+', protected)
     return [s.replace('\u2024', '.').strip() for s in sentences
-            if s.strip() and len(s.encode('utf-8')) <= 450][:2]
+            if s.strip() and len(s.encode('utf-8')) <= 450][:count]
 
 
 def enrich(item, state, now):

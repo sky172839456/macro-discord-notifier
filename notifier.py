@@ -652,6 +652,10 @@ def parse_feed(source: str, base_url: str, provider: str) -> list[dict[str, Any]
         rule = classify(f"{title} {description}")
         if not rule or (rule["key"] in {"powell", "fed_official"} and provider != "FED_SPEECH"):
             continue
+        if rule["key"] == "gdp":
+            from macro_result_extensions import gdp_release_title
+            if not gdp_release_title(title):
+                continue  # A GDP share in another release is not the quarterly GDP result.
         link_node = entry.find("link")
         if link_node is None:
             link_node = entry.find("{http://www.w3.org/2005/Atom}link")
