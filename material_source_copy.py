@@ -3,8 +3,20 @@ from html.parser import HTMLParser
 import html
 import re
 
-VERSION = 4
+VERSION = 5
 RELEASE_SOURCES = {'Claude Code Releases', 'Claude Platform Updates'}
+# Exchange lead/footer lines repeated on every announcement are not this event's
+# content (2026-11-20/11-24 Binance cards showed only the first two). A legal
+# "Disclaimer:" section ends the scan; event-specific limits stay in the content.
+BOILERPLATE = re.compile(
+    r'This is a general announcement\.?'
+    r'|Products and services referred to here may not be available in your region\.?'
+    r'|There may be discrepancies between this original content in English and any translated versions\.?'
+    r'|Please refer to the original English version for the most accurate information\b.*'
+    r'|Thank you for your support[.!]?'
+    r'|[\w.&-]+ Team(?: \d{4}-\d{2}-\d{2})?'
+    r'|This information should not be construed as financial or investment advice\.?', re.I)
+DISCLAIMER = re.compile(r'(?:[\w.&-]+ Team(?: \d{4}-\d{2}-\d{2})? )?(?:Disclaimers?|Risk Warning):', re.I)
 
 
 class ReleaseList(HTMLParser):
@@ -61,7 +73,13 @@ def excerpt_parts(row):
     for part in parts:
         # The provider limit is in UTF-8 bytes. Split only at whole sentences;
         # never trim a negation, unit, command or another release bullet.
-        for sentence in source_sentences(str(part)):
+        # Scan a bounded number of sentences so generic boilerplate cannot
+        # take both slots; boilerplate-only text yields nothing (held).
+        for sentence in source_sentences(str(part), count=12):
+            if DISCLAIMER.match(sentence):
+                break
+            if BOILERPLATE.fullmatch(sentence):
+                continue
             if sentence and len(sentence.encode('utf-8')) <= 450:
                 selected.append(sentence)
                 if len(selected) == 2:

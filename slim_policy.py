@@ -153,10 +153,13 @@ def same_event(left, right):
 def news_card(item, test=False, now=None):
     from notification_format import clean_source_text
     from notification_quality import headline as checked_headline, chinese_points, time_copy
+    from news_editorial import signed_analysis
     full_headline = checked_headline(item)
     headline = full_headline if len(full_headline)<=180 else item['category'].get('label','市場消息')
+    # 記者署名分析不是事實報導，也不是受訪者發言。
+    attribution = '官方公告' if item.get('official') else '分析／專欄' if signed_analysis(item) else '媒體報導'
     if not item.get('official'):
-        headline = '媒體報導｜' + headline
+        headline = attribution + '｜' + headline
     points = chinese_points(item)
     fact = "\n".join(f"• {p}" for p in points[:2])
     if len(full_headline)>180:
@@ -181,7 +184,7 @@ def news_card(item, test=False, now=None):
         "description": fact,
         "url": item["url"],
         "color": 0xE74C3C if material_news(item) else 0x3498DB,
-        "fields": [{"name": "🔗 原文與時間", "value": f"{'官方公告' if item['official'] else '媒體報導'}｜[{item['source']}]({item['url']})\n{timing}", "inline": False}],
+        "fields": [{"name": "🔗 原文與時間", "value": f"{attribution}｜[{item['source']}]({item['url']})\n{timing}", "inline": False}],
         "footer": {"text": "不構成投資建議"},
         "timestamp": item["published"].isoformat(),
     }
@@ -189,11 +192,15 @@ def news_card(item, test=False, now=None):
 
 def digest_card(items, now):
     from notification_quality import headline, chinese_points
+    from news_editorial import signed_analysis
     lines = []
     for item in items[:5]:
         title = headline(item).replace("\n", " ")
         points = chinese_points(item)
-        attribution = '' if item.get('official') else '媒體報導｜'
+        analysis = signed_analysis(item) and not item.get('official')
+        if analysis:
+            title = '分析｜' + title  # 標題保留完整譯文，只在前面標明記者署名分析
+        attribution = '' if item.get('official') else '分析／專欄｜' if analysis else '媒體報導｜'
         detail = '\n'+attribution+'\n'.join(points[:2]) if points else "\n中文摘要尚未確認，請閱讀原文。"
         if item.get('summary_basis') == 'headline':
             detail += '\n-# 依原文標題整理；完整背景請見來源。'

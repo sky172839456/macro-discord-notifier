@@ -190,6 +190,8 @@ def topic(row):
     from material_share_value import activity_kind
     if activity_kind(title):
         return 'business'
+    if not row.get('material_ai') and listed_product(row):
+        return 'business'  # Options/tokenized shares named after an AI company are not an AI release.
     if row.get('material_ai') or re.search(r'\b(?:artificial intelligence|openai|anthropic|deepmind|claude|chatgpt|gemini|AI|LLMs?|GPT|Copilot|machine learning|generative|agentic)\b', title, re.I):
         return 'ai'
     if re.search(r'\bMCP\b', title, re.I) and re.search(r'\b(?:stocks?|shares?) (?:price|rises?|falls?|gains?|drops?|surges?|rallies?)\b', title, re.I):
@@ -218,6 +220,16 @@ def topic(row):
         title, re.I):
         return 'interesting'
     return 'research' if row.get('material_research') else None
+
+
+def listed_product(row):
+    """A tradable product on a company's shares/tokens, by title or official exchange source."""
+    title = str(row.get('title', ''))
+    if re.search(r'\b(?:stock options?|equity options?|tokeni[sz]ed (?:stocks?|shares?|equit(?:y|ies))|[bx]Stocks?|stock tokens?|pre-?IPO)\b', title, re.I):
+        return True
+    venue = r'\b(?:Binance|Bitget|Bybit|OKX|Coinbase|Kraken|Bitfinex)\b'
+    instrument = r'\b(?:stocks?|shares|equit(?:y|ies)|options|futures|perpetuals?|trading pairs?|will list|lists|listing|IPO)\b'
+    return bool(re.search(venue, title+' '+str(row.get('source', '')), re.I) and re.search(instrument, title, re.I))
 
 
 def exchange_access_notice(title):

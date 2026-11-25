@@ -25,6 +25,24 @@ def repair_translation(source, translated):
         if re.search(r'--settings\s*〈[^〉]+〉.{0,8}claude remote-control',translated,re.I):
             translated = re.sub(r'^.*?claude remote-control\s*[，,]?',
                 'claude remote-control 新增 --settings〈file〉參數，',translated,count=1,flags=re.I)
+    # v2.1.328 "interactive sessions with no permission mode start in it": no mode
+    # was specified, and "it" is the auto mode added in the same line. Never a
+    # named "no-permission" or approval-free mode (2026-11-20 review).
+    if re.search(r'\bwith no permission mode\b', source, re.I):
+        if re.search(r'(?:以|在|於|進入)(?:無|沒有|不具|免)(?:任何)?(?:權限|許可)模式(?:中|下)?(?:啟動|開始|執行)', translated):
+            raise ValueError('sessions placed in an invented no-permission mode')
+        translated = re.sub(r'(?:沒有|無|不具)(?:任何)?(?:權限|許可)模式', '未指定權限模式', translated)
+        if re.search(r'\bauto mode\b.{0,300}?\bwith no permission mode starts? in it\b', source, re.I):
+            translated = re.sub(r'(?:在其中|於其中|從其中|在它之中|在它裡面|從它|以它|用它|在此模式中|在該模式中|以此模式|以該模式|進入此模式|進入該模式)(?=啟動|開始|執行)',
+                                '以自動模式', translated)
+            clause = next((s for s in re.split(r'[；;。]', translated) if '未指定權限模式' in s), '')
+            if not re.search(r'自動模式|auto mode', clause, re.I):
+                raise ValueError('permission mode pronoun antecedent missing')
+        if not re.search(r'未(?:指定|設定)(?:任何)?權限模式', translated):
+            raise ValueError('unspecified permission mode not preserved')
+        if (re.search(r'免(?:審核|核准|批准|許可)|無需(?:審核|核准|批准|許可)|不需(?:要)?(?:審核|核准|批准|許可)|任意權限', translated)
+                and not re.search(r'\b(?:without (?:approval|asking|prompts?)|skip\w* (?:permission|approval)|bypass\w*)\b', source, re.I)):
+            raise ValueError('auto mode described as approval-free')
     quantity = re.search(r'(?<![\w$])([\d,]+(?:\.\d+)?)\s+NEAR\b',source)
     if quantity:
         translated = re.sub(re.escape(quantity[1])+r'\s*(?:附近|接近)',quantity[1]+'枚 NEAR',translated)
@@ -265,7 +283,70 @@ def repair_translation(source, translated):
             amount = Decimal(number) * 100
             display = format(amount, 'f').rstrip('0').rstrip('.') if '.' in format(amount, 'f') else str(amount)
             translated = re.sub(r'\b' + re.escape(number) + r'M\s+CYS\b', display + '萬枚 CYS', translated, flags=re.I)
-    return taiwan_terms(translated)
+    return taiwan_terms(semantic_repairs(source, translated))
+
+
+# 2026-11-26 本人要修CNBC／CoinDesk舊卡：half-point寫成半碼、SEC人選寫成主席、
+# 規則制定寫成立法、署名分析的作者被音譯成像受訪者。只修原文明確支持的狹義語境；
+# 每項重複套用結果不變，content_contract 用它找出更新前留在待發佇列的舊譯文。
+# 1碼＝0.25個百分點＝25個基點（台灣央行用法）；回傳基點。
+RATE_STEPS = (
+    (r'(?<!three-)(?<!three )\bquarter(?:[- ]of[- ]a)?[- ](?:percentage[- ])?points?\b|\b0?\.25[- ]percentage[- ]points?\b', 25),
+    (r'\bhalf(?:[- ]a)?[- ](?:percentage[- ])?points?\b|\b0?\.50?[- ]percentage[- ]points?\b', 50),
+    (r'\bthree[- ]quarters?(?:[- ]of[- ]a)?[- ](?:percentage[- ])?points?\b|\b0?\.75[- ]percentage[- ]points?\b', 75),
+    (r'\bfull[- ](?:percentage[- ])?points?\b|\b(?:one|1)[- ]percentage[- ]points?\b', 100),
+)
+RATE_CONTEXT = r'\b(?:rates?|hikes?|cuts?|fed|federal reserve|central banks?|ecb|boj|basis points?|bps|tighten\w*|monetary)\b'
+CHAIR_SOURCE = r'\b(?:chair\w*|presid\w*|heads?|headed)\b'
+RULEMAKING = (r'\brule[- ]?making\b|\brule process\b|\b(?:proposed|final|formal|interim|full-fledged) rules?\b'
+              r'|\brule proposals?\b|\bnotice[- ]and[- ]comment\b')
+LEGISLATION = r'\b(?:legislat\w*|laws?|lawmakers?|bills?|congress\w*|statut\w*|parliament\w*)\b'
+
+
+def rate_sizes(source):
+    """Basis-point sizes the source states explicitly; no size means none."""
+    sizes = {bp for pattern, bp in RATE_STEPS if re.search(pattern, source, re.I)}
+    sizes.update(Decimal(n) for n in re.findall(r'\b(\d+(?:\.\d+)?)[- ]?(?:basis[- ]points?|bps?)\b', source, re.I))
+    sizes.update(Decimal(n) * 100 for n in re.findall(r'\b(\d+(?:\.\d+)?)[- ]percentage[- ]points?\b', source, re.I))
+    return {Decimal(v) for v in sizes}
+
+
+def copy_rate_steps(copy):
+    """碼 counts written as a size (升息兩碼、半碼); 加碼、密碼、統一碼 are not sizes."""
+    numerals = {'半': Decimal('0.5'), '一': 1, '兩': 2, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8}
+    steps = {Decimal('6.25') for _ in re.findall(r'四分之一碼', copy)}
+    for numeral in re.findall(r'(?<![統單唯同萬第之歸])(半|[一兩二三四五六七八]|\d+(?:\.\d+)?)\s*個?碼(?!歸)', copy):
+        steps.add(Decimal(numerals.get(numeral, numeral)) * 25)
+    return steps
+
+
+def semantic_repairs(source, translated):
+    sizes = rate_sizes(source) if re.search(RATE_CONTEXT, source, re.I) else set()
+    if 50 in sizes:
+        translated = translated.replace('半碼', '半個百分點')
+    if 25 in sizes:
+        translated = translated.replace('四分之一碼', '一碼')
+    agency_pick = re.search(r'\b(?:SEC|CFTC|FTC|FCC|FDIC)\s+(?:commissioner\s+)?(?:pick|nominee)s?\b', source)
+    if agency_pick and not re.search(CHAIR_SOURCE, source, re.I):
+        seat = '委員' if re.search(r'\bcommissioners?\b', source, re.I) else ''
+        translated = re.sub(r'(SEC|CFTC|FTC|FCC|FDIC)\s*主席(?=人選|提名人|候選人)', lambda m: m[1] + ' ' + seat, translated)
+    if re.search(RULEMAKING, source, re.I) and not (re.search(LEGISLATION, source, re.I) or re.search(r'\bAct\b', source)):
+        for word in ('程序', '過程', '流程'):
+            translated = translated.replace('立法' + word, '規則制定' + word)
+    # 原文把股票、股份與某公司的 debt 並列時，債務不是只指債券。
+    if (re.search(r'\b(?:stocks?|shares?|equity)\b', source, re.I) and re.search(r'\b[A-Z][\w.&-]*\s+debt\b', source)
+            and not re.search(r'\b(?:bonds?|notes?|debentures?|treasur(?:y|ies)|munis?|municipal|securities)\b', source, re.I)):
+        translated = translated.replace('債券', '債務工具')
+    # CNBC 署名分析「Peterson: ...」的姓氏是作者；統一英文姓氏，分析標籤由 news_editorial 依網址判斷。
+    from news_editorial import SIGNED_ANALYSIS
+    byline = re.match(r'\s*(' + '|'.join(SIGNED_ANALYSIS) + r')\s*:\s+\S', source)
+    if byline:
+        name = byline[1]
+        head = r'^\s*(?:' + '|'.join(map(re.escape, (name, *SIGNED_ANALYSIS[name]))) + r')\s*[：:]\s*'
+        translated, count = re.subn(head, name + '：', translated)
+        if not count:
+            raise ValueError('signed analysis byline not preserved')
+    return translated
 
 
 # 2026-11-15 本人選「推播文字修正」：同一張卡曾同時出現「聯準會／美聯儲」「人工智慧／人工智能」等用語，
@@ -273,7 +354,7 @@ def repair_translation(source, translated):
 TAIWAN_TERMS = (
     ('美國聯邦儲備委員會', '聯準會'), ('美聯儲', '聯準會'), ('聯儲局', '聯準會'), ('美聯準會', '聯準會'),
     ('人工智能', '人工智慧'), ('黑客', '駭客'), ('網絡', '網路'), ('信息', '資訊'),
-    ('數據中心', '資料中心'), ('通脹', '通膨'),
+    ('數據中心', '資料中心'), ('通脹', '通膨'), ('特朗普', '川普'),
 )
 
 

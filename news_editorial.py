@@ -27,6 +27,22 @@ def text(item):
     return f"{item.get('title', '')} {item.get('summary', '')}"
 
 
+# 2026-11-26 本人要修「CNBC 署名分析被標成媒體報導」：CNBC RSS 標題以「姓氏:」開頭的是記者署名分析
+# （原站 Peterson 頁標 Analysis、Liesman 頁標作者），不是受訪者發言，也不是一般事實報導。
+# RSS 沒有其他欄位可分辨；只認已核對作者＋cnbc.com，其他「名字:」標題維持原判斷。值是曾出現的中文音譯。
+SIGNED_ANALYSIS = {'Peterson': ('彼得森', '彼特森', '彼德森', '皮特森'), 'Liesman': ('利斯曼', '李斯曼', '里斯曼')}
+
+
+def signed_analysis(item):
+    """Checked CNBC columnist byline, else None; the name is the author, never a quoted speaker."""
+    from urllib.parse import urlsplit
+    host = (urlsplit(str(item.get('url') or '')).hostname or '').lower()
+    if host != 'cnbc.com' and not host.endswith('.cnbc.com'):
+        return None
+    match = re.match(r'\s*(' + '|'.join(SIGNED_ANALYSIS) + r')\s*:\s+\S', str(item.get('title') or ''))
+    return match[1] if match else None
+
+
 VERIFIED_ETF_FLOW_FINGERPRINT = 'e8c34378d581e333058d06fd315e87dbe5f57ebf3b90c9b2b0da5b8dab0829d6'
 
 
@@ -67,6 +83,39 @@ def current_safety_evidence(item):
                and re.search(INCIDENT, sentence, re.I)
                and re.search(ACTION, sentence, re.I)
                for sentence in re.split(r'[.;!?]', text(item)))
+
+
+# 培訓、研討會、合作或活動公告只是「談」資安；主體不是新事故，不走重大快訊。
+TRAINING_EVENT = (r'\b(?:trains?|trained|training|teach(?:es|ing)?|taught|educat(?:es|ed|ing)|'
+                  r'workshops?|seminars?|webinars?|bootcamps?|masterclass(?:es)?|summits?|'
+                  r'partners?\s+with|partnership|teams?\s+up\s+with|joins?\s+forces\s+with|'
+                  r'memorandum of understanding|mou)\b')
+FRESH_ACTION = (r'\b(?:(?:froze|frozen|freez\w*|seiz\w*|recover\w*|confiscat\w*|return\w*|clawed back)\s+'
+                r'(?:about\s+|over\s+|more than\s+|nearly\s+|roughly\s+|around\s+|some\s+)?'
+                r'(?:\$\s?\d|\d[\d,.]*\s*(?:million|billion|btc|eth|usdt|usdc)\b)|'
+                r'(?:was|were|has been|have been|got|is being|are being)\s+(?:hacked|drained|exploited|breached|compromised|stolen)\b|'
+                r'(?:hackers?|attackers?|exploiters?|thieves|scammers?)\s+(?:drained|stole|siphoned|exploited)\b|'
+                r'(?:withdrawals?|deposits?)\s+(?:(?:are|were|was|have been|has been)\s+)?(?:halted|suspended|paused)\b|'
+                r'(?:confirms?|confirmed)\s+(?:a\s+|new\s+)?(?:breach|exploit|hack)\b)')
+PAST_CASE = (r'\b(?:(?:real|past|previous|prior|earlier|old|historic(?:al)?)\s+(?:[\w-]+\s+){0,2}'
+             r'(?:cases?|incidents?|hacks?|attacks?|thefts?)|case stud(?:y|ies)|simulat\w*|mock|re-?enact\w*)\b')
+
+
+def training_or_event_only(item):
+    """Training/workshop/partnership news that only discusses incidents.
+
+    The same item still keeps the safety path when it reports a concrete new
+    action (an amount frozen/seized/recovered, a confirmed breach, halted
+    withdrawals), unless it says that case is an older or simulated teaching case.
+    """
+    if not re.search(TRAINING_EVENT, str(item.get('title', '')), re.I):
+        return False
+    if current_safety_evidence(item):
+        return False
+    body = text(item)
+    if re.search(PAST_CASE, body, re.I) or re.search(HISTORY, body, re.I):
+        return True
+    return not re.search(FRESH_ACTION, body, re.I)
 
 
 def commentary_only(item):
@@ -135,6 +184,8 @@ def safety_candidate(item):
     if verified_etf_flow_reaction(item):
         return False
     if acquisition_with_only_old_incident(body):
+        return False
+    if training_or_event_only(item):
         return False
     if retrospective(item) or (re.search(EXPLAINER, title, re.I) and not current_safety_evidence(item)):
         return False

@@ -48,7 +48,8 @@ def checked_translation(source, translated):
     if numeric_values(result) != numeric_values(translated):
         raise ValueError('copy edit changed numeric facts')
     # Fail closed when the subject is a fund flow, but the copy calls it a price move.
-    issue = fund_flow_price_issue(source, result)
+    issue = (fund_flow_price_issue(source, result) or rate_step_issue(source, result) or as_clause_issue(source, result)
+             or office_title_issue(source, result) or rulemaking_issue(source, result))
     if issue:
         raise ValueError(issue)
     if re.search(r'\bexploits?\b', source, re.I) and re.search(r'\b(?:hacks?|breaches|crypto)\b', source, re.I) and '利用' in result and '漏洞利用' not in result:
@@ -84,6 +85,61 @@ def fund_flow_price_issue(context, copy):
         return 'fund flows translated as price decline'
     if re.search(r'(?:ETF|ETP|基金|資金)' + CLAUSE + r'(?:上漲|漲幅|走高|大漲|上揚)', copy) and not _price_move(context, UP_VERB):
         return 'fund flows translated as price rise'
+    return None
+
+
+# 2026-11-26 本人要修CNBC／CoinDesk舊卡（全部舊卡一起修）：以下只擋，不猜正確譯法；
+# 可確定的狹義修正在 news_copy_terms.semantic_repairs，修完仍不符就換翻譯來源，最後不採用。
+def rate_step_issue(source, copy):
+    """1碼＝25個基點：譯文寫的碼數必須是原文明寫的幅度（half-point＝兩碼，不是半碼）。"""
+    from news_copy_terms import copy_rate_steps, rate_sizes
+    steps = copy_rate_steps(copy)
+    if steps and not steps <= rate_sizes(source):
+        return 'rate step size changed'
+    return None
+
+
+AS_CLAUSE_VERBS = (r'(?:grew|grows?|rose|rises?|fell|falls?|slid|slides?|sank|sinks?|spreads?|'
+                   r'(?:mount|deepen|widen|climb|soar|jump|drop|slump|tumble|decline|ease|cool|intensif(?:y|ie)|worsen|'
+                   r'expand|slow|accelerate|loom|persist|continue|weigh|unfold|surge|increase|shrink|narrow|stall|fade|'
+                   r'rebound|retreat|rall(?:y|ie))(?:s|d|ed|ped)?)')
+AS_NOT_ROLE_BEFORE = {'such', 'well', 'much', 'many', 'long', 'soon', 'far', 'just', 'same', 'so', 'known'}
+
+
+def as_clause_issue(source, copy):
+    """`as`＋主詞＋動詞是「在……之際／隨著」；「作為」多於原文身分用法的 as 就不採用。"""
+    role = clause = 0
+    for match in re.finditer(r'\bas\b', str(source), re.I):
+        before = str(source)[:match.start()].split()
+        after = str(source)[match.end():]
+        if (before and before[-1].lower().strip('"“‘\'') in AS_NOT_ROLE_BEFORE) or re.match(
+                r'\s+(?:well|long|soon|much|many|far|if|though|of|part|to|for|opposed|such|usual|expected)\b', after, re.I):
+            continue  # as well as／as of／as expected… never mean 「作為」
+        if re.match(r'\s+(?:[^\s;:!?]+\s+){1,6}?' + AS_CLAUSE_VERBS + r'\b', after, re.I):
+            clause += 1
+        else:
+            role += 1
+    if clause and copy.count('作為') > role:
+        return 'as-clause translated as a role'
+    return None
+
+
+def office_title_issue(source, copy):
+    """SEC pick／Fed governor 不是主席；原文沒寫 chair／president／head 就不能自行補上。"""
+    from news_copy_terms import CHAIR_SOURCE
+    if (re.search(r'(?:SEC|CFTC|FTC|FCC|FDIC|OCC|聯準會|央行|證交會|委員會)\s*的?\s*主席', copy)
+            and not re.search(CHAIR_SOURCE, str(source), re.I)):
+        return 'translation added a chair title'
+    return None
+
+
+def rulemaking_issue(source, copy):
+    """機關的規則制定／公眾意見程序不是國會立法。"""
+    from news_copy_terms import LEGISLATION, RULEMAKING
+    source = str(source)
+    if (re.search(RULEMAKING, source, re.I) and '立法' in copy
+            and not (re.search(LEGISLATION, source, re.I) or re.search(r'\bAct\b', source))):
+        return 'agency rulemaking translated as legislation'
     return None
 
 
